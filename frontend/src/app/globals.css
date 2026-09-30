@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+:root {
+  --brand-navy: #0f2a43;
+  --brand-blue: #1677ff;
+  --brand-darkblue: #003856;
+}
+
+body {
+  @apply bg-slate-100 text-slate-900 antialiased;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}

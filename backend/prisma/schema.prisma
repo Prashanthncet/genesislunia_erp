@@ -1,0 +1,577 @@
+// Genesis ERP — Prisma schema (SQLite)
+// Ported from legacy D1 schema.sql
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Branch {
+  id       String  @id @default(uuid())
+  name     String
+  location String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  classes   Class[]
+  students  Student[]
+  staff     Staff[]
+  users     User[]
+  admissionFields  AdmissionField[]
+  admissions        Admission[]
+  attendance        AttendanceRecord[]
+  subjects          Subject[]
+  exams             Exam[]
+  examMarks         ExamMark[]
+  timetableSlots    TimetableSlot[]
+  substitutions     Substitution[]
+  staffLeaves       StaffLeave[]
+  syllabus          Syllabus[]
+  lessonPlans       LessonPlan[]
+  assignments       Assignment[]
+  hostels           Hostel[]
+  gatePasses        GatePass[]
+  incidents         Incident[]
+  feeStructures     FeeStructure[]
+  feeInvoices       FeeInvoice[]
+  offlinePayments   OfflinePayment[]
+  payslips          Payslip[]
+  academicRooms     AcademicRoom[]
+  periodConfigs     PeriodConfig[]
+  examSchedules     ExamSchedule[]
+
+  @@map("branches")
+}
+
+model Class {
+  id        String   @id @default(uuid())
+  branchId  String   @map("branch_id")
+  name      String
+  section   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  branch    Branch  @relation(fields: [branchId], references: [id])
+  students  Student[]
+  timetable TimetableSlot[]
+  exams     Exam[]
+  syllabus  Syllabus[]
+  assignments Assignment[]
+  feeStructures FeeStructure[]
+  attendance AttendanceRecord[]
+  substitutions Substitution[]
+
+  @@map("classes")
+}
+
+model Student {
+  id             String   @id @default(uuid())
+  branchId       String   @map("branch_id")
+  admissionNo    String   @map("admission_no")
+  fullName       String   @map("full_name")
+  fatherName     String?  @map("father_name")
+  motherName     String?  @map("mother_name")
+  mobileNumber   String?  @map("mobile_number")
+  email          String?
+  gender         String?
+  bloodGroup     String?  @map("blood_group")
+  heightCm       Float?   @map("height_cm")
+  weightKg       Float?   @map("weight_kg")
+  vision         String?
+  classId        String?  @map("class_id")
+  rollNo         String?  @map("roll_no")
+  enrollmentDate String?  @map("enrollment_date")
+  status         String   @default("Active")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  branch     Branch  @relation(fields: [branchId], references: [id])
+  class      Class?  @relation(fields: [classId], references: [id])
+  attendance AttendanceRecord[]
+  examMarks  ExamMark[]
+  hostelAllocation HostelAllocation? @relation("StudentAllocation")
+  gatePasses GatePass[]
+  incidents  Incident[]
+  feeInvoices FeeInvoice[]
+
+  @@unique([branchId, admissionNo])
+  @@map("students")
+}
+
+model Staff {
+  id               String  @id @default(uuid())
+  branchId         String  @map("branch_id")
+  name             String
+  email            String
+  role             String  @default("Teacher")
+  subjects         String?
+  maxPeriodsPerDay Int     @default(6) @map("max_periods_per_day")
+  isActive         Boolean @default(true) @map("is_active")
+
+  branch        Branch  @relation(fields: [branchId], references: [id])
+  user          User?
+  timetable     TimetableSlot[]
+  substitutions Substitution[] @relation("SubstituteTeacher")
+  originalSubs  Substitution[] @relation("OriginalTeacher")
+  leaves        StaffLeave[]
+  lessonPlans   LessonPlan[]
+  assignments   Assignment[]
+  wardenOf      Hostel[]
+  incidents     Incident[] @relation("ReportedIncidents")
+  collectedPayments OfflinePayment[]
+  payslips      Payslip[]
+  salaryStructure SalaryStructure?
+  invigilations ExamSchedule[]
+  approvedLeaves StaffLeave[] @relation("ApprovedLeaves")
+
+  @@unique([branchId, email])
+  @@map("staff")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  branchId  String   @map("branch_id")
+  email     String   @unique
+  password  String
+  role      String
+  staffId   String?  @unique @map("staff_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  branch Branch @relation(fields: [branchId], references: [id])
+  staff  Staff? @relation(fields: [staffId], references: [id])
+
+  @@map("users")
+}
+
+model AdmissionField {
+  id             String   @id @default(uuid())
+  branchId       String   @map("branch_id")
+  label          String
+  fieldType      String   @map("field_type")
+  isRequired     Boolean  @default(true) @map("is_required")
+  validationRule String?  @map("validation_rule")
+  status         String   @default("Draft")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@map("admission_fields")
+}
+
+model Admission {
+  id             String   @id @default(uuid())
+  branchId       String   @map("branch_id")
+  studentName    String?  @map("student_name")
+  dob            String?
+  parentName     String?  @map("parent_name")
+  parentContact  String?  @map("parent_contact")
+  parentEmail    String?  @map("parent_email")
+  status         String   @default("Pending Approval")
+  rollNo         String?  @map("roll_no")
+  house          String?
+  paymentStatus  String   @default("Pending") @map("payment_status")
+  documentsUrl   String?  @map("documents_url")
+  remarks        String?
+  loginId        String?  @map("login_id")
+  password       String?
+  dynamicData    String?  @map("dynamic_data")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@map("admissions")
+}
+
+model AttendanceRecord {
+  id       String @id @default(uuid())
+  branchId String @map("branch_id")
+  studentId String @map("student_id")
+  classId  String @map("class_id")
+  date     String
+  status   String
+  markedBy String? @map("marked_by")
+  notified Int    @default(0)
+
+  branch  Branch  @relation(fields: [branchId], references: [id])
+  student Student @relation(fields: [studentId], references: [id])
+  class   Class   @relation(fields: [classId], references: [id])
+
+  @@unique([studentId, date])
+  @@map("attendance")
+}
+
+model Subject {
+  id       String @id @default(uuid())
+  branchId String @map("branch_id")
+  name     String
+  code     String
+  level    String
+  groupId  Int    @default(1) @map("group_id")
+
+  branch    Branch     @relation(fields: [branchId], references: [id])
+  examMarks ExamMark[]
+  syllabus  Syllabus[]
+  assignments Assignment[]
+
+  @@unique([branchId, code])
+  @@map("subjects")
+}
+
+model Exam {
+  id       String @id @default(uuid())
+  branchId String @map("branch_id")
+  name     String
+  date     String
+  classId  String? @map("class_id")
+
+  branch    Branch        @relation(fields: [branchId], references: [id])
+  class     Class?        @relation(fields: [classId], references: [id])
+  examMarks ExamMark[]
+  schedules ExamSchedule[]
+
+  @@map("exams")
+}
+
+model ExamMark {
+  id        String @id @default(uuid())
+  branchId  String @map("branch_id")
+  examId    String @map("exam_id")
+  studentId String @map("student_id")
+  subjectId String @map("subject_id")
+  score     Float
+  maxScore  Float  @default(100) @map("max_score")
+
+  branch  Branch  @relation(fields: [branchId], references: [id])
+  exam    Exam    @relation(fields: [examId], references: [id])
+  student Student @relation(fields: [studentId], references: [id])
+  subject Subject @relation(fields: [subjectId], references: [id])
+
+  @@unique([examId, studentId, subjectId])
+  @@map("exam_marks")
+}
+
+model TimetableSlot {
+  id           String @id @default(uuid())
+  branchId     String @map("branch_id")
+  classId      String @map("class_id")
+  dayOfWeek    String @map("day_of_week")
+  periodNumber Int    @map("period_number")
+  subject      String
+  teacherId    String @map("teacher_id")
+  roomId       String? @map("room_id")
+
+  branch   Branch       @relation(fields: [branchId], references: [id])
+  class    Class        @relation(fields: [classId], references: [id])
+  teacher  Staff        @relation(fields: [teacherId], references: [id])
+  room     AcademicRoom? @relation(fields: [roomId], references: [id])
+
+  @@unique([classId, dayOfWeek, periodNumber])
+  @@map("timetable")
+}
+
+model Substitution {
+  id                  String  @id @default(uuid())
+  branchId            String  @map("branch_id")
+  date                String
+  classId             String  @map("class_id")
+  periodNumber        Int     @map("period_number")
+  originalTeacherId   String? @map("original_teacher_id")
+  substituteTeacherId String  @map("substitute_teacher_id")
+  roomId              String? @map("room_id")
+  reason              String?
+  createdBy           String? @map("created_by")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  branch     Branch @relation(fields: [branchId], references: [id])
+  class      Class  @relation(fields: [classId], references: [id])
+  original   Staff? @relation("OriginalTeacher", fields: [originalTeacherId], references: [id])
+  substitute Staff  @relation("SubstituteTeacher", fields: [substituteTeacherId], references: [id])
+  room       AcademicRoom? @relation(fields: [roomId], references: [id])
+
+  @@unique([date, classId, periodNumber])
+  @@map("substitutions")
+}
+
+model StaffLeave {
+  id         String  @id @default(uuid())
+  branchId   String  @map("branch_id")
+  staffId    String  @map("staff_id")
+  leaveType  String  @map("leave_type")
+  startDate  String  @map("start_date")
+  endDate    String  @map("end_date")
+  reason     String?
+  status     String  @default("Pending")
+  approvedBy String? @map("approved_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  branch     Branch @relation(fields: [branchId], references: [id])
+  staff      Staff  @relation(fields: [staffId], references: [id])
+  approver   Staff? @relation("ApprovedLeaves", fields: [approvedBy], references: [id])
+
+  @@map("staff_leaves")
+}
+
+model Syllabus {
+  id          String   @id @default(uuid())
+  branchId    String   @map("branch_id")
+  classId     String   @map("class_id")
+  subjectId   String   @map("subject_id")
+  title       String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  branch     Branch       @relation(fields: [branchId], references: [id])
+  class      Class        @relation(fields: [classId], references: [id])
+  subject    Subject      @relation(fields: [subjectId], references: [id])
+  lessonPlans LessonPlan[]
+
+  @@map("syllabus")
+}
+
+model LessonPlan {
+  id         String   @id @default(uuid())
+  branchId   String   @map("branch_id")
+  syllabusId String   @map("syllabus_id")
+  teacherId  String   @map("teacher_id")
+  topic      String
+  date       String
+  status     String   @default("Planned")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  branch   Branch   @relation(fields: [branchId], references: [id])
+  syllabus Syllabus @relation(fields: [syllabusId], references: [id])
+  teacher  Staff    @relation(fields: [teacherId], references: [id])
+
+  @@map("lesson_plans")
+}
+
+model Assignment {
+  id          String   @id @default(uuid())
+  branchId    String   @map("branch_id")
+  classId     String   @map("class_id")
+  subjectId   String   @map("subject_id")
+  teacherId   String   @map("teacher_id")
+  title       String
+  description String?
+  dueDate     String   @map("due_date")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  branch  Branch  @relation(fields: [branchId], references: [id])
+  class   Class   @relation(fields: [classId], references: [id])
+  subject Subject @relation(fields: [subjectId], references: [id])
+  teacher Staff   @relation(fields: [teacherId], references: [id])
+
+  @@map("assignments")
+}
+
+model Hostel {
+  id        String  @id @default(uuid())
+  branchId  String  @map("branch_id")
+  name      String
+  capacity  Int
+  wardenId  String? @map("warden_id")
+
+  branch Branch @relation(fields: [branchId], references: [id])
+  warden Staff? @relation(fields: [wardenId], references: [id])
+  rooms  Room[]
+
+  @@map("hostels")
+}
+
+model Room {
+  id         String @id @default(uuid())
+  hostelId   String @map("hostel_id")
+  roomNumber String @map("room_number")
+  capacity   Int
+
+  hostel      Hostel             @relation(fields: [hostelId], references: [id])
+  allocations HostelAllocation[]
+
+  @@map("rooms")
+}
+
+model HostelAllocation {
+  id          String   @id @default(uuid())
+  studentId   String   @unique @map("student_id")
+  roomId      String   @map("room_id")
+  allocatedAt DateTime @default(now()) @map("allocated_at")
+
+  student Student @relation("StudentAllocation", fields: [studentId], references: [id])
+  room    Room    @relation(fields: [roomId], references: [id])
+
+  @@map("hostel_allocations")
+}
+
+model GatePass {
+  id                  String  @id @default(uuid())
+  branchId            String  @map("branch_id")
+  studentId           String  @map("student_id")
+  type                String
+  reason              String
+  outTime             String  @map("out_time")
+  expectedInTime      String? @map("expected_in_time")
+  actualInTime        String? @map("actual_in_time")
+  status              String  @default("Pending")
+  approvedByWarden    String? @map("approved_by_warden")
+  approvedByPrincipal String? @map("approved_by_principal")
+  parentOtp           String? @map("parent_otp")
+  otpVerified         Boolean @default(false) @map("otp_verified")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  branch  Branch  @relation(fields: [branchId], references: [id])
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@map("gate_passes")
+}
+
+model Incident {
+  id           String   @id @default(uuid())
+  branchId     String   @map("branch_id")
+  studentId    String   @map("student_id")
+  reportedBy   String   @map("reported_by")
+  incidentDate String   @map("incident_date")
+  description  String
+  actionTaken  String?  @map("action_taken")
+  demerits     Int      @default(0)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  branch     Branch  @relation(fields: [branchId], references: [id])
+  student    Student @relation(fields: [studentId], references: [id])
+  reporter   Staff   @relation("ReportedIncidents", fields: [reportedBy], references: [id])
+
+  @@map("incidents")
+}
+
+model FeeStructure {
+  id       String @id @default(uuid())
+  branchId String @map("branch_id")
+  classId  String @map("class_id")
+  feeType  String @map("fee_type")
+  amount   Float
+
+  branch Branch @relation(fields: [branchId], references: [id])
+  class  Class  @relation(fields: [classId], references: [id])
+
+  @@map("fee_structures")
+}
+
+model FeeInvoice {
+  id          String @id @default(uuid())
+  branchId    String @map("branch_id")
+  studentId   String @map("student_id")
+  term        String
+  totalAmount Float  @map("total_amount")
+  dueDate     String @map("due_date")
+  status      String @default("Unpaid")
+
+  branch   Branch           @relation(fields: [branchId], references: [id])
+  student  Student          @relation(fields: [studentId], references: [id])
+  payments OfflinePayment[]
+
+  @@map("fee_invoices")
+}
+
+model OfflinePayment {
+  id          String   @id @default(uuid())
+  branchId    String   @map("branch_id")
+  invoiceId   String   @map("invoice_id")
+  amountPaid  Float    @map("amount_paid")
+  paymentMode String   @map("payment_mode")
+  referenceNo String?  @map("reference_no")
+  paymentDate String   @map("payment_date")
+  collectedBy String?  @map("collected_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  branch     Branch     @relation(fields: [branchId], references: [id])
+  invoice    FeeInvoice @relation(fields: [invoiceId], references: [id])
+  collector  Staff?     @relation(fields: [collectedBy], references: [id])
+
+  @@map("offline_payments")
+}
+
+model SalaryStructure {
+  id           String @id @default(uuid())
+  staffId      String @unique @map("staff_id")
+  basicSalary  Float  @map("basic_salary")
+  hra          Float  @default(0)
+  da           Float  @default(0)
+  tdsPercent   Float  @default(0) @map("tds_percent")
+  epfPercent   Float  @default(12) @map("epf_percent")
+
+  staff Staff @relation(fields: [staffId], references: [id])
+
+  @@map("salary_structures")
+}
+
+model Payslip {
+  id              String   @id @default(uuid())
+  branchId        String   @map("branch_id")
+  staffId         String   @map("staff_id")
+  monthYear       String   @map("month_year")
+  basicSalary     Float    @map("basic_salary")
+  hra             Float
+  da              Float
+  grossSalary     Float    @map("gross_salary")
+  tdsDeduction    Float    @map("tds_deduction")
+  epfDeduction    Float    @map("epf_deduction")
+  otherDeductions Float    @default(0) @map("other_deductions")
+  netSalary       Float    @map("net_salary")
+  status          String   @default("Draft")
+  generatedAt     DateTime @default(now()) @map("generated_at")
+
+  branch         Branch          @relation(fields: [branchId], references: [id])
+  staff          Staff           @relation(fields: [staffId], references: [id])
+
+  @@unique([staffId, monthYear])
+  @@map("payslips")
+}
+
+model AcademicRoom {
+  id       String @id @default(uuid())
+  branchId String @map("branch_id")
+  name     String
+  type     String
+  capacity Int    @default(40)
+
+  branch       Branch          @relation(fields: [branchId], references: [id])
+  timetable    TimetableSlot[]
+  substitutions Substitution[]
+  examSchedules ExamSchedule[]
+
+  @@map("academic_rooms")
+}
+
+model PeriodConfig {
+  id           String  @id @default(uuid())
+  branchId     String  @map("branch_id")
+  periodNumber Int     @map("period_number")
+  startTime    String  @map("start_time")
+  endTime      String  @map("end_time")
+  isBreak      Boolean @default(false) @map("is_break")
+  breakName    String? @map("break_name")
+
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@unique([branchId, periodNumber])
+  @@map("period_configs")
+}
+
+model ExamSchedule {
+  id            String  @id @default(uuid())
+  branchId      String  @map("branch_id")
+  examId        String  @map("exam_id")
+  date          String
+  periodNumber  Int     @map("period_number")
+  roomId        String? @map("room_id")
+  invigilatorId String? @map("invigilator_id")
+  subject       String
+
+  branch      Branch        @relation(fields: [branchId], references: [id])
+  exam        Exam          @relation(fields: [examId], references: [id])
+  room        AcademicRoom? @relation(fields: [roomId], references: [id])
+  invigilator Staff?        @relation(fields: [invigilatorId], references: [id])
+
+  @@map("exam_schedules")
+}
