@@ -1,0 +1,167 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" width="1200" height="420" role="img" aria-label="Genesis Lumia ERP — Sainik School">
+  <title>Genesis Lumia ERP — Sainik School</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#081428"/>
+      <stop offset="45%"  stop-color="#0d2040"/>
+      <stop offset="100%" stop-color="#122e57"/>
+    </linearGradient>
+
+    <!-- Aurora blobs -->
+    <radialGradient id="orbA" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#2f66b3" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#2f66b3" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="orbB" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#f9a03f" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#f9a03f" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="orbC" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#0d7d76" stop-opacity="0.42"/>
+      <stop offset="100%" stop-color="#0d7d76" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="titleGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"   stop-color="#ffffff"/>
+      <stop offset="45%"  stop-color="#d9e7f6"/>
+      <stop offset="100%" stop-color="#ffbf6b"/>
+    </linearGradient>
+
+    <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"   stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="45%"  stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="55%"  stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+
+    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"   stop-color="#2f66b3" stop-opacity="0"/>
+      <stop offset="50%"  stop-color="#f9a03f" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#2f66b3" stop-opacity="0"/>
+    </linearGradient>
+
+    <linearGradient id="flowLine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"   stop-color="#2f66b3" stop-opacity="0"/>
+      <stop offset="50%"  stop-color="#86addc" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#2f66b3" stop-opacity="0"/>
+    </linearGradient>
+
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#5387ca" stroke-opacity="0.10" stroke-width="1"/>
+    </pattern>
+
+    <clipPath id="titleClip">
+      <rect x="150" y="140" width="640" height="80"/>
+    </clipPath>
+
+    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="42"/>
+    </filter>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="7" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <style>
+    @keyframes drift-a { 0%,100%{transform:translate(0,0)}      33%{transform:translate(90px,-54px)} 66%{transform:translate(-46px,32px)} }
+    @keyframes drift-b { 0%,100%{transform:translate(0,0)}      40%{transform:translate(-104px,40px)} 70%{transform:translate(58px,-24px)} }
+    @keyframes drift-c { 0%,100%{transform:translate(0,0)}      45%{transform:translate(64px,52px)}  75%{transform:translate(-70px,-36px)} }
+    @keyframes sheen   { 0%{transform:translateX(-560px)} 60%,100%{transform:translateX(1300px)} }
+    @keyframes pulse   { 0%,100%{opacity:.5;transform:scale(1)} 50%{opacity:1;transform:scale(1.06)} }
+    @keyframes dash    { to{stroke-dashoffset:-220} }
+    @keyframes bob     { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)} }
+    /* Entrances animate TRANSFORM ONLY — never opacity.
+   If a renderer freezes animations (headless screenshot, OG-image generator,
+   some proxies) the content must still be fully legible. */
+
+    .orb  { filter:url(#soft); }
+    .a    { animation:drift-a 17s ease-in-out infinite; }
+    .b    { animation:drift-b 21s ease-in-out infinite; }
+    .c    { animation:drift-c 25s ease-in-out infinite; }
+    .sheen{ animation:sheen 6.5s ease-in-out infinite; }
+    .pulse{ animation:pulse 3.4s ease-in-out infinite; transform-origin:center; }
+    .dash { stroke-dasharray:6 16; animation:dash 7s linear infinite; }
+    .bob  { animation:bob 6s ease-in-out infinite; }
+    .in-1 { animation:fadeup .8s .10s both; }
+    .in-2 { animation:fadeup .8s .30s both; }
+    .in-3 { animation:fadeup .8s .50s both; }
+    .in-4 { animation:fadeup .8s .70s both; }
+    .in-5 { animation:fadeup .8s .90s both; }
+    @keyframes fadeup { from{transform:translateY(14px)} to{transform:translateY(0)} }
+    .m    { font-family:"Segoe UI",system-ui,-apple-system,Helvetica,Arial,sans-serif; }
+    .mono { font-family:"SF Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace; }
+    @media (prefers-reduced-motion: reduce) {
+      .orb,.sheen,.pulse,.dash,.bob,.in-1,.in-2,.in-3,.in-4,.in-5 { animation:none; }
+    }
+  </style>
+
+  <!-- Background -->
+  <rect width="1200" height="420" fill="url(#bg)"/>
+  <rect width="1200" height="420" fill="url(#grid)"/>
+
+  <!-- Aurora -->
+  <g class="orb a"><circle cx="250" cy="120" r="210" fill="url(#orbA)"/></g>
+  <g class="orb b"><circle cx="980" cy="330" r="190" fill="url(#orbB)"/></g>
+  <g class="orb c"><circle cx="700" cy="60"  r="200" fill="url(#orbC)"/></g>
+
+  <!-- Data-flow lines -->
+  <g opacity="0.75">
+    <path class="dash" d="M-40 372 C 260 340 420 400 640 366 S 1020 330 1240 362"
+          fill="none" stroke="url(#flowLine)" stroke-width="1.6"/>
+    <path class="dash" d="M-40 396 C 300 366 460 414 700 388 S 1060 356 1240 384"
+          fill="none" stroke="url(#flowLine)" stroke-width="1.2" style="animation-delay:-2.4s"/>
+  </g>
+
+  <!-- Crest -->
+  <g class="bob in-1">
+    <circle cx="112" cy="180" r="34" fill="#173c74" fill-opacity="0.55" stroke="#5387ca" stroke-opacity="0.7"/>
+    <circle class="pulse" cx="112" cy="180" r="34" fill="none" stroke="#f9a03f" stroke-opacity="0.55" stroke-width="1.5"/>
+    <path d="M96 178 112 169l16 9-16 9-16-9Z" fill="#f9a03f"/>
+    <path d="M102 182v5.5c0 2.4 4.5 4.4 10 4.4s10-2 10-4.4V182" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-opacity="0.92"/>
+    <path d="M125 179v10" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-opacity="0.92"/>
+  </g>
+
+  <!-- Title with sheen sweep -->
+  <g clip-path="url(#titleClip)">
+    <text class="m in-2" x="176" y="196" font-size="52" font-weight="800" letter-spacing="-1.5"
+          fill="url(#titleGrad)">Genesis Lumia ERP</text>
+    <rect class="sheen" x="150" y="140" width="200" height="80" fill="url(#sheen)" transform="skewX(-18)"/>
+  </g>
+
+  <text class="m in-3" x="178" y="238" font-size="16" font-weight="600" letter-spacing="5"
+        fill="#86addc">SAINIK SCHOOL · ERP</text>
+
+  <rect class="in-3" x="178" y="262" width="430" height="1.5" fill="url(#rule)"/>
+
+  <text class="m in-4" x="178" y="298" font-size="15.5" fill="#b5cfeb" fill-opacity="0.92">
+    Next.js 15 · Tailwind v4 · NestJS 11 · Prisma · SQLite
+  </text>
+  <text class="mono in-5" x="178" y="326" font-size="13" fill="#86addc" fill-opacity="0.85">
+    13 modules · 105 tests · 38 models · 59 indexes
+  </text>
+
+  <!-- Stat chips (right column, clear of the title block) -->
+  <g class="m in-5" font-size="12.5" font-weight="700">
+    <g>
+      <rect x="700" y="160" width="128" height="42" rx="12" fill="#0d2040" fill-opacity="0.78" stroke="#2f66b3" stroke-opacity="0.7"/>
+      <text x="764" y="186" text-anchor="middle" fill="#eef4fb">13 modules</text>
+    </g>
+    <g>
+      <rect x="840" y="160" width="128" height="42" rx="12" fill="#0d2040" fill-opacity="0.78" stroke="#2f66b3" stroke-opacity="0.7"/>
+      <text x="904" y="186" text-anchor="middle" fill="#eef4fb">84 e2e tests</text>
+    </g>
+    <g>
+      <rect x="700" y="212" width="128" height="42" rx="12" fill="#0d2040" fill-opacity="0.78" stroke="#f9a03f" stroke-opacity="0.6"/>
+      <text x="764" y="238" text-anchor="middle" fill="#ffd9a0">21 unit tests</text>
+    </g>
+    <g>
+      <rect x="840" y="212" width="128" height="42" rx="12" fill="#0d2040" fill-opacity="0.78" stroke="#0d7d76" stroke-opacity="0.85"/>
+      <text x="904" y="238" text-anchor="middle" fill="#b5cfeb">JWT + RBAC</text>
+    </g>
+  </g>
+
+  <!-- Footer rule -->
+  <rect x="0" y="404" width="1200" height="16" fill="#081428"/>
+  <rect x="0" y="404" width="1200" height="1.5" fill="url(#rule)" opacity="0.6"/>
+</svg>

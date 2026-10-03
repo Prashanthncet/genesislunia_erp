@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
+import {
+  AnimatedNumber, Badge, Button, Icon, PageHeader, ProgressBar, Reveal, useToast,
+} from "@/components/ui";
 
 type ReportData = {
   student: { full_name: string; admission_no: string; class_name: string | null };
@@ -30,6 +33,12 @@ export default function ExamsPage() {
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const toast = useToast();
+
+  function flash(text: string, tone: "success" | "error" | "info" = "success") {
+    setError("");
+    toast.push(text, tone);
+  }
 
   const handleSearch = async () => {
     if (!studentId) return;
@@ -39,7 +48,7 @@ export default function ExamsPage() {
     try {
       setReport(await apiFetch<ReportData>(`/api/exams/reports/${studentId}`));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Student not found");
+      flash(e instanceof Error ? e.message : "Student not found", "error");
     } finally {
       setLoading(false);
     }
@@ -55,53 +64,57 @@ export default function ExamsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold text-slate-900">Ledger &amp; Reports</h2>
-        <p className="text-sm text-slate-500">CBSE report cards generated from exam marks.</p>
-      </div>
-
-      <div className="flex gap-2 rounded-xl border border-slate-200 bg-white p-4">
-        <input
-          value={studentId}
-          onChange={(e) => setStudentId(e.target.value)}
-          placeholder="Student ID (e.g. stu_001)"
-          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+      <Reveal>
+        <PageHeader
+          icon="exams"
+          title="Ledger & Reports"
+          subtitle="CBSE report cards generated from exam marks."
         />
-        <button
-          onClick={handleSearch}
-          disabled={loading}
-          className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-        >
-          {loading ? "Searching…" : "Generate Report"}
-        </button>
-      </div>
+      </Reveal>
 
-      {error && (
-        <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
-          {error}
+      <Reveal delay={60}>
+        <div className="card flex gap-2 p-4">
+          <input
+            value={studentId}
+            onChange={(e) => setStudentId(e.target.value)}
+            placeholder="Student ID (e.g. stu_001)"
+            aria-label="Student ID"
+            className="field flex-1 font-mono"
+          />
+          <Button variant="primary" onClick={handleSearch} loading={loading}>
+            <Icon name="exams" className="h-4 w-4" /> Generate Report
+          </Button>
         </div>
-      )}
+      </Reveal>
 
       {report && (
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5">
-            <div>
-              <h3 className="text-lg font-bold">{report.student.full_name}</h3>
-              <p className="text-sm text-slate-500">
-                {report.student.admission_no} · {report.student.class_name ?? "—"}
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-3xl font-black text-blue-700">{overall}%</p>
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                Overall · Grade {grade(overall)}
-              </p>
+        <div key={report.student.admission_no} className="space-y-4" style={{ animation: "fade-up 0.5s var(--ease-out-soft) both" }}>
+          <div className="card relative overflow-hidden p-5">
+            <div className="pointer-events-none absolute -right-10 -top-12 h-40 w-40 rounded-full bg-gradient-to-br from-brand-500/20 to-transparent blur-2xl" />
+            <div className="relative flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-bold">{report.student.full_name}</h3>
+                <p className="text-sm text-slate-500">
+                  {report.student.admission_no} · {report.student.class_name ?? "—"}
+                </p>
+                <div className="mt-3 max-w-xs">
+                  <ProgressBar value={overall} tone={overall >= 60 ? "emerald" : overall >= 40 ? "amber" : "rose"} />
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-4xl font-black text-brand-700">
+                  <AnimatedNumber value={overall} suffix="%" />
+                </p>
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                  Overall · Grade {grade(overall)}
+                </p>
+              </div>
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <div className="card overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+              <thead className="table-head">
                 <tr>
                   <th className="px-4 py-3">Code</th>
                   <th className="px-4 py-3">Subject &amp; Exam</th>
@@ -114,7 +127,7 @@ export default function ExamsPage() {
                 {report.results.map((r, i) => {
                   const pct = Math.round((r.score / r.max_score) * 100);
                   return (
-                    <tr key={i} className="border-t border-slate-100">
+                    <tr key={i} className="row-hover border-t border-slate-100">
                       <td className="px-4 py-3 font-mono text-xs font-bold">{r.subject_code}</td>
                       <td className="px-4 py-3">
                         <span className="font-semibold">{r.subject_name}</span>
@@ -122,21 +135,23 @@ export default function ExamsPage() {
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-500">{r.date}</td>
                       <td className="px-4 py-3">
-                        <strong>{r.score}</strong>
-                        <span className="text-slate-400"> / {r.max_score}</span>
+                        <span className="inline-flex items-center gap-2">
+                          <strong className="tnum">{r.score}</strong>
+                          <span className="text-slate-400 tnum">/ {r.max_score}</span>
+                          <span className="hidden w-16 sm:block">
+                            <ProgressBar value={pct} tone={pct >= 60 ? "emerald" : pct >= 40 ? "amber" : "rose"} />
+                          </span>
+                        </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-xs font-bold ${
-                            pct >= 60 ? "bg-emerald-50 text-emerald-700" : pct >= 40 ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"
-                          }`}
-                        >
-                          {grade(pct)}
-                        </span>
+                        <Badge tone={pct >= 60 ? "emerald" : pct >= 40 ? "amber" : "rose"}>{grade(pct)}</Badge>
                       </td>
                     </tr>
                   );
                 })}
+              {report.results.length === 0 && (
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400">No marks recorded yet.</td></tr>
+                )}
               </tbody>
             </table>
           </div>

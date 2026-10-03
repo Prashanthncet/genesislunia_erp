@@ -3,7 +3,10 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Genesis ERP — Sainik School",
-  description: "Education ERP for Sainik School (Next.js + NestJS)",
+  description: "School ERP for admissions, attendance, fees and academics.",
+  applicationName: "Genesis Lumia ERP",
+  icons: { icon: "/icon.svg" },
+  formatDetection: { telephone: false },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -1,0 +1,682 @@
+                                                                                                                                                    School ERP -- Full Delivery Plan
+
+School ERP System
+
+Technical Documentation & Team Delivery Plan -- All 14 Modules
+
+Scope: Full product, phased delivery · Team size: 2 engineers
+Frontend: React (TypeScript) · Backend: NestJS (TypeScript) · DB: PostgreSQL (multi-tenant)
+
+                                                                                          Page 1
+                                                                                                                                                    School ERP -- Full Delivery Plan
+
+Table of Contents
+
+Table of Contents .......................................................................................................................................................................2
+1. Objective of This Document..................................................................................................................................................3
+2. Framework Decision & Rationale ........................................................................................................................................3
+
+   2.1 Frontend -- React (fixed)................................................................................................................................................3
+   2.2 Backend -- NestJS (recommended) ...............................................................................................................................3
+   2.3 Database -- PostgreSQL.................................................................................................................................................4
+   2.4 Supporting Services .........................................................................................................................................................4
+   2.5 Multi-Tenancy -- One Codebase, Multiple Schools .....................................................................................................5
+   2.6 Hosting & the AWS Migration Path ..............................................................................................................................5
+3. Full Product Scope -- All 14 Modules .................................................................................................................................6
+4. Team Structure ......................................................................................................................................................................7
+5. Phase-by-Phase Deliverables ................................................................................................................................................7
+   Phase 0 -- Foundations (Week 1) .........................................................................................................................................8
+   Phase 1 -- Admissions Core Workflow (Weeks 2­5)..........................................................................................................8
+   Phase 2 -- SIS, Communication & Fee Closure (Weeks 6­7)............................................................................................9
+   Interim Milestone -- Admissions Checkpoint (Week 8) ....................................................................................................9
+   Phase 3 -- Attendance & Timetable with Substitution (Weeks 9­11) ..............................................................................9
+   Phase 4 -- Leave / Gate Pass (Weeks 12­13).....................................................................................................................10
+   Phase 5 -- Discipline & Safeguarding (Weeks 14­15)......................................................................................................10
+   Phase 6 -- Academics (Weeks 16­18) ................................................................................................................................11
+   Phase 7 -- Reports & Dashboards (Weeks 19­20) ...........................................................................................................11
+   Phase 8 -- Hostel Management (Weeks 21­22) ................................................................................................................11
+   Phase 9 -- Staff Management & Payroll (Weeks 23­25) .................................................................................................11
+   Phase 10 -- CBT: Computer-Based Testing (Weeks 26­27)............................................................................................12
+   Phase 11 -- Final QA, Integration & Deployment (Week 28) .........................................................................................12
+6. Full Timeline Summary.......................................................................................................................................................12
+7. Appendix -- Shared Status Enum (Reference for Both Engineers)................................................................................13
+
+                                                                                          Page 2
+                                                                                                                                                    School ERP -- Full Delivery Plan
+
+1. Objective of This Document
+
+This document defines the technology stack for the School ERP system, explains why each choice was made over
+comparable alternatives, sequences all 14 modules into delivery phases, and assigns concrete, phase-by-phase
+deliverables to each of the two engineers on the team. It is meant to be the single reference both engineers and the
+reviewer (you) use to track who owns what, and when.
+
+  Team assumption
+  Two engineers: one owns the entire frontend (React application, all screens, all roles), one owns the entire
+  backend (API, database, integrations, jobs, deployment). Adjust names/assignments below as needed --
+  the task breakdown stays the same regardless of who is assigned to which side.
+
+2. Framework Decision & Rationale
+
+The workflow you provided (Sections 1­9 of the Admissions flow) is not a simple form-and-database app. It has
+6+ distinct roles, ~9 sequential approval states with branching (Valid/Invalid, Approve/Reject), scheduled
+reminders, external payment and messaging integrations, and document handling. The stack below is chosen
+specifically to handle that complexity cleanly, not just to get an MVP out fast.
+
+2.1 Frontend -- React (fixed)
+
+React was specified as the required framework. Within React, the following supporting choices are made to fit
+this specific problem:
+
+ · Vite + TypeScript -- faster dev/build cycle than CRA (which is deprecated); TypeScript is not optional here
+    because the app has ~10 status values and 6+ roles -- a typo in a status string becomes a silent workflow bug,
+    not a compile error, unless it's typed.
+
+ · React Hook Form + Zod -- the Admission Form's fields are dynamic (AO can add/delete mandatory fields
+    per academic year), so the form and its validation schema both need to be data-driven rather than hardcoded.
+
+ · TanStack Query -- every dashboard in this system (AO, Accounts, OS, VP, Principal) is really the same
+    pattern: fetch a filtered list, mutate a status, refetch. TanStack Query handles caching, refetching, and
+    loading/error states for that pattern without hand-rolled state management.
+
+ · shadcn/ui + Tailwind CSS -- pre-built accessible components (tables, dialogs, forms) that are fully
+    customizable, so 6 role-based dashboards can be built quickly without a heavy design system.
+
+ · React Router -- role-based route protection (a Parent should never reach the Principal's approval queue, etc.).
+
+ · Zustand (lightweight) -- only for auth/session/role context; avoids the boilerplate of Redux for a 2-person
+    team.
+
+2.2 Backend -- NestJS (recommended)
+
+This is the one open decision on the stack, so it's laid out as a comparison rather than an assertion.
+
+Criterion           NestJS (Node + TypeScript)             Django + DRF (Python)
+Language alignment
+                    Same language as React frontend --     Different language from frontend -- no
+                    types/interfaces (e.g.                 type sharing; contract drift between API
+                    AdmissionApplication, ApprovalStatus)  and UI has to be caught manually or via
+                    can be shared between frontend and     a separate schema (OpenAPI/Swagger).
+                    backend, cutting a whole class of
+                    contract-mismatch bugs.
+
+                    Page 3
+                                                                                   School ERP -- Full Delivery Plan
+
+Module structure           Built-in module system maps ~1:1 to      Django apps serve the same purpose
+                           your 14 planned modules (Admissions,     and are equally modular -- this is
+                           SIS, Fees, Hostel...) -- each becomes a  roughly a tie.
+                           self-contained Nest module.
+
+Role-based access control  Needs to be built with guards/decorators Django's permissions framework is built
+
+                           (CASL library recommended) -- more in -- less setup work for RBAC
+
+                           setup work up front.                     specifically.
+
+Approval / status          No built-in state machine -- use the     django-fsm is a close match for exactly
+workflow                   xstate library or a hand-rolled status-  this approve/reject-with-remarks chain
+                           transition service.                      pattern.
+
+Background jobs            BullMQ (Redis-backed) -- well-suited     Celery + Redis -- mature, equally
+(reminders, PDF gen)       to scheduled reminders (Day 7/13) and    capable, more moving parts to
+                           async PDF generation.                    configure initially.
+
+1-backend-person velocity  Best if the backend engineer is already  Best if the backend engineer is stronger
+                           comfortable in TypeScript -- no          in Python -- Django's built-ins (admin
+                           context-switch from the frontend's       panel, ORM, auth) reduce boilerplate
+                           language.                                for a solo backend owner.
+
+Recommendation: NestJS, on the strength of shared TypeScript types across a 2-person team -- that single
+benefit outweighs Django's built-in RBAC/FSM advantages, because those are one-time setup costs, while a
+frontend/backend contract mismatch is a recurring cost throughout the project. If your backend engineer is
+significantly stronger in Python than TypeScript, Django is a legitimate alternative and the rest of this document's
+module boundaries still apply unchanged.
+
+2.3 Database -- PostgreSQL
+
+The data model is fundamentally relational: Student  Parent  Documents  Fee Payment  Roll Number 
+House, all linked by foreign keys, with status fields that gate transitions between tables (e.g. a roll number can't be
+generated until fee status = Approved). This is a textbook relational-integrity use case, not a document-store use
+case -- PostgreSQL over MongoDB/Firebase.
+
+2.4 Supporting Services
+
+Concern                    Choice & why
+File storage (now)
+File storage (future)      Cloudflare R2 -- Aadhaar, birth certificates, marksheets, photos. R2 speaks
+Caching                    the same S3 API as AWS, has no egress fees (important once multiple schools
+                           are pulling documents regularly), and is materially cheaper at this stage. Never
+SMS / Email / WhatsApp     store documents in the DB or on local disk.
+
+                           AWS S3 -- because R2 is accessed through the S3-compatible SDK from day
+                           one, moving to S3 later is a config/endpoint change, not a rewrite. See Section
+                           2.6 for the full AWS migration note.
+
+                           Redis -- two jobs: (1) application-level cache for read-heavy, slow-changing
+                           data (published field templates, house-capacity counts, dashboard aggregate
+                           counts) to keep multi-tenant dashboards fast as school count grows; (2)
+                           session/rate-limit store for the parent portal login. This is the same Redis
+                           instance BullMQ already needs -- one piece of infra, two uses.
+
+                           MSG91 or Twilio (SMS/WhatsApp), SES or SendGrid (email) -- abstracted
+                           behind one internal NotificationService so the provider can be swapped
+                           without touching business logic.
+
+                                                 Page 4
+Payments                                                                                                             School ERP -- Full Delivery Plan
+Background jobs
+PDF generation          Razorpay or PayU -- standard for Indian school ERPs, webhook-based so
+                        'payment received' updates status automatically rather than relying on the
+                        parent's browser staying open.
+
+                        BullMQ + Redis -- Day 7/13 reminders, async PDF generation, notification
+                        retries. These must not block the request/response cycle.
+
+                        pdf-lib or Puppeteer -- for the auto-generated Admission Letter in Section 8
+                        of the workflow.
+
+2.5 Multi-Tenancy -- One Codebase, Multiple Schools
+
+A requirement surfaced in review: the system needs to serve multiple schools from one deployment, so a code
+change or bug fix applies to every school at once rather than being patched school-by-school. This is a real
+architectural decision, not a config toggle, so it's made explicit here.
+
+Criterion               Shared schema + tenant_id                  Schema-per-tenant / DB-per-tenant
+                        (recommended)
+
+How it works            One database, every table carries a        Each school gets its own schema or its
+                        school_id column. Every query is           own database. Strongest possible data
+                        automatically scoped to the logged-in      isolation between schools.
+                        user's school via a NestJS
+                        interceptor/middleware -- application
+                        code never has to remember to filter
+                        manually.
+
+Fits a 2-person team?   Yes -- one schema to migrate, one          No -- every schema migration has to
+                        deployment to monitor, one place a bug     run per-tenant; with one backend
+                        fix lands. Directly matches the 'change    engineer this multiplies operational
+                        once, applies to all schools'              work for no MVP-stage benefit.
+                        requirement.
+
+Scales to more schools  Yes, comfortably into the hundreds of      Scales in isolation terms, but
+later?                  schools on Postgres with proper            operational cost grows linearly with
+                        indexing on school_id. Can be split out    school count from day one -- the wrong
+                        later if one very large school needs true  trade for an MVP with 2 engineers.
+                        isolation.
+
+Recommendation: shared schema with a school_id foreign key on every tenant-scoped table (Student,
+Application, Payment, Document, ApprovalStep, etc.), enforced centrally by a request-scoped NestJS
+interceptor rather than repeated in every query. This is what makes "we changed the code and it changed
+for everyone" true by construction -- there is only one copy of the code and one schema. School
+onboarding becomes a matter of inserting a School row and its admin user, not a deployment.
+
+2.6 Hosting & the AWS Migration Path
+
+AWS was flagged as the target cloud in future, not necessarily day one. For a 2-person team pre-revenue, running
+the MVP on AWS directly (ECS/RDS/ElastiCache) adds setup and cost overhead that isn't justified yet. The
+approach below gets you to AWS without a rewrite when the time comes:
+
+ · MVP hosting: Railway or Render for the NestJS API (managed Postgres + Redis add-ons included), Vercel or
+    Netlify for the React frontend. Both are one engineer's worth of DevOps.
+
+ · Object storage: Cloudflare R2 from day one, via the S3 SDK -- this is the one piece deliberately chosen to be
+    AWS-compatible in advance.
+
+                        Page 5
+                                                                                                                                                  School ERP -- Full Delivery Plan
+
+· Migration trigger: once there's real multi-school traffic and a case for AWS's ecosystem (RDS read replicas,
+   CloudFront, ECS auto-scaling), move the Postgres instance to RDS, Redis to ElastiCache, the API containers
+   to ECS/Fargate, and repoint the S3 SDK from R2's endpoint to AWS S3's -- no application code changes
+   required for storage.
+
+3. Full Product Scope -- All 14 Modules
+
+All 14 modules from your list are covered below, phased by dependency rather than by list order. The logic:
+Admissions produces the Student ID that almost everything else keys off, so it goes first. SIS, Parent
+Communication, and Fees are thin-but-foundational -- other modules call into them. Everything after that is
+ordered by how tightly modules are coupled to each other (e.g. Attendance and Timetable share the same
+calendar/period data model, so they're built together).
+
+Phase          Module(s)                 Why this order
+0
+1              Foundations               Multi-tenant schema,
+2                                        auth/RBAC, routing
+                                         skeleton -- every module
+3                                        below depends on this
+4                                        existing first.
+5
+               Admissions                Produces the Student ID
+                                         and Student Master record
+                                         that Attendance,
+                                         Academics, Hostel, Fees,
+                                         Discipline, etc. all
+                                         reference.
+
+               Student                   Thin, foundational services
+               Information               other modules call into
+               System, Parent            (e.g. Attendance notifies
+               Communication,            parents through the same
+               Fees &                    Parent Communication
+               Payments                  service Admissions already
+                                         built).
+
+               Attendance,               Share the same
+               Timetable with            class/section/period data
+               Substitution              model -- building them
+                                         together avoids modeling
+                                         the same calendar twice.
+
+               Leave / Gate              Reuses the approval state-
+               Pass                      machine pattern from
+                                         Admissions; also needs
+                                         Attendance/Timetable
+                                         context (a leave day affects
+                                         attendance).
+
+               Discipline &              Needs Student Master and
+               Safeguarding              staff roles already in place;
+                                         handled after core
+                                         academic-operations
+                                         modules due to its stricter
+                                         access-control
+                                         requirements.
+
+       Page 6
+                                                        School ERP -- Full Delivery Plan
+
+6                                         Academics     Gradebook/report cards
+
+                                                        need Attendance and
+
+                                                        Timetable data (periods,
+
+                                                        subjects) already modeled.
+
+7                                         Reports &     Cross-cutting by definition
+
+                                          Dashboards    -- needs Attendance, Fees,
+
+                                                        and Academics data to
+
+                                                        exist before there's
+
+                                                        anything to report on.
+
+8                                         Hostel        Independent of the
+
+                                          Management    academic modules;
+
+                                                        sequenced here mainly by
+
+                                                        business priority, can be
+
+                                                        moved earlier if hostel
+
+                                                        onboarding is urgent.
+
+9                                         Staff         Payroll depends on Staff
+
+                                          Management, Management and on Leave
+
+                                          Payroll       balances from Phase 4.
+
+10                                        CBT           Largely standalone; placed
+
+                                          (Computer-    last as it's the least coupled
+
+                                          Based Testing) to the rest of the system
+
+                                                        and lowest urgency of the
+
+                                                        remaining modules.
+
+11                                        Final QA,     Full regression across
+
+                                          Integration,  every role and module,
+
+                                          Deployment    load-tested under multi-
+
+                                                        school conditions, then
+
+                                                        production deploy.
+
+4. Team Structure
+
+Person                 Ownership
+
+Engineer A -- Frontend Entire React application: all role-based screens (AO, OS, Parent, Admission
+                                   Incharge, Accounts, VP, Principal), the dynamic admission form, all dashboards,
+                                   client-side validation, and API integration against contracts defined in Phase 0.
+
+Engineer B -- Backend  Entire backend: API design, database schema, authentication/RBAC, the approval
+                       state machine, all third-party integrations (SMS/Email/WhatsApp, payment
+                       gateway, file storage), background jobs (reminders, PDF generation), and
+                       deployment.
+
+5. Phase-by-Phase Deliverables
+
+Each phase lists what Engineer A and Engineer B deliver in parallel, plus the point where they must sync (API
+contract, shared enum, etc.). Timeline is expressed in relative weeks -- adjust to your actual sprint calendar.
+
+                                  Page 7
+                                                                                        School ERP -- Full Delivery Plan
+
+Phase 0 -- Foundations (Week 1)
+
+                  Engineer A -- Frontend                     Engineer B -- Backend
+
+Deliverables      Vite + React + TS project scaffolded       NestJS project scaffolded, module
+Joint sync point                                             folders for
+                  Routing skeleton for all 6 roles + Parent  Admissions/SIS/Fees/Notifications
+                  portal
+                                                             PostgreSQL schema v1: School (tenant),
+                  shadcn/ui + Tailwind theme set up          Student, Parent, Application, Document,
+                                                             ApprovalStep, Payment -- every tenant-
+                  Auth screens (login for Parent, staff      scoped table carries school_id
+                  roles) -- UI only, mocked responses
+                                                             Tenant-scoping interceptor so all queries
+                                                             auto-filter by the logged-in user's
+                                                             school_id (see Section 2.5)
+
+                                                             Auth module: JWT-based login for both
+                                                             staff roles and per-applicant parent
+                                                             credentials, JWT includes school_id
+
+                                                             R2 bucket + Redis instance provisioned;
+                                                             NotificationService and cache wrapper
+                                                             stubbed
+
+                                                             OpenAPI/Swagger doc published so
+                                                             Engineer A can build against a real
+                                                             contract
+
+                  Agree on the full status enum (Pending Approval, Published, Submitted by Parent,
+                  Document Validated, Re-submit, Payment Received, Fee Approved, Roll No
+                  Assigned, VP Approved, Admission Confirmed) and the API contract shape before
+                  either side builds against it.
+
+Phase 1 -- Admissions Core Workflow (Weeks 2­5)
+
+This is the largest phase and maps directly to Sections 1­8 of your workflow document.
+
+Week              Engineer A -- Frontend                     Engineer B -- Backend
+Week 2
+Week 3            AO screen: Mandatory Field builder         Mandatory field template CRUD +
+                  (add/delete field, save as template per    versioning by academic year
+Week 4            academic year)
+                                                             Approval endpoint (OS approve/reject
+                  Send-for-Approval action + status badge    with remarks) + status transition logic
+                  UI
+
+                  Dynamic Admission Form renderer            Unique Login ID + Password auto-
+                  (fields driven by the published template,  generation per applicant on 'Create
+                  not hardcoded)                             Admission Form'
+
+                  Document upload UI (Aadhaar, photo,        SMS/Email/WhatsApp trigger service
+                  marksheet, birth cert) with client-side    (link + credentials to parent)
+                  type/size checks
+                                                             15-day link expiry + Day 7/Day 13
+                  Save Draft / Submit actions                reminder jobs (BullMQ)
+
+                                                             Document storage to S3 with signed
+                                                             URLs
+
+                  Admission Incharge / AO dashboard:         Document validation endpoint + Re-
+                  list of Submitted applications             submit branch back to parent
+
+                  Validate Documents action (Valid /         Payment link generation on Valid 
+                  Invalid + remarks)                         integrate Razorpay/PayU
+
+                                          Page 8
+                                                                                          School ERP -- Full Delivery Plan
+
+                  Payment screen for parent (post-         Webhook handler for payment
+                  validation)                              confirmation
+
+Week 5            Accounts dashboard: Payment Received     Accounts approval endpoint, receipt
+                  list, Verify & Approve + receipt upload  number storage
+
+                  OS dashboard: Fee Approved list,         Roll number auto-generation rule:
+                  Generate Roll No, Assign House           [CLASS][YEAR][SEQ]
+
+                  VP dashboard: review queue, Approve /    House allocation logic
+                  Send Back                                (random/capacity-based)
+
+                  Principal dashboard: final approval +    VP and Principal approval endpoints
+                  digital sign UI                          with send-back branching
+
+                                                           Admission Letter PDF auto-generation
+                                                           on final approval
+
+Phase 2 -- SIS, Communication & Fee Closure (Weeks 6­7)
+
+Deliverables      Engineer A -- Frontend                   Engineer B -- Backend
+
+                  Student Master profile view (read-only)  Move confirmed applications into
+                  -- Class/Section/House/Student ID        Student Master table + generate Student
+                  Notification log/history view per        ID
+                  applicant (for AO)                       Archive all documents into a Student
+                  Confirmation screen shown to parent      DMS structure (S3 folder-per-student)
+                  post Admission Confirmed
+                                                           Notification history persisted and
+                                                           queryable
+                                                           Export hooks stubbed for TC / ID Card /
+                                                           Fee Module (data shape only, not full
+                                                           features)
+
+Interim Milestone -- Admissions Checkpoint (Week 8)
+
+Before continuing into Attendance and beyond, close out the Admissions-scoped slice as a working checkpoint.
+This is not the final QA pass (that's Phase 11) -- it's a smaller regression to confirm Phases 0­2 are solid before
+building on top of them.
+
+                  Engineer A -- Frontend                   Engineer B -- Backend
+
+Deliverables      End-to-end walkthrough of all 9          Load test the reminder job queue and
+Joint sync point  workflow steps across every role         payment webhook path
+
+                  Error/empty/loading states for every     Environment config for
+                  dashboard                                staging/production, secrets management
+
+                  Responsive check (staff likely on        Deploy: backend + Postgres + Redis;
+                  desktop, parents likely on mobile)       frontend to static hosting/CDN
+
+                                                           Basic monitoring/logging (errors, failed
+                                                           notification sends)
+
+                  Run the full admission cycle together, one application, start to finish, through every
+                  role, before calling the MVP done.
+
+Phase 3 -- Attendance & Timetable with Substitution (Weeks 9­11)
+
+Grouped together because both are built on the same class/section/period calendar model.
+
+                                          Page 9
+                                                                     School ERP -- Full Delivery Plan
+
+Attendance    Engineer A -- Frontend                                 Engineer B -- Backend
+Timetable
+              Daily attendance marking screen                        Attendance table (student, date, status,
+              (teacher, class-wise, bulk-mark)                       marked_by, school_id)
+              Per-student attendance calendar view                   Bulk-mark API + attendance %
+              Absentee report / low-attendance flag                  calculation endpoint
+              view                                                   Auto-notify parent on absence via
+                                                                     existing Parent Communication service
+              Weekly timetable grid per class and per
+              teacher                                                Timetable table (period, day, subject,
+              Substitution request/assign screen for                 teacher, class, section)
+              admin                                                  Substitution table + conflict-detection
+              Teacher-facing 'today's schedule' view                 logic (no teacher double-booked)
+                                                                     Notify substitute teacher and affected
+                                                                     class on assignment
+
+Phase 4 -- Leave / Gate Pass (Weeks 12­13)
+
+              Engineer A -- Frontend                                 Engineer B -- Backend
+
+Deliverables  Leave application form (staff and                      Leave request table + approval state
+              student/parent-initiated)                              machine (reused from the Admissions
+                                                                     approval-step service, not rebuilt)
+              Approval queue for HOD/Principal
+              (reuses the Admissions approval-                       Gate Pass table with time-stamped
+              dashboard pattern)                                     in/out logging
+
+              Gate Pass request screen + printable/QR                Auto-notify parent when a Gate Pass is
+              pass for the security desk                             issued for their child
+
+Phase 5 -- Discipline & Safeguarding (Weeks 14­15)
+
+ Access control note                               Engineer A -- Engineer B -- Backend
+ Safeguarding records are the most sensitive       Frontend
+ data in the system. This module needs stricter
+ RBAC than the rest of the app -- visibility       Incident          Incident table with row-level access
+ limited to Discipline/Safeguarding roles and      logging form,     control beyond standard school_id
+ the Principal, plus an audit log of who viewed    restricted to     scoping
+ or edited each record. Build this as an explicit  authorized roles
+ access layer, not an extension of the general                       Audit log of every read/write to a record
+ permission system.                                Case tracking
+                                                   dashboard with    Escalation workflow to Principal for
+Deliverables                                       status            serious cases
+                                                   (Open/Under
+                                                   Review/Closed)
+
+                                                   Page 10
+                                                             School ERP -- Full Delivery Plan
+
+                                    Confidential
+                                    notes UI that
+                                    visibly reflects
+                                    access
+                                    restrictions
+
+Phase 6 -- Academics (Weeks 16­18)
+
+                  Engineer A -- Frontend                     Engineer B -- Backend
+
+Deliverables      Subject/curriculum setup screen            Subject, Curriculum, and Marks tables
+                  (AO/Academic Officer)
+                                                             Grade calculation rules engine
+                  Gradebook / marks entry UI for teachers    (weighted averages, grade bands --
+                                                             configurable per school)
+                  Report card preview and generation
+                  trigger                                    Report card PDF generation, reusing the
+                                                             PDF service built for Admission Letters
+                  Syllabus progress tracking view
+
+Phase 7 -- Reports & Dashboards (Weeks 19­20)
+
+Deliverables      Engineer A -- Frontend                     Engineer B -- Backend
+
+                  Admin/Principal analytics dashboard:       Aggregation endpoints -- likely
+                  attendance trends, fee collection status,  materialized views or a scheduled
+                  academic performance, filterable by        aggregation job rather than live joins, to
+                  class/section/date range                   keep multi-tenant dashboards fast
+                  Export-to-Excel/PDF actions on every
+                  report view                                Excel/PDF export generation
+
+                                                             Cache aggregate results in Redis (ties
+                                                             back to Section 2.4) since these are
+                                                             read-heavy and don't need to be real-
+                                                             time to the second
+
+Phase 8 -- Hostel Management (Weeks 21­22)
+
+Deliverables      Engineer A -- Frontend                     Engineer B -- Backend
+
+                  Room/bed allocation screen                 Hostel, Room, and Bed tables with
+                  Hostel roll-call / attendance UI           capacity tracking
+                  Visitor log entry screen for hostel front  Allocation logic (manual + auto-assign
+                  desk                                       by availability)
+                                                             Roll-call API and visitor log table
+
+Phase 9 -- Staff Management & Payroll (Weeks 23­25)
+
+Staff Management  Engineer A -- Frontend                     Engineer B -- Backend
+Payroll
+                  Staff profile management screens           Staff table extending the base User
+                  (HR/Admin)                                 model
+                  Staff directory with role/department       Role/department schema, linked to the
+                  filters                                    RBAC system from Phase 0
+
+                  Payroll processing screen for              Salary structure + deduction rules
+                  Accounts/HR                                engine
+
+                                          Page 11
+                  Payslip view for individual staff                                           School ERP -- Full Delivery Plan
+
+                                                           Pulls Leave balances from Phase 4 for
+                                                           unpaid-leave deductions
+                                                           Payslip PDF generation
+
+Phase 10 -- CBT: Computer-Based Testing (Weeks 26­27)
+
+Deliverables      Engineer A -- Frontend                   Engineer B -- Backend
+
+                  Test creation UI for teachers (question  Question bank and Test/Exam schema
+                  bank, MCQ + subjective)                  Timed-session handling (server-
+                  Student test-taking interface -- timed,  authoritative timer, not client-trusted)
+                  auto-submit on timeout                   Auto-grading for objective questions;
+                  Results view for teachers and students   manual-grading queue for subjective
+                                                           ones
+
+Phase 11 -- Final QA, Integration & Deployment (Week 28)
+
+                  Engineer A -- Frontend                   Engineer B -- Backend
+
+Deliverables      Full regression pass across all 14       Load test under simulated multi-school
+Joint sync point  modules, every role                      concurrent traffic
+
+                  Cross-module navigation and              Backup/disaster-recovery plan for
+                  permission checks (e.g. a Parent can     Postgres
+                  never reach a Staff-only screen)
+                                                           Production deployment +
+                                                           monitoring/alerting across all modules
+
+                  Run one full school year's worth of scenarios end to end -- admission through
+                  report cards, payroll, and a CBT exam -- across two simulated schools
+                  simultaneously, to confirm tenant isolation actually holds.
+
+6. Full Timeline Summary
+
+Phase         Module(s)
+0             Foundations (multi-tenant schema, auth, infra)
+1             Admissions
+2             Student Information System, Parent Communication, Fees &
+              Payments
+3             Attendance, Timetable with Substitution
+4             Leave / Gate Pass
+5             Discipline & Safeguarding
+6             Academics
+7             Reports & Dashboards
+8             Hostel Management
+9             Staff Management, Payroll
+
+                                          Page 12
+                                                                     School ERP -- Full Delivery Plan
+
+10  CBT (Computer-Based Testing)
+
+11  Final QA, Integration & Deployment
+
+Total: ~28 weeks (roughly 6.5 months) for two engineers to cover all 14 modules at MVP-grade depth. This is a
+planning estimate, not a commitment -- recalibrate after Phases 0­1 based on actual velocity, and use the cut
+order in Section 3 if the timeline needs to compress.
+
+7. Appendix -- Shared Status Enum (Reference for Both Engineers)
+
+Status                          Set by
+Pending Approval                System, on AO 'Send for Approval'
+Published                       OS, on Approve
+Submitted by Parent             System, on Parent Submit
+Document Validated / Re-submit  Admission Incharge / AO
+Payment Received                System, via payment gateway webhook
+Fee Approved                    Accounts, on Verify & Approve
+Roll No Assigned                OS
+VP Approved                     Vice Principal
+Admission Confirmed             Principal, final digital sign
+Admission Complete              System, on Student Master write
+
+                                        Page 13
+

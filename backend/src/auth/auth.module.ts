@@ -3,13 +3,14 @@ import { JwtModule } from '@nestjs/jwt';
 import type { StringValue } from 'ms';
 import { AuthController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
+import { resolveJwtSecret } from './jwt-secret';
 
 @Module({
   imports: [
     JwtModule.registerAsync({
       global: true,
       useFactory: () => ({
-        secret: process.env.JWT_SECRET ?? 'genesis-erp-dev-secret-change-in-production',
+        secret: resolveJwtSecret(),
         signOptions: { expiresIn: (process.env.JWT_EXPIRES_IN ?? '8h') as StringValue },
       }),
     }),

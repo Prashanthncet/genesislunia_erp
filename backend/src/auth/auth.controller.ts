@@ -1,7 +1,9 @@
 import { Body, Controller, Get, HttpCode, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthGuard } from './auth.guard';
+import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcryptjs';
 
 @Controller('auth')
@@ -13,7 +15,9 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(200)
-  async login(@Body() body: { email?: string; password?: string }) {
+  // Credential stuffing defence: 10 attempts/min per IP, far below the global 300.
+  @Throttle({ auth: { limit: 10, ttl: 60_000 } })
+  async login(@Body() body: LoginDto) {
     if (!body?.email || !body?.password) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -36,6 +40,7 @@ export class AuthController {
     return { token, role: user.role, branch_id: user.branchId };
   }
 
+  // Generic message on purpose — never reveal whether the email exists.
   @Get('me')
   @UseGuards(AuthGuard)
   me(@Req() req: { user: { sub: string; role: string; branch_id: string } }) {

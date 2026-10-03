@@ -4,4 +4,7 @@ out/
 next-env.d.ts
 *.tsbuildinfo
 .env*.local
+# Belt-and-braces: never commit a real .env, only .env.example
+.env
+!.env.example
 *.log

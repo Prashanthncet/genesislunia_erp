@@ -15,6 +15,7 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
   let app: INestApplication;
   let token = '';
   let server: any;
+  const ids: Record<string, string> = {};
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -33,6 +34,32 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
     await prisma.student.deleteMany({ where: { admissionNo: 'S2026-999' } });
     await prisma.staff.deleteMany({ where: { email: 'testteacher@sainik01.edu' } });
     await prisma.substitution.deleteMany({ where: { date: '2026-09-28' } });
+
+    // Module-e2e leftovers (persistent dev.db): children first, then parents.
+    await prisma.offlinePayment.deleteMany({ where: { invoice: { term: 'E2E-Term' } } });
+    await prisma.feeInvoice.deleteMany({ where: { term: 'E2E-Term' } });
+    await prisma.cbtAttempt.deleteMany({ where: { test: { title: 'E2E CBT Test' } } });
+    await prisma.cbtTest.deleteMany({ where: { title: 'E2E CBT Test' } });
+    await prisma.cbtQuestion.deleteMany({ where: { question: { startsWith: 'E2E' } } });
+    await prisma.visitorLog.deleteMany({ where: { visitorName: 'E2E Visitor' } });
+    await prisma.hostelAllocation.deleteMany({ where: { room: { roomNumber: { in: ['E2E-101', 'E2E-102'] } } } });
+    await prisma.room.deleteMany({ where: { roomNumber: { in: ['E2E-101', 'E2E-102'] } } });
+    await prisma.hostel.deleteMany({ where: { name: 'E2E Hostel' } });
+    await prisma.incident.deleteMany({ where: { description: { startsWith: 'E2E' } } });
+    await prisma.staffLeave.deleteMany({ where: { staff: { email: 'e2e-staff@sainik01.edu' } } });
+    await prisma.payslip.deleteMany({ where: { staff: { email: 'e2e-staff@sainik01.edu' } } });
+    await prisma.salaryStructure.deleteMany({ where: { staff: { email: 'e2e-staff@sainik01.edu' } } });
+    await prisma.staff.deleteMany({ where: { email: 'e2e-staff@sainik01.edu' } });
+    await prisma.gatePass.deleteMany({ where: { type: 'E2E Check' } });
+    await prisma.studentLeave.deleteMany({ where: { reason: 'E2E' } });
+    await prisma.class.deleteMany({ where: { name: 'E2E Class' } });
+    await prisma.admissionDocument.deleteMany({ where: { admission: { parentEmail: 'docs@test.com' } } });
+    await prisma.admission.deleteMany({ where: { parentEmail: 'docs@test.com' } });
+    await prisma.admission.deleteMany({ where: { parentEmail: { in: ['rollno@test.com', 'rollno2@test.com', 'public@test.com'] } } });
+    await prisma.staffLeave.deleteMany({ where: { staff: { email: 'e2e-payroll@sainik01.edu' } } });
+    await prisma.payslip.deleteMany({ where: { staff: { email: 'e2e-payroll@sainik01.edu' } } });
+    await prisma.salaryStructure.deleteMany({ where: { staff: { email: 'e2e-payroll@sainik01.edu' } } });
+    await prisma.staff.deleteMany({ where: { email: 'e2e-payroll@sainik01.edu' } });
   });
 
   afterAll(async () => {
@@ -93,17 +120,17 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
     expect(res.body.some((c: { id: string }) => c.id === 'cls_10a')).toBe(true);
   });
 
-  it('GET /api/students → 200 list', async () => {
+  it('GET /api/students → 200 paginated list', async () => {
     const res = await get('/api/students');
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body.length).toBeGreaterThanOrEqual(4);
+    expect(Array.isArray(res.body.data)).toBe(true);
+    expect(res.body.total).toBeGreaterThanOrEqual(4);
   });
 
   it('GET /api/students?class_id → 200 filtered', async () => {
     const res = await get('/api/students?class_id=cls_10a');
     expect(res.status).toBe(200);
-    expect(res.body.every((s: { classId: string }) => s.classId === 'cls_10a')).toBe(true);
+    expect(res.body.data.every((s: { classId: string }) => s.classId === 'cls_10a')).toBe(true);
   });
 
   it('POST /api/students → 201 creates student', async () => {
@@ -514,12 +541,590 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
     expect(res.body.student_id).toBeDefined();
 
     // The student should now exist in the master table
-    const students = await get('/api/students');
-    expect(students.body.some((s: { id: string }) => s.id === res.body.student_id)).toBe(true);
+    const students = await get('/api/students?page_size=200');
+    expect(students.body.data.some((s: { id: string }) => s.id === res.body.student_id)).toBe(true);
   });
 
   it('POST /api/admissions/999/validate → 404 unknown application', async () => {
     const res = await post('/api/admissions/does-not-exist/validate', { isValid: true });
     expect(res.status).toBe(404);
+  });
+
+  // ─── CLASSES CRUD ────────────────────────────────────────────
+
+  it('POST /api/classes → 201 create; GET :id; PUT update; DELETE remove', async () => {
+    const created = await post('/api/classes', { name: 'E2E Class', section: 'A' });
+    expect(created.status).toBe(201);
+    const upd = await put(`/api/classes/${created.body.id}`, { section: 'B' });
+    expect(upd.status).toBe(200);
+    const got = await get(`/api/classes/${created.body.id}`);
+    expect(got.status).toBe(200);
+    const removed = await del(`/api/classes/${created.body.id}`);
+    expect(removed.status).toBe(200);
+  });
+
+  // ─── STUDENTS: pagination, update, status ────────────────────
+
+  it('GET /api/students?page → 200 paginated envelope', async () => {
+    const res = await get('/api/students?page=1&page_size=2');
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBeGreaterThanOrEqual(4);
+    expect(res.body.data.length).toBeLessThanOrEqual(2);
+  });
+
+  it('PUT /api/students/:id → 200 update; PUT :id/status → 200', async () => {
+    const list = await get('/api/students?class_id=cls_10b');
+    const target = list.body.data.find((s: { admissionNo: string }) => s.admissionNo === 'S2026-999');
+    expect(target).toBeDefined();
+    const upd = await put(`/api/students/${target.id}`, { mother_name: 'E2E Mother' });
+    expect(upd.status).toBe(200);
+    const inactive = await put(`/api/students/${target.id}/status`, { status: 'Inactive' });
+    expect(inactive.status).toBe(200);
+    const back = await put(`/api/students/${target.id}/status`, { status: 'Active' });
+    expect(back.status).toBe(200);
+  });
+
+  // ─── ACADEMICS ───────────────────────────────────────────────
+
+  it('academics subjects → create, update, list', async () => {
+    const created = await post('/api/academics/subjects', { name: 'E2E Subject', code: 'E2E', level: 'Secondary' });
+    expect(created.status).toBe(201);
+    ids.subjectId = created.body.id;
+
+    const upd = await put(`/api/academics/subjects/${ids.subjectId}`, { name: 'E2E Subject Renamed' });
+    expect(upd.status).toBe(200);
+
+    const list = await get('/api/academics/subjects');
+    expect(list.body.some((s: { id: string }) => s.id === ids.subjectId)).toBe(true);
+  });
+
+  it('academics syllabus → create + delete', async () => {
+    const created = await post('/api/academics/syllabus', { class_id: 'cls_10a', subject_id: ids.subjectId, title: 'E2E Unit' });
+    expect(created.status).toBe(201);
+    const removed = await del(`/api/academics/syllabus/${created.body.id}`);
+    expect(removed.status).toBe(200);
+  });
+
+  it('academics lesson plans → create, update, delete', async () => {
+    const sy = await post('/api/academics/syllabus', { class_id: 'cls_10a', subject_id: ids.subjectId, title: 'E2E Unit LP' });
+    const created = await post('/api/academics/lesson-plans', { syllabus_id: sy.body.id, teacher_id: 't_rajesh', topic: 'E2E Topic', date: '2026-10-05' });
+    expect(created.status).toBe(201);
+    const upd = await put(`/api/academics/lesson-plans/${created.body.id}`, { status: 'Completed' });
+    expect(upd.status).toBe(200);
+    await del(`/api/academics/lesson-plans/${created.body.id}`);
+    await del(`/api/academics/syllabus/${sy.body.id}`);
+  });
+
+  it('academics assignments → create, list, delete; subject delete guard', async () => {
+    const created = await post('/api/academics/assignments', { class_id: 'cls_10a', subject_id: ids.subjectId, teacher_id: 't_rajesh', title: 'E2E Homework', due_date: '2026-10-10' });
+    expect(created.status).toBe(201);
+    const list = await get('/api/academics/assignments?class_id=cls_10a');
+    expect(list.body.some((a: { id: string }) => a.id === created.body.id)).toBe(true);
+    const removed = await del(`/api/academics/assignments/${created.body.id}`);
+    expect(removed.status).toBe(200);
+
+    // subject with no marks/syllabus left can be deleted
+    const subjectDel = await del(`/api/academics/subjects/${ids.subjectId}`);
+    expect(subjectDel.status).toBe(200);
+  });
+
+  // ─── FEES ────────────────────────────────────────────────────
+
+  it('fees structures → create, update, list, delete', async () => {
+    const created = await post('/api/fees/structures', { class_id: 'cls_10a', fee_type: 'E2E Fee', amount: 500 });
+    expect(created.status).toBe(201);
+    const upd = await put(`/api/fees/structures/${created.body.id}`, { amount: 600 });
+    expect(upd.status).toBe(200);
+    const list = await get('/api/fees/structures?class_id=cls_10a');
+    expect(list.body.some((s: { id: string }) => s.id === created.body.id)).toBe(true);
+    const removed = await del(`/api/fees/structures/${created.body.id}`);
+    expect(removed.status).toBe(200);
+  });
+
+  it('fees invoice lifecycle → create, partial pay, overpay 409, full pay, detail', async () => {
+    const created = await post('/api/fees/invoices', { student_id: 'stu_001', term: 'E2E-Term', total_amount: 500, due_date: '2026-10-15' });
+    expect(created.status).toBe(201);
+    ids.invoiceId = created.body.id;
+
+    const p1 = await post('/api/fees/payments', { invoice_id: ids.invoiceId, amount_paid: 200, payment_mode: 'Cash' });
+    expect(p1.status).toBe(201);
+    expect(p1.body.invoice_status).toBe('Partially Paid');
+
+    const over = await post('/api/fees/payments', { invoice_id: ids.invoiceId, amount_paid: 999, payment_mode: 'Cash' });
+    expect(over.status).toBe(409);
+
+    const p2 = await post('/api/fees/payments', { invoice_id: ids.invoiceId, amount_paid: 300, payment_mode: 'UPI' });
+    expect(p2.status).toBe(201);
+    expect(p2.body.invoice_status).toBe('Paid');
+
+    const detail = await get(`/api/fees/invoices/${ids.invoiceId}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body.balance).toBe(0);
+  });
+
+  // ─── HOSTEL ──────────────────────────────────────────────────
+
+  it('hostel → hostel+room CRUD, auto-allocate, deallocate, visitor in/out, cleanup deletes', async () => {
+    const h = await post('/api/hostel', { name: 'E2E Hostel', capacity: 10 });
+    expect(h.status).toBe(201);
+    ids.hostelId = h.body.id;
+
+    const r = await post('/api/hostel/rooms', { hostel_id: ids.hostelId, room_number: 'E2E-101', capacity: 2 });
+    expect(r.status).toBe(201);
+    ids.roomId = r.body.id;
+
+    const auto = await post('/api/hostel/allocations/auto', { student_id: 'stu_004' });
+    expect(auto.status).toBe(201);
+    expect(auto.body.room_number).toBeDefined();
+
+    const allocs = await get('/api/hostel/allocations');
+    const mine = allocs.body.find((a: { student: { id: string } }) => a.student.id === 'stu_004');
+    const un = await del(`/api/hostel/allocations/${mine.id}`);
+    expect(un.status).toBe(200);
+
+    const v = await post('/api/hostel/visitors', { visitor_name: 'E2E Visitor', whom_to_meet: 'stu_004 guardian', purpose: 'Visit' });
+    expect(v.status).toBe(201);
+    expect(v.body.pass_no).toBeDefined();
+    const co = await put(`/api/hostel/visitors/${v.body.id}/checkout`);
+    expect(co.status).toBe(200);
+    const dupOut = await put(`/api/hostel/visitors/${v.body.id}/checkout`);
+    expect(dupOut.status).toBe(409);
+
+    const dr = await del(`/api/hostel/rooms/${ids.roomId}`);
+    expect(dr.status).toBe(200);
+    const dh = await del(`/api/hostel/${ids.hostelId}`);
+    expect(dh.status).toBe(200);
+  });
+
+  // ─── DISCIPLINE ──────────────────────────────────────────────
+
+  it('discipline incidents → create, view (audited), status transitions, audit-log, delete', async () => {
+    const created = await post('/api/discipline/incidents', {
+      student_id: 'stu_002', incident_date: '2026-09-30', description: 'E2E incident description', demerits: 2, confidential_notes: 'E2E confidential',
+    });
+    expect(created.status).toBe(201);
+    ids.incidentId = created.body.id;
+
+    const got = await get(`/api/discipline/incidents/${ids.incidentId}`);
+    expect(got.status).toBe(200);
+
+    const st = await put(`/api/discipline/incidents/${ids.incidentId}/status`, { status: 'Under Review' });
+    expect(st.status).toBe(200);
+    const bad = await put(`/api/discipline/incidents/${ids.incidentId}/status`, { status: 'Bogus' });
+    expect(bad.status).toBe(400);
+
+    const audit = await get('/api/discipline/audit-log?entity=incident');
+    expect(audit.status).toBe(200);
+    expect(audit.body.some((e: { action: string; entityId: string }) => e.action === 'VIEW' && e.entityId === ids.incidentId)).toBe(true);
+
+    const removed = await del(`/api/discipline/incidents/${ids.incidentId}`);
+    expect(removed.status).toBe(200);
+  });
+
+  // ─── STAFF & PAYROLL ─────────────────────────────────────────
+
+  it('staff → create, update, salary upsert, payslip generate (leave-docked) + mark-paid, idempotency, soft delete', async () => {
+    const created = await post('/api/staff', { name: 'E2E Staff', email: 'e2e-staff@sainik01.edu', role: 'Teacher', max_periods_per_day: 5 });
+    expect(created.status).toBe(201);
+    ids.staffId = created.body.id;
+
+    const upd = await put(`/api/staff/${ids.staffId}`, { subjects: 'E2E Science' });
+    expect(upd.status).toBe(200);
+
+    const sal = await put(`/api/staff/salaries/${ids.staffId}`, { basic_salary: 30000, hra: 5000, da: 2000, tds_percent: 5, epf_percent: 12 });
+    expect(sal.status).toBe(200);
+
+    const gen = await post('/api/staff/payslips/generate', { month: '2026-09', unpaid_leave_days: { [ids.staffId]: 1 } });
+    expect(gen.status).toBe(201);
+    expect(gen.body.generated).toBeGreaterThanOrEqual(1);
+
+    const slips = await get('/api/staff/payslips?month=2026-09');
+    const mine = slips.body.find((p: { staffId: string }) => p.staffId === ids.staffId);
+    expect(mine).toBeDefined();
+    expect(mine.otherDeductions).toBe(1000); // 30000/30 × 1 unpaid day
+    expect(mine.netSalary).toBe(30550); // 37000 gross − 1850 TDS − 3600 EPF − 1000 unpaid
+
+    const paid = await put(`/api/staff/payslips/${mine.id}/mark-paid`);
+    expect(paid.status).toBe(200);
+
+    const gen2 = await post('/api/staff/payslips/generate', { month: '2026-09' });
+    expect(gen2.body.skipped).toBeGreaterThanOrEqual(1); // idempotent per month
+
+    const rem = await del(`/api/staff/${ids.staffId}`);
+    expect(rem.status).toBe(200);
+    expect(rem.body.deactivated).toBe(true); // has payslip history → soft-deactivate
+  });
+
+  it('staff leaves → apply, approve, double-decision 400, notification logged', async () => {
+    const staffList = await get('/api/staff');
+    const member = staffList.body.find((s: { email: string }) => s.email === 'e2e-staff@sainik01.edu');
+    expect(member).toBeDefined();
+
+    const created = await post('/api/staff-leaves', { staff_id: member.id, leave_type: 'E2E Leave', start_date: '2026-10-12', end_date: '2026-10-13', reason: 'E2E' });
+    expect(created.status).toBe(201);
+    ids.leaveId = created.body.id;
+
+    const decide = await put(`/api/staff-leaves/${ids.leaveId}/decision`, { decision: 'Approved' });
+    expect(decide.status).toBe(200);
+    const again = await put(`/api/staff-leaves/${ids.leaveId}/decision`, { decision: 'Rejected' });
+    expect(again.status).toBe(400); // already decided
+
+    const notes = await get('/api/notifications?ref_type=staff_leave');
+    expect(notes.body.some((n: { refId: string }) => n.refId === ids.leaveId)).toBe(true);
+  });
+
+  it('student leaves → create + decision', async () => {
+    const created = await post('/api/student-leaves', { student_id: 'stu_001', leave_type: 'Sick', start_date: '2026-10-12', end_date: '2026-10-12', reason: 'E2E' });
+    expect(created.status).toBe(201);
+    const decide = await put(`/api/student-leaves/${created.body.id}/decision`, { decision: 'Rejected' });
+    expect(decide.status).toBe(200);
+  });
+
+  it('gate passes → full lifecycle with parent OTP enforcement', async () => {
+    const created = await post('/api/gate-passes', { student_id: 'stu_001', type: 'E2E Check', reason: 'E2E outing', out_time: '2026-10-02T10:00' });
+    expect(created.status).toBe(201);
+    ids.passId = created.body.id;
+
+    const detail = await get(`/api/gate-passes/${ids.passId}`);
+    expect(detail.status).toBe(200);
+    const otp = detail.body.parentOtp;
+    expect(otp).toBeDefined();
+
+    const earlyCheckout = await put(`/api/gate-passes/${ids.passId}/checkout`);
+    expect(earlyCheckout.status).toBe(400); // must be fully approved first
+
+    await put(`/api/gate-passes/${ids.passId}/approve-warden`);
+    const principal = await put(`/api/gate-passes/${ids.passId}/approve-principal`);
+    expect(principal.status).toBe(200);
+
+    const co = await put(`/api/gate-passes/${ids.passId}/checkout`);
+    expect(co.status).toBe(200);
+
+    const badOtp = await put(`/api/gate-passes/${ids.passId}/checkin`, { otp: '000000' });
+    expect(badOtp.status).toBe(400);
+
+    const ci = await put(`/api/gate-passes/${ids.passId}/checkin`, { otp });
+    expect(ci.status).toBe(200);
+    expect(ci.body.status).toBe('Returned');
+  });
+
+  // ─── REPORTS ─────────────────────────────────────────────────
+
+  it('GET /api/reports/dashboard → 200 cross-module counts', async () => {
+    const res = await get('/api/reports/dashboard');
+    expect(res.status).toBe(200);
+    expect(res.body.students_active).toBeGreaterThanOrEqual(4);
+    expect(res.body.fees).toHaveProperty('collection_pct');
+  });
+
+  it('GET /api/reports/attendance → 200 per-class rows', async () => {
+    const res = await get('/api/reports/attendance');
+    expect(res.status).toBe(200);
+    expect(res.body.some((r: { class_id: string }) => r.class_id === 'cls_10a')).toBe(true);
+  });
+
+  it('GET /api/reports/academics → 200 per-exam averages', async () => {
+    const res = await get('/api/reports/academics');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+
+  it('GET /api/reports/summary → 200 hostel occupancy + payroll total', async () => {
+    const res = await get('/api/reports/summary');
+    expect(res.status).toBe(200);
+    expect(res.body.hostel).toHaveProperty('capacity');
+    expect(res.body).toHaveProperty('payroll_total_net');
+  });
+
+  it('GET /api/reports/fees → 200 collection summary', async () => {
+    const res = await get('/api/reports/fees');
+    expect(res.status).toBe(200);
+    expect(res.body.invoiced).toBeGreaterThanOrEqual(500);
+  });
+
+  it('GET /api/notifications → 200 log list', async () => {
+    const res = await get('/api/notifications');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+
+  // ─── CBT ─────────────────────────────────────────────────────
+
+  it('cbt questions → mcq + subjective create, validation 400, update', async () => {
+    const mcq = await post('/api/cbt/questions', {
+      question: 'E2E MCQ: which option is correct?', type: 'mcq',
+      option_a: '1', option_b: '2', option_c: '3', option_d: '4', correct_option: 'B', marks: 2,
+    });
+    expect(mcq.status).toBe(201);
+    ids.q1 = mcq.body.id;
+
+    const bad = await post('/api/cbt/questions', { question: 'E2E bad mcq', type: 'mcq', option_a: 'x' });
+    expect(bad.status).toBe(400); // incomplete MCQ
+
+    const subj = await post('/api/cbt/questions', { question: 'E2E subjective: explain gravity.', type: 'subjective', marks: 5 });
+    expect(subj.status).toBe(201);
+    ids.q2 = subj.body.id;
+
+    const upd = await put(`/api/cbt/questions/${ids.q1}`, { marks: 3 });
+    expect(upd.status).toBe(200);
+  });
+
+  it('cbt test lifecycle → create, answer-stripping, publish, start, submit (auto-grade), manual grade, results, delete guard', async () => {
+    const created = await post('/api/cbt/tests', {
+      title: 'E2E CBT Test', class_id: 'cls_10a', duration_min: 30,
+      question_ids: [ids.q1, ids.q2], starts_at: new Date(Date.now() - 60_000).toISOString(),
+    });
+    expect(created.status).toBe(201);
+    ids.testId = created.body.id;
+
+    const paper = await get(`/api/cbt/tests/${ids.testId}`);
+    expect(paper.status).toBe(200);
+    expect(paper.body.questions[0].correctOption).toBeUndefined(); // answers stripped for students
+
+    const pub = await put(`/api/cbt/tests/${ids.testId}/publish`);
+    expect(pub.status).toBe(200);
+
+    const start = await post(`/api/cbt/tests/${ids.testId}/start`, { student_id: 'stu_001' });
+    expect(start.status).toBe(201);
+    ids.attemptId = start.body.attempt_id;
+
+    const submit = await post(`/api/cbt/tests/${ids.testId}/submit`, {
+      student_id: 'stu_001',
+      answers: { [ids.q1]: 'B', [ids.q2]: 'gravity pulls things down' },
+    });
+    expect(submit.status).toBe(201);
+    expect(submit.body.score).toBe(3); // MCQ auto-graded; subjective not credited yet
+    expect(submit.body.pending_manual_grading).toBe(true);
+
+    const grade = await put(`/api/cbt/attempts/${ids.attemptId}/grade`, { question_id: ids.q2, marks: 4 });
+    expect(grade.status).toBe(200);
+    expect(grade.body.score).toBe(7); // 3 MCQ + 4 subjective
+
+    const results = await get(`/api/cbt/tests/${ids.testId}/results`);
+    expect(results.status).toBe(200);
+    expect(results.body.length).toBeGreaterThanOrEqual(1);
+
+    const delGuard = await del(`/api/cbt/tests/${ids.testId}`);
+    expect(delGuard.status).toBe(409); // attempts exist
+  });
+
+  // ─── ADMISSIONS: documents & letter ──────────────────────────
+
+  it('admissions documents → upload, list, download, delete; letter-data 403 pre-approval', async () => {
+    const created = await post('/api/admissions/trigger-links', {
+      parents: [{ parent_name: 'Doc Parent', parent_email: 'docs@test.com' }],
+    });
+    const appId = created.body.generated[0].id;
+
+    const up = await post(`/api/admissions/${appId}/documents`, {
+      doc_type: 'aadhaar', file_name: 'aadhaar.png', data_url: 'data:image/png;base64,iVBORw0KGgo=',
+    });
+    expect(up.status).toBe(201);
+    const docId = up.body.id;
+
+    const list = await get(`/api/admissions/${appId}/documents`);
+    expect(list.body.length).toBe(1);
+
+    const dl = await get(`/api/admissions/documents/${docId}/download`);
+    expect(dl.status).toBe(200);
+    expect(dl.body.data_url).toContain('base64');
+
+    const rm = await del(`/api/admissions/documents/${docId}`);
+    expect(rm.status).toBe(200);
+
+    const letterForbidden = await get(`/api/admissions/${appId}/letter-data`);
+    expect(letterForbidden.status).toBe(403); // not VP-approved yet
+  });
+
+  it('admissions letter-data → 200 for a completed application', async () => {
+    const list = await get('/api/admissions');
+    const completed = list.body.find((a: { status: string }) => a.status === 'Admission Complete');
+    expect(completed).toBeDefined();
+    const res = await get(`/api/admissions/${completed.id}/letter-data`);
+    expect(res.status).toBe(200);
+    expect(res.body.roll_no).toBeDefined();
+  });
+
+  // ─── GAP-CLOSING PASS: true aggregates, spec rules, doc numbers ─
+
+  it('students profile → attendance % computed over ALL records with count', async () => {
+    const res = await get('/api/students/stu_001');
+    expect(res.status).toBe(200);
+    expect(typeof res.body.attendance_percentage).toBe('number');
+    expect(res.body.attendance_records_counted).toBeGreaterThanOrEqual(1);
+  });
+
+  it('admissions allocate → spec roll no [CLASS][YEAR][SEQ] + house from the balanced set', async () => {
+    const created = await post('/api/admissions/trigger-links', {
+      parents: [
+        { parent_name: 'Roll Parent 1', parent_email: 'rollno@test.com' },
+        { parent_name: 'Roll Parent 2', parent_email: 'rollno2@test.com' },
+      ],
+    });
+    expect(created.status).toBe(201);
+    const [app1, app2] = created.body.generated;
+    expect(app1.token).toBeDefined();
+
+    for (const app of [app1, app2]) {
+      await post(`/api/admissions/${app.id}/submit`, { student_name: 'Roll Test Student', dob: '2014-03-03' });
+      await post(`/api/admissions/${app.id}/validate`, { isValid: true });
+      await post(`/api/admissions/${app.id}/pay`);
+      await post(`/api/admissions/${app.id}/verify-receipt`);
+    }
+
+    const alloc1 = await post(`/api/admissions/${app1.id}/allocate`, { class_id: 'cls_10a' });
+    expect(alloc1.status).toBe(201);
+    expect(alloc1.body.roll_no).toMatch(/^[A-Z0-9]+-\d{4}-\d{3}$/);
+    expect(['Red', 'Blue', 'Green', 'Yellow']).toContain(alloc1.body.house);
+
+    const alloc2 = await post(`/api/admissions/${app2.id}/allocate`, { class_id: 'cls_10a' });
+    expect(alloc2.body.roll_no).toMatch(/^[A-Z0-9]+-\d{4}-\d{3}$/);
+    // sequential SEQ and balanced houses differ when both classes start empty
+    expect(alloc2.body.roll_no).not.toBe(alloc1.body.roll_no);
+  });
+
+  it('public parent form → GET by token, submit without auth, office sees it', async () => {
+    const created = await post('/api/admissions/trigger-links', {
+      parents: [{ parent_name: 'Public Parent', parent_email: 'public@test.com' }],
+    });
+    const token = created.body.generated[0].token;
+
+    const anon = await request(server).get(`/api/admissions/public/${token}`);
+    expect(anon.status).toBe(200);
+    expect(anon.body.already_submitted).toBe(false);
+    expect(Array.isArray(anon.body.fields)).toBe(true);
+
+    const submitted = await request(server)
+      .post(`/api/admissions/public/${token}/submit`)
+      .send({ student_name: 'Public Kid', dob: '2015-06-06' });
+    expect(submitted.status).toBe(201);
+
+    const bad = await request(server).get('/api/admissions/public/tok_does_not_exist');
+    expect(bad.status).toBe(404);
+
+    const list = await get('/api/admissions');
+    const app = list.body.find((a: { id: string }) => a.id === created.body.generated[0].id);
+    expect(app.status).toBe('Submitted by Parent');
+  });
+
+  it('notifications → log rows carry honest delivery status (mocked in dev)', async () => {
+    const res = await get('/api/notifications');
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThanOrEqual(1);
+    expect(['mocked', 'sent', 'failed']).toContain(res.body[0].status);
+    expect(res.body.some((n: { status: string }) => n.status === 'mocked')).toBe(true); // no NOTIFY_WEBHOOK_URL in dev
+  });
+
+  it('fees → invoices get INV- numbers and payments get RCPT- receipt numbers', async () => {
+    const created = await post('/api/fees/invoices', { student_id: 'stu_002', term: 'E2E-Term', total_amount: 300, due_date: '2026-10-20' });
+    expect(created.status).toBe(201);
+    expect(created.body.invoice_no).toMatch(/^INV-\d{4}-\d{4}$/);
+
+    const paid = await post('/api/fees/payments', { invoice_id: created.body.id, amount_paid: 300, payment_mode: 'Cash' });
+    expect(paid.status).toBe(201);
+    expect(paid.body.receipt_no).toMatch(/^RCPT-\d{4}-\d{4}$/);
+
+    const detail = await get(`/api/fees/invoices/${created.body.id}`);
+    expect(detail.body.payments[0].receiptNo).toMatch(/^RCPT-\d{4}-\d{4}$/);
+  });
+
+  it('attendance register → per-student × per-day matrix for a month', async () => {
+    const res = await get('/api/attendance/register?class_id=cls_10a&month=2026-09');
+    expect(res.status).toBe(200);
+    expect(res.body.month).toBe('2026-09');
+    expect(res.body.dates).toContain('2026-09-29');
+    expect(res.body.students.length).toBeGreaterThanOrEqual(2);
+    const row = res.body.students.find((s: { id: string }) => s.id === 'stu_001');
+    expect(row.days['2026-09-29']).toBe('Present');
+    expect(row.present).toBeGreaterThanOrEqual(1);
+  });
+
+  it('leave balances → per-staff used/quota/remaining for the year', async () => {
+    const res = await get('/api/balances');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    if (res.body.length > 0) {
+      expect(res.body[0].leaves.Casual.quota).toBe(12);
+      expect(res.body[0].leaves.Casual).toHaveProperty('remaining');
+    }
+  });
+
+  it('discipline incident → parent SMS notification logged (no incident details)', async () => {
+    const list = await get('/api/students?class_id=cls_10b');
+    const target = list.body.data.find((s: { admissionNo: string }) => s.admissionNo === 'S2026-999');
+    expect(target).toBeDefined();
+    await put(`/api/students/${target.id}`, { mobile_number: '9999000011' });
+
+    const created = await post('/api/discipline/incidents', {
+      student_id: target.id, incident_date: '2026-09-30', description: 'E2E incident notify', demerits: 1,
+    });
+    expect(created.status).toBe(201);
+
+    const notes = await get('/api/notifications?ref_type=incident');
+    expect(notes.body.some((n: { recipient: string }) => n.recipient === '9999000011')).toBe(true);
+
+    await del(`/api/discipline/incidents/${created.body.id}`);
+  });
+
+  it('reports CSV export → students / fees / attendance', async () => {
+    for (const type of ['students', 'fees', 'attendance']) {
+      const res = await get(`/api/reports/export/${type}`);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('text/csv');
+      expect(res.text.split('\n')[0].length).toBeGreaterThan(0);
+    }
+    const students = await get('/api/reports/export/students');
+    expect(students.text).toContain('admission_no');
+    expect(students.text).toContain('S2026-999');
+
+    const bogus = await get('/api/reports/export/nope');
+    expect(bogus.status).toBe(400);
+  });
+
+  it('hostel room move → audit trail entry written', async () => {
+    const h = await post('/api/hostel', { name: 'E2E Hostel', capacity: 10 });
+    ids.hostelId = h.body.id;
+    const r1 = await post('/api/hostel/rooms', { hostel_id: ids.hostelId, room_number: 'E2E-101', capacity: 2 });
+    const r2 = await post('/api/hostel/rooms', { hostel_id: ids.hostelId, room_number: 'E2E-102', capacity: 2 });
+    expect(r1.status).toBe(201);
+    expect(r2.status).toBe(201);
+
+    const a1 = await post('/api/hostel/allocations', { student_id: 'stu_004', room_id: r1.body.id });
+    expect(a1.status).toBe(201);
+    const a2 = await post('/api/hostel/allocations', { student_id: 'stu_004', room_id: r2.body.id });
+    expect(a2.status).toBe(201);
+
+    const audit = await get('/api/discipline/audit-log?entity=hostel_allocation');
+    expect(audit.status).toBe(200);
+    expect(audit.body.some((e: { detail: string | null }) => (e.detail ?? '').includes('E2E-101'))).toBe(true);
+
+    // cleanup: deallocate + delete rooms + hostel
+    const allocs = await get('/api/hostel/allocations');
+    const mine = allocs.body.find((a: { student: { id: string } }) => a.student.id === 'stu_004');
+    if (mine) await del(`/api/hostel/allocations/${mine.id}`);
+    await del(`/api/hostel/rooms/${r1.body.id}`);
+    await del(`/api/hostel/rooms/${r2.body.id}`);
+    await del(`/api/hostel/${ids.hostelId}`);
+  });
+
+  it('payroll → auto-pulls unpaid-leave days from approved Unpaid leaves', async () => {
+    const staff = await post('/api/staff', { name: 'E2E Payroll Staff', email: 'e2e-payroll@sainik01.edu', role: 'Teacher' });
+    expect(staff.status).toBe(201);
+    const staffId = staff.body.id;
+    await put(`/api/staff/salaries/${staffId}`, { basic_salary: 30000, hra: 0, da: 0, tds_percent: 0, epf_percent: 0 });
+
+    // 3 unpaid days in Aug 2026 → docked automatically (30000/30 × 3 = 3000)
+    const leave = await post('/api/staff-leaves', { staff_id: staffId, leave_type: 'Unpaid', start_date: '2026-08-10', end_date: '2026-08-12', reason: 'E2E' });
+    await put(`/api/staff-leaves/${leave.body.id}/decision`, { decision: 'Approved' });
+
+    const gen = await post('/api/staff/payslips/generate', { month: '2026-08' });
+    expect(gen.status).toBe(201);
+    expect(gen.body.generated).toBeGreaterThanOrEqual(1);
+
+    const slips = await get('/api/staff/payslips?month=2026-08');
+    const mine = slips.body.find((p: { staffId: string }) => p.staffId === staffId);
+    expect(mine).toBeDefined();
+    expect(mine.otherDeductions).toBe(3000);
+    expect(mine.netSalary).toBe(27000);
   });
 });

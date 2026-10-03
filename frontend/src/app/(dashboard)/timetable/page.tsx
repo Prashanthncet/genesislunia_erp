@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { Badge, Button, Icon, PageHeader, Reveal, StatCard, Tabs, useToast } from "@/components/ui";
 
 type Teacher = { id: string; name: string; email: string | null; subjects: string | null; isActive: boolean; maxPeriodsPerDay: number };
 type Room = { id: string; name: string; type: string; capacity: number };
@@ -37,6 +38,13 @@ export default function TimetablePage() {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const toast = useToast();
+
+  useEffect(() => {
+    if (!message) return;
+    toast.push(message, /fail|error|failed/i.test(message) ? "error" : "success");
+    setMessage("");
+  }, [message, toast]);
 
   // live schedule
   const [schedule, setSchedule] = useState<Slot[]>([]);
@@ -148,43 +156,50 @@ export default function TimetablePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold text-slate-900">Resource &amp; Timetable Scheduler</h2>
-        <p className="text-sm text-slate-500">
-          Live schedules, master grid, CSP auto-generation with teacher/room conflict detection.
-        </p>
+      <Reveal>
+        <PageHeader
+          icon="timetable"
+          title="Resource & Timetable Scheduler"
+          subtitle="Live schedules, master grid, CSP auto-generation with teacher/room conflict detection."
+        />
+      </Reveal>
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Reveal delay={40}>
+          <StatCard label="Teachers" value={teachers.length} tone="brand" icon="staff" />
+        </Reveal>
+        <Reveal delay={80}>
+          <StatCard label="Rooms" value={rooms.length} tone="teal" icon="hostel" />
+        </Reveal>
+        <Reveal delay={120}>
+          <StatCard label="Periods Today" value={schedule.length} tone="violet" icon="timetable" hint={date} />
+        </Reveal>
+        <Reveal delay={160}>
+          <StatCard label="Substitutions" value={subs.length} tone="amber" icon="staff" />
+        </Reveal>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
-        <select value={classId} onChange={(e) => setClassId(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-          {classes.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name} {c.section ?? ""}
-            </option>
-          ))}
-        </select>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        {message && <span className="text-sm font-semibold text-blue-700">{message}</span>}
-      </div>
+      <Reveal delay={60}>
+        <div className="card flex flex-wrap items-center gap-3 p-4">
+          <select value={classId} onChange={(e) => setClassId(e.target.value)} aria-label="Class" className="field w-auto">
+            {classes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} {c.section ?? ""}
+              </option>
+            ))}
+          </select>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date" className="field w-auto tnum" />
+        </div>
+      </Reveal>
 
-      <div className="flex flex-wrap gap-2">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
-              tab === t ? "bg-[#0f2a43] text-white" : "bg-white text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
+      <Reveal delay={80}>
+        <Tabs value={tab} onChange={setTab} tabs={TABS.map((t) => ({ id: t, label: t }))} />
+      </Reveal>
 
       {tab === "Live Schedule" && (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div key="live" className="card overflow-x-auto" style={{ animation: "fade-up 0.45s var(--ease-out-soft) both" }}>
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+            <thead className="table-head">
               <tr>
                 <th className="px-4 py-3">Period</th>
                 <th className="px-4 py-3">Time</th>
@@ -198,17 +213,15 @@ export default function TimetablePage() {
               {schedule.map((s) => {
                 const pc = periodLabel(s.period_number);
                 return (
-                  <tr key={s.period_number} className="border-t border-slate-100">
-                    <td className="px-4 py-3 font-bold">{s.period_number}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500">{pc ? `${pc.startTime}–${pc.endTime}` : "—"}</td>
+                  <tr key={s.period_number} className="row-hover border-t border-slate-100" style={{ animation: "slide-right 0.4s var(--ease-out-soft) both" }}>
+                    <td className="px-4 py-3 font-bold tnum">{s.period_number}</td>
+                    <td className="px-4 py-3 text-xs text-slate-500 tnum">{pc ? `${pc.startTime}–${pc.endTime}` : "—"}</td>
                     <td className="px-4 py-3 font-semibold">{s.subject}</td>
                     <td className="px-4 py-3">{s.teacher_name}</td>
                     <td className="px-4 py-3 text-xs">{s.room_name ?? "—"}</td>
                     <td className="px-4 py-3">
                       {s.substitution ? (
-                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
-                          {s.substitution.substitute_name}
-                        </span>
+                        <Badge tone="amber">{s.substitution.substitute_name}</Badge>
                       ) : (
                         <span className="text-xs text-slate-400">—</span>
                       )}
@@ -229,9 +242,9 @@ export default function TimetablePage() {
       )}
 
       {tab === "Master Grid" && (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div key="master" className="card overflow-x-auto" style={{ animation: "fade-up 0.45s var(--ease-out-soft) both" }}>
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+            <thead className="table-head">
               <tr>
                 <th className="px-4 py-3">Day</th>
                 <th className="px-4 py-3">Period</th>
@@ -241,9 +254,9 @@ export default function TimetablePage() {
             </thead>
             <tbody>
               {master.map((m, i) => (
-                <tr key={i} className="border-t border-slate-100">
+                <tr key={i} className="row-hover border-t border-slate-100">
                   <td className="px-4 py-3 font-semibold">{m.day_of_week}</td>
-                  <td className="px-4 py-3">{m.period_number}</td>
+                  <td className="px-4 py-3 tnum">{m.period_number}</td>
                   <td className="px-4 py-3">{m.subject}</td>
                   <td className="px-4 py-3">{m.teacher_name}</td>
                 </tr>
@@ -254,7 +267,7 @@ export default function TimetablePage() {
       )}
 
       {tab === "Auto-Generator" && (
-        <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+        <div key="gen" className="card space-y-4 p-5" style={{ animation: "fade-up 0.45s var(--ease-out-soft) both" }}>
           <div className="flex flex-wrap items-center gap-4">
             <label className="flex items-center gap-2 text-sm">
               Periods/day:
@@ -264,18 +277,21 @@ export default function TimetablePage() {
                 max={8}
                 value={periodsPerDay}
                 onChange={(e) => setPeriodsPerDay(Number(e.target.value))}
-                className="w-16 rounded-lg border border-slate-300 px-2 py-1 text-sm"
+                className="field w-20 shrink-0"
               />
             </label>
-            <div className="flex gap-1">
+            <div className="flex gap-1" role="group" aria-label="Working days">
               {DAYS.map((d) => (
                 <button
                   key={d}
+                  aria-pressed={workingDays.includes(d)}
                   onClick={() =>
                     setWorkingDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]))
                   }
-                  className={`rounded px-2.5 py-1 text-xs font-bold ${
-                    workingDays.includes(d) ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
+                  className={`cursor-pointer rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all duration-200 active:scale-95 ${
+                    workingDays.includes(d)
+                      ? "bg-brand-600 text-white shadow-soft"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   }`}
                 >
                   {d}
@@ -293,14 +309,15 @@ export default function TimetablePage() {
                     setGenSubjects((prev) => prev.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))
                   }
                   placeholder="Subject"
-                  className="w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="field w-40"
                 />
                 <select
+                  aria-label={`Teacher for ${s.name}`}
                   value={s.teacher_id}
                   onChange={(e) =>
                     setGenSubjects((prev) => prev.map((x, j) => (j === i ? { ...x, teacher_id: e.target.value } : x)))
                   }
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="field w-auto"
                 >
                   {teachers.map((t) => (
                     <option key={t.id} value={t.id}>
@@ -317,7 +334,7 @@ export default function TimetablePage() {
                       prev.map((x, j) => (j === i ? { ...x, periods_per_week: Number(e.target.value) } : x)),
                     )
                   }
-                  className="w-20 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="field w-20"
                 />
                 <span className="self-center text-xs text-slate-400">periods/week</span>
               </div>
@@ -329,20 +346,16 @@ export default function TimetablePage() {
             {workingDays.length * periodsPerDay} slots available — these must match.
           </p>
 
-          <button
-            onClick={generate}
-            disabled={loading}
-            className="rounded-lg bg-purple-700 px-5 py-2 text-sm font-semibold text-white hover:bg-purple-800"
-          >
-            ⚡ Generate Timetable
-          </button>
+          <Button variant="accent" onClick={generate} loading={loading}>
+            <Icon name="spark" className="h-4 w-4" /> Generate Timetable
+          </Button>
         </div>
       )}
 
       {tab === "Manage Teachers" && (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div key="teachers" className="card overflow-x-auto" style={{ animation: "fade-up 0.45s var(--ease-out-soft) both" }}>
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+            <thead className="table-head">
               <tr>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Subjects</th>
@@ -352,14 +365,14 @@ export default function TimetablePage() {
             </thead>
             <tbody>
               {teachers.map((t) => (
-                <tr key={t.id} className="border-t border-slate-100">
+                <tr key={t.id} className="row-hover border-t border-slate-100">
                   <td className="px-4 py-3 font-semibold">{t.name}</td>
                   <td className="px-4 py-3 text-xs">{t.subjects ?? "—"}</td>
-                  <td className="px-4 py-3">{t.maxPeriodsPerDay}</td>
+                  <td className="px-4 py-3 tnum">{t.maxPeriodsPerDay}</td>
                   <td className="px-4 py-3">
                     <button
                       onClick={() => markAbsent(t.id)}
-                      className="rounded bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100"
+                      className="btn-soft !px-3 !py-1 text-xs"
                     >
                       Mark Absent (auto-sub)
                     </button>
@@ -372,9 +385,9 @@ export default function TimetablePage() {
       )}
 
       {tab === "Substitutions" && (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div key="subs" className="card overflow-x-auto" style={{ animation: "fade-up 0.45s var(--ease-out-soft) both" }}>
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+            <thead className="table-head">
               <tr>
                 <th className="px-4 py-3">Class</th>
                 <th className="px-4 py-3">Period</th>
@@ -386,18 +399,16 @@ export default function TimetablePage() {
             </thead>
             <tbody>
               {subs.map((s) => (
-                <tr key={s.id} className="border-t border-slate-100">
+                <tr key={s.id} className="row-hover border-t border-slate-100">
                   <td className="px-4 py-3 font-semibold">{s.class_name}</td>
-                  <td className="px-4 py-3">{s.period_number}</td>
+                  <td className="px-4 py-3 tnum">{s.period_number}</td>
                   <td className="px-4 py-3 text-xs">{s.original_teacher_name ?? "—"}</td>
                   <td className="px-4 py-3">
-                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
-                      {s.substitute_name}
-                    </span>
+                    <Badge tone="amber">{s.substitute_name}</Badge>
                   </td>
                   <td className="px-4 py-3 text-xs">{s.reason ?? "—"}</td>
                   <td className="px-4 py-3">
-                    <button onClick={() => revokeSub(s.id)} className="rounded bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-100">
+                    <button onClick={() => revokeSub(s.id)} className="btn-danger !px-3 !py-1 text-xs">
                       Revoke
                     </button>
                   </td>

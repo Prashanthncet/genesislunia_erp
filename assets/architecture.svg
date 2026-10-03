@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 470" width="1140" height="470" role="img" aria-label="System architecture: browser to Next.js to NestJS to Prisma to SQLite">
+  <title>Architecture — request path</title>
+  <defs>
+    <linearGradient id="aBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#eef2f8"/>
+    </linearGradient>
+    <linearGradient id="frontG" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2f66b3"/><stop offset="100%" stop-color="#173c74"/>
+    </linearGradient>
+    <linearGradient id="backG" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f9a03f"/><stop offset="100%" stop-color="#b45814"/>
+    </linearGradient>
+    <linearGradient id="dbG" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0d7d76"/><stop offset="100%" stop-color="#075e59"/>
+    </linearGradient>
+    <linearGradient id="wire" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2f66b3"/><stop offset="100%" stop-color="#0d7d76"/>
+    </linearGradient>
+    <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="4" stdDeviation="7" flood-color="#0d2040" flood-opacity="0.16"/>
+    </filter>
+    <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 10 5 0 10Z" fill="#5387ca"/>
+    </marker>
+  </defs>
+
+  <style>
+    @keyframes flow { to { stroke-dashoffset:-260; } }
+    /* transform-only: content stays legible even if animations are frozen */
+    @keyframes rise { from{transform:translateY(14px)} to{transform:translateY(0)} }
+    @keyframes glint{ 0%,100%{opacity:.25} 50%{opacity:.85} }
+    /* Solid rail underneath + animated dashes on top, so the path is still
+       visible if a renderer freezes the dash animation. */
+    .rail  { stroke:#cbd5e1; stroke-width:2.4; fill:none; }
+    .wire  { stroke-dasharray:7 13; animation:flow 5.5s linear infinite; }
+    .w2    { animation:flow 6.5s linear infinite; animation-delay:-2s; }
+    .s1{animation:rise .6s .05s both} .s2{animation:rise .6s .18s both}
+    .s3{animation:rise .6s .31s both} .s4{animation:rise .6s .44s both}
+    .glint{ animation:glint 2.6s ease-in-out infinite; }
+    .m{font-family:"Segoe UI",system-ui,-apple-system,Helvetica,Arial,sans-serif}
+    .mono{font-family:"SF Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace}
+    @media (prefers-reduced-motion: reduce){ .wire,.s1,.s2,.s3,.s4,.glint{animation:none} }
+  </style>
+
+  <rect width="1140" height="470" rx="18" fill="url(#aBg)"/>
+
+  <!-- Column 1: Browser -->
+  <g class="s1" filter="url(#sh)">
+    <rect x="40" y="150" width="176" height="132" rx="16" fill="#fff" stroke="#cbd5e1"/>
+    <g transform="translate(96,178)">
+      <rect x="0" y="0" width="64" height="42" rx="6" fill="none" stroke="#334155" stroke-width="3"/>
+      <path d="M0 10h64" stroke="#334155" stroke-width="3"/>
+      <circle cx="9" cy="5" r="2.4" fill="#f9a03f"/>
+      <circle cx="17" cy="5" r="2.4" fill="#94a3b8"/>
+      <path d="M22 52h12M28 42v10" stroke="#334155" stroke-width="3" stroke-linecap="round"/>
+    </g>
+    <text class="m" x="128" y="256" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">Browser</text>
+    <text class="m" x="128" y="273" text-anchor="middle" font-size="11" fill="#64748b">React 19 client</text>
+  </g>
+
+  <!-- Column 2: Next.js -->
+  <g class="s2" filter="url(#sh)">
+    <rect x="290" y="112" width="216" height="208" rx="16" fill="url(#frontG)"/>
+    <circle class="glint" cx="352" cy="164" r="26" fill="#fff" fill-opacity="0.10"/>
+    <text class="m" x="398" y="176" text-anchor="middle" font-size="27" font-weight="800" fill="#fff">N</text>
+    <text class="m" x="398" y="222" text-anchor="middle" font-size="16" font-weight="700" fill="#fff">Next.js 15</text>
+    <text class="m" x="398" y="242" text-anchor="middle" font-size="11.5" fill="#d9e7f6">App Router · React 19</text>
+    <rect x="308" y="256" width="180" height="1" fill="#fff" fill-opacity="0.25"/>
+    <text class="m" x="398" y="276" text-anchor="middle" font-size="11.5" fill="#b5cfeb">Tailwind v4 design system</text>
+    <text class="m" x="398" y="295" text-anchor="middle" font-size="11.5" fill="#b5cfeb">Animated UI kit</text>
+    <text class="mono" x="398" y="314" text-anchor="middle" font-size="10.5" fill="#86addc">port 5173</text>
+  </g>
+
+  <!-- Column 3: NestJS -->
+  <g class="s3" filter="url(#sh)">
+    <rect x="580" y="112" width="216" height="208" rx="16" fill="url(#backG)"/>
+    <circle class="glint" cx="642" cy="164" r="26" fill="#fff" fill-opacity="0.14" style="animation-delay:-1.3s"/>
+    <text class="m" x="688" y="174" text-anchor="middle" font-size="24" font-weight="800" fill="#fff">N</text>
+    <text class="m" x="688" y="222" text-anchor="middle" font-size="16" font-weight="700" fill="#fff">NestJS 11</text>
+    <text class="m" x="688" y="242" text-anchor="middle" font-size="11.5" fill="#ffe8cd">16 feature modules</text>
+    <rect x="598" y="256" width="180" height="1" fill="#fff" fill-opacity="0.3"/>
+    <text class="m" x="688" y="276" text-anchor="middle" font-size="11.5" fill="#ffe8cd">JWT auth · RBAC guards</text>
+    <text class="m" x="688" y="295" text-anchor="middle" font-size="11.5" fill="#ffe8cd">Helmet · rate limiting</text>
+    <text class="mono" x="688" y="314" text-anchor="middle" font-size="10.5" fill="#ffd9a0">port 3001 · /api</text>
+  </g>
+
+  <!-- Column 4: Prisma + SQLite -->
+  <g class="s4" filter="url(#sh)">
+    <rect x="870" y="112" width="230" height="208" rx="16" fill="url(#dbG)"/>
+    <text class="m" x="985" y="176" text-anchor="middle" font-size="22" font-weight="800" fill="#fff">Prisma ORM</text>
+    <rect x="894" y="196" width="182" height="1" fill="#fff" fill-opacity="0.28"/>
+    <g transform="translate(898,214)">
+      <ellipse cx="46" cy="10" rx="46" ry="10" fill="#fff" fill-opacity="0.22"/>
+      <path d="M0 10v22c0 5.5 20.6 10 46 10s46-4.5 46-10V10" fill="#fff" fill-opacity="0.14"/>
+      <ellipse cx="46" cy="32" rx="46" ry="10" fill="none" stroke="#fff" stroke-opacity="0.35"/>
+    </g>
+    <text class="m" x="985" y="288" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">SQLite</text>
+    <text class="m" x="985" y="306" text-anchor="middle" font-size="11" fill="#b5e8e5">38 models · 59 indexes</text>
+  </g>
+
+  <!-- Wires: static rail + animated overlay -->
+  <g>
+    <path class="rail" d="M216 216 H286"/>
+    <path class="rail" d="M506 216 H576"/>
+    <path class="rail" d="M796 216 H866"/>
+    <path class="wire" d="M216 216 H286" fill="none" stroke="#2f66b3" stroke-width="2.4" marker-end="url(#arw)"/>
+    <path class="wire w2" d="M506 216 H576" fill="none" stroke="#2f66b3" stroke-width="2.4" marker-end="url(#arw)"/>
+    <path class="wire" d="M796 216 H866" fill="none" stroke="#2f66b3" stroke-width="2.4" marker-end="url(#arw)"/>
+  </g>
+
+  <text class="m" x="251" y="203" text-anchor="middle" font-size="10.5" fill="#64748b">HTTP</text>
+  <text class="m" x="541" y="203" text-anchor="middle" font-size="10.5" fill="#64748b">/api/*</text>
+  <text class="m" x="831" y="203" text-anchor="middle" font-size="10.5" fill="#64748b">SQL</text>
+
+  <!-- Footnotes -->
+  <g class="m" font-size="11.5" fill="#475569">
+    <text x="40" y="366">Browser never talks to the backend directly — Next.js rewrites <tspan class="mono" fill="#1f4d92">/api/*</tspan> server-side.</text>
+    <text x="40" y="388">Every request carries a JWT; <tspan class="mono" fill="#1f4d92">AuthGuard</tspan> + <tspan class="mono" fill="#1f4d92">RolesGuard</tspan> enforce role and branch scope.</text>
+    <text x="40" y="410">A global exception filter normalises errors and never leaks SQL or stack traces.</text>
+  </g>
+
+  <g class="m" font-size="11.5" fill="#475569" text-anchor="end">
+    <text x="1100" y="366">Swagger UI → <tspan class="mono" fill="#b45814">/api/docs</tspan></text>
+    <text x="1100" y="388">Seed → branch <tspan class="mono" fill="#1f4d92">sainik01</tspan></text>
+    <text x="1100" y="410">Prisma push applies 59 indexes in ~0.5s</text>
+  </g>
+
+  <rect x="40" y="432" width="1060" height="1" fill="#cbd5e1"/>
+</svg>

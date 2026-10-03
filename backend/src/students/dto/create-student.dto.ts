@@ -15,6 +15,10 @@ export class CreateStudentDto {
 
   @IsOptional()
   @IsString()
+  mother_name?: string;
+
+  @IsOptional()
+  @IsString()
   mobile_number?: string;
 
   @IsOptional()
