@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
+import { resolveJwtSecret } from './jwt-secret';
 
 export type JwtPayload = { sub: string; role: string; branch_id: string };
 
@@ -27,14 +28,11 @@ export class AuthGuard implements CanActivate {
     }
 
     const token = authHeader.split(' ')[1];
-
-    if (!process.env.JWT_SECRET) {
-      throw new UnauthorizedException('Server auth not configured');
-    }
+    const secret = resolveJwtSecret();
 
     try {
       const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
-        secret: process.env.JWT_SECRET,
+        secret,
       });
       request.user = payload;
     } catch {

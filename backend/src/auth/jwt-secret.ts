@@ -17,7 +17,13 @@ export function resolveJwtSecret(
   logger: Pick<Logger, 'warn' | 'error'> = Logger,
 ): string {
   const secret = env.JWT_SECRET;
-  if (secret) return secret;
+  if (secret) {
+    if (env.NODE_ENV === 'production' && secret.length < 32) {
+      logger.error?.('JWT_SECRET must be at least 32 characters in production.', 'JwtSecret');
+      throw new Error('JWT_SECRET must be at least 32 characters in production');
+    }
+    return secret;
+  }
 
   if (env.NODE_ENV === 'production') {
     logger.error?.('JWT_SECRET is required in production. Refusing to start.', 'JwtSecret');

@@ -27,6 +27,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let message = 'Internal server error';
     let error = 'Internal Server Error';
 
+    // Redact sensitive patterns (passwords, tokens, bearer headers, otps) from logged strings
+    const sanitizeLog = (str: string) =>
+      str
+        .replace(/(Bearer\s+)[A-Za-z0-9._-]+/gi, '$1[REDACTED]')
+        .replace(/(password|token|secret|otp|authorization|data_url)=([^&\s]+)/gi, '$1=[REDACTED]')
+        .replace(/"(password|token|secret|parentOtp|dataUrl|data_url)"\s*:\s*"[^"]+"/gi, '"$1":"[REDACTED]"');
+
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const payload = exception.getResponse();
@@ -41,17 +48,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
     } else if (exception instanceof Error) {
       // Prisma and other driver errors land here.
       this.logger.error(
-        `Unhandled: ${req.method} ${req.url} — ${exception.message}`,
-        exception.stack,
+        sanitizeLog(`Unhandled: ${req.method} ${req.url} — ${exception.message}`),
+        exception.stack ? sanitizeLog(exception.stack) : undefined,
       );
     } else {
-      this.logger.error(`Unhandled non-Error: ${req.method} ${req.url} — ${String(exception)}`);
+      this.logger.error(sanitizeLog(`Unhandled non-Error: ${req.method} ${req.url} — ${String(exception)}`));
     }
 
+    const safeMessage = sanitizeLog(message);
     if (status >= 500) {
-      this.logger.error(`${req.method} ${req.url} → ${status}: ${message}`);
+      this.logger.error(`${req.method} ${req.url} → ${status}: ${safeMessage}`);
     } else {
-      this.logger.warn(`${req.method} ${req.url} → ${status}: ${message}`);
+      this.logger.warn(`${req.method} ${req.url} → ${status}: ${safeMessage}`);
     }
 
     const body: ErrorBody = {

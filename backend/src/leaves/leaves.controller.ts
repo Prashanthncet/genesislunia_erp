@@ -1,4 +1,5 @@
 import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { AuthGuard, Roles, RolesGuard } from '../auth/auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -74,10 +75,16 @@ export class LeavesController {
       throw new BadRequestException('staff_id, leave_type, start_date (YYYY-MM-DD) and end_date are required');
     }
     if (body.end_date! < body.start_date!) throw new BadRequestException('end_date must be on or after start_date');
+
+    const staff = await this.prisma.staff.findFirst({
+      where: { id: body.staff_id, branchId: req.user.branch_id },
+    });
+    if (!staff) throw new NotFoundException('Staff member not found in this branch');
+
     const leave = await this.prisma.staffLeave.create({
       data: {
         branchId: req.user.branch_id,
-        staffId: body.staff_id,
+        staffId: staff.id,
         leaveType: body.leave_type,
         startDate: body.start_date!,
         endDate: body.end_date!,
@@ -135,6 +142,7 @@ export class LeavesController {
   }
 
   @Post('student-leaves')
+  @Roles('super_admin', 'branch_admin', 'teacher', 'warden')
   async createStudentLeave(
     @Req() req: ReqWithUser,
     @Body() body: { student_id?: string; leave_type?: string; start_date?: string; end_date?: string; reason?: string },
@@ -143,10 +151,16 @@ export class LeavesController {
       throw new BadRequestException('student_id, leave_type, start_date and end_date are required');
     }
     if (body.end_date! < body.start_date!) throw new BadRequestException('end_date must be on or after start_date');
+
+    const student = await this.prisma.student.findFirst({
+      where: { id: body.student_id, branchId: req.user.branch_id },
+    });
+    if (!student) throw new NotFoundException('Student not found in this branch');
+
     const leave = await this.prisma.studentLeave.create({
       data: {
         branchId: req.user.branch_id,
-        studentId: body.student_id,
+        studentId: student.id,
         leaveType: body.leave_type,
         startDate: body.start_date!,
         endDate: body.end_date!,
@@ -281,7 +295,18 @@ export class LeavesController {
     const pass = await this.prisma.gatePass.findFirst({ where: { id, branchId: req.user.branch_id } });
     if (!pass) throw new NotFoundException('Gate pass not found');
     if (pass.status !== 'Checked Out') throw new BadRequestException('Student has not checked out yet');
-    if (pass.parentOtp && body?.otp !== pass.parentOtp) throw new BadRequestException('Invalid parent OTP');
+    if (pass.parentOtp) {
+      const providedOtp = (body?.otp ?? '').trim();
+      const expectedOtp = pass.parentOtp.trim();
+      if (!providedOtp || providedOtp.length !== expectedOtp.length) {
+        throw new BadRequestException('Invalid parent OTP');
+      }
+      // Constant-time comparison to prevent side-channel timing attacks
+      const isMatch = crypto.timingSafeEqual(Buffer.from(providedOtp, 'utf8'), Buffer.from(expectedOtp, 'utf8'));
+      if (!isMatch) {
+        throw new BadRequestException('Invalid parent OTP');
+      }
+    }
     await this.prisma.gatePass.update({
       where: { id },
       data: { status: 'Returned', actualInTime: new Date().toISOString(), otpVerified: true },

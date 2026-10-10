@@ -3,33 +3,33 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { Badge, Button, Icon, PageHeader, ProgressBar, Reveal, StatCard, useToast } from "@/components/ui";
+import { Receipt, Coins, TrendingUp, AlertCircle, Download, Plus, Trash2, Search, Eye, Printer } from "lucide-react";
 
 type ClassItem = { id: string; name: string; section: string | null };
-type Structure = { id: string; classId: string; feeType: string; amount: number; class?: { name: string; section: string | null } };
-type Payment = { id: string; receiptNo: string | null; paymentDate: string; paymentMode: string; amountPaid: number };
-type Invoice = {
-  id: string;
-  invoiceNo: string | null;
-  term: string;
-  totalAmount: number;
-  status: string;
-  dueDate: string;
-  paid_amount: number;
-  balance: number;
-  payments?: Payment[];
-  student: { id: string; fullName: string; admissionNo: string; class?: { name: string; section: string | null } };
-};
+type Invoice = { id: string; invoiceNo: string | null; term: string; totalAmount: number; status: string; dueDate: string; paid_amount: number; balance: number; student: { id: string; fullName: string; admissionNo: string; class?: { name: string; section: string | null } }; payments?: { id: string; receiptNo: string | null; paymentDate: string; paymentMode: string; amountPaid: number }[] };
 
-type Tab = "structures" | "invoices";
+type Tab = "invoices" | "structures";
 
 export default function FeesPage() {
   const [tab, setTab] = useState<Tab>("invoices");
   const [classes, setClasses] = useState<ClassItem[]>([]);
-  const [structures, setStructures] = useState<Structure[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
   const toast = useToast();
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+
+  const [genClass, setGenClass] = useState("");
+  const [genTerm, setGenTerm] = useState("Term 1");
+  const [genDue, setGenDue] = useState(new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0]);
+  const [generating, setGenerating] = useState(false);
+
+  const [payInvoice, setPayInvoice] = useState("");
+  const [payAmount, setPayAmount] = useState("");
+  const [payMode, setPayMode] = useState("Cash");
+  const [paying, setPaying] = useState(false);
 
   useEffect(() => {
     if (!message) return;
@@ -37,31 +37,16 @@ export default function FeesPage() {
     setMessage("");
   }, [message, toast]);
 
-  // structure form
-  const [sfClass, setSfClass] = useState("");
-  const [sfType, setSfType] = useState("");
-  const [sfAmount, setSfAmount] = useState("");
-
-  // generate form
-  const [genClass, setGenClass] = useState("");
-  const [genTerm, setGenTerm] = useState("Term 1");
-  const [genDue, setGenDue] = useState(new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0]);
-
-  // payment form
-  const [payInvoice, setPayInvoice] = useState("");
-  const [payAmount, setPayAmount] = useState("");
-  const [payMode, setPayMode] = useState("Cash");
-  const [payRef, setPayRef] = useState("");
-
-  const load = useCallback(async () => {
+  const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [str, inv] = await Promise.all([
-        apiFetch<Structure[]>("/api/fees/structures"),
+      const [inv, cls] = await Promise.all([
         apiFetch<Invoice[]>("/api/fees/invoices"),
+        apiFetch<ClassItem[]>("/api/classes"),
       ]);
-      setStructures(str ?? []);
       setInvoices(inv ?? []);
+      setClasses(cls ?? []);
+      if (cls?.length) setGenClass(cls[0].id);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Load failed");
     } finally {
@@ -70,235 +55,187 @@ export default function FeesPage() {
   }, []);
 
   useEffect(() => {
-    apiFetch<ClassItem[]>("/api/classes")
-      .then((cs) => {
-        setClasses(cs ?? []);
-        if (cs?.length) { setSfClass(cs[0].id); setGenClass(cs[0].id); }
-      })
-      .catch(() => undefined);
-  }, []);
+    loadAll();
+  }, [loadAll]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const addStructure = async () => {
-    if (!sfClass || !sfType || !sfAmount) return setMessage("Class, fee type and amount are required");
-    setLoading(true);
-    try {
-      await apiFetch("/api/fees/structures", { method: "POST", body: JSON.stringify({ class_id: sfClass, fee_type: sfType, amount: Number(sfAmount) }) });
-      setSfType(""); setSfAmount("");
-      await load();
-      setMessage("Fee structure added ✓");
-    } catch (e) { setMessage(e instanceof Error ? e.message : "Failed"); } finally { setLoading(false); }
-  };
-
-  const removeStructure = async (id: string) => {
-    try { await apiFetch(`/api/fees/structures/${id}`, { method: "DELETE" }); await load(); }
-    catch (e) { setMessage(e instanceof Error ? e.message : "Failed"); }
-  };
-
-  const generate = async () => {
-    if (!genClass || !genTerm || !genDue) return setMessage("Class, term and due date are required");
-    setLoading(true);
+  const generateInvoices = async () => {
+    if (!genClass) return setMessage("Select class");
+    setGenerating(true);
     try {
       const res = await apiFetch<{ generated: number }>("/api/fees/invoices/generate", {
         method: "POST",
         body: JSON.stringify({ class_id: genClass, term: genTerm, due_date: genDue }),
       });
-      await load();
+      await loadAll();
       setMessage(`${res.generated} invoice(s) generated ✓`);
-    } catch (e) { setMessage(e instanceof Error ? e.message : "Failed"); } finally { setLoading(false); }
+    } catch (e) { setMessage(e instanceof Error ? e.message : "Failed"); } finally { setGenerating(false); }
   };
 
   const recordPayment = async () => {
-    if (!payInvoice || !payAmount) return setMessage("Invoice and amount are required");
-    setLoading(true);
+    if (!payInvoice || !payAmount) return setMessage("Invoice and amount required");
+    setPaying(true);
     try {
       await apiFetch("/api/fees/payments", {
         method: "POST",
-        body: JSON.stringify({ invoice_id: payInvoice, amount_paid: Number(payAmount), payment_mode: payMode, reference_no: payRef || undefined }),
+        body: JSON.stringify({ invoice_id: payInvoice, amount_paid: Number(payAmount), payment_mode: payMode }),
       });
-      setPayInvoice(""); setPayAmount(""); setPayRef("");
-      await load();
+      setPayInvoice(""); setPayAmount("");
+      await loadAll();
       setMessage("Payment recorded ✓");
-    } catch (e) { setMessage(e instanceof Error ? e.message : "Failed"); } finally { setLoading(false); }
+    } catch (e) { setMessage(e instanceof Error ? e.message : "Failed"); } finally { setPaying(false); }
   };
 
   const fmt = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 
-  const billed = invoices.reduce((s, i) => s + i.totalAmount, 0);
-  const outstanding = invoices.reduce((s, i) => s + i.balance, 0);
+  const filteredInvoices = invoices.filter((inv) => {
+    if (searchQuery && !inv.student.fullName.toLowerCase().includes(searchQuery.toLowerCase()) && !inv.student.admissionNo.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    if (filterStatus && inv.status !== filterStatus) return false;
+    return true;
+  });
 
-  const printReceipt = (inv: Invoice) => {
-    const payments = inv.payments ?? [];
-    const rows = payments.length
-      ? payments.map((p) => `<tr><td>${p.receiptNo ?? "—"}</td><td>${p.paymentDate}</td><td>${p.paymentMode}</td><td style="text-align:right">${fmt(p.amountPaid)}</td></tr>`).join("")
-      : `<tr><td colspan="4" style="text-align:center;color:#888">No payments recorded</td></tr>`;
-    const w = window.open("", "_blank", "width=720,height=800");
-    if (!w) return;
-    w.document.write(`<!doctype html><html><head><title>Receipt ${inv.invoiceNo ?? ""}</title>
-      <style>body{font-family:system-ui,sans-serif;padding:32px;color:#0f172a}h1{font-size:18px;margin:0}h2{font-size:13px;color:#475569;font-weight:500}
-      table{width:100%;border-collapse:collapse;margin-top:16px;font-size:13px}th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left}th{background:#f1f5f9}
-      .meta{display:flex;justify-content:space-between;font-size:13px;margin-top:12px}</style></head><body>
-      <h1>Genesis Lumia ERP — Fee Receipt</h1><h2>Sainik School Branch</h2>
-      <div class="meta"><span><b>Invoice:</b> ${inv.invoiceNo ?? inv.id.slice(0, 8)}</span><span><b>Term:</b> ${inv.term}</span><span><b>Due:</b> ${inv.dueDate?.slice(0, 10)}</span></div>
-      <div class="meta"><span><b>Student:</b> ${inv.student.fullName} (${inv.student.admissionNo})</span><span><b>Class:</b> ${inv.student.class ? `${inv.student.class.name} ${inv.student.class.section ?? ""}` : "—"}</span></div>
-      <table><thead><tr><th>Receipt No</th><th>Date</th><th>Mode</th><th style="text-align:right">Amount</th></tr></thead><tbody>${rows}</tbody></table>
-      <div class="meta"><span><b>Total:</b> ${fmt(inv.totalAmount)}</span><span><b>Paid:</b> ${fmt(inv.paid_amount)}</span><span><b>Balance:</b> ${fmt(inv.balance)}</span><span><b>Status:</b> ${inv.status}</span></div>
-      <p style="margin-top:24px;font-size:11px;color:#94a3b8">Generated ${new Date().toLocaleString()} — computer-generated receipt.</p>
-      </body></html>`);
-    w.document.close();
-    w.print();
-  };
+  const totalBilled = invoices.reduce((s, i) => s + i.totalAmount, 0);
+  const totalCollected = invoices.reduce((s, i) => s + i.paid_amount, 0);
+  const totalOutstanding = invoices.reduce((s, i) => s + i.balance, 0);
+  const collectionRate = totalBilled > 0 ? Math.round((totalCollected / totalBilled) * 100) : 0;
 
   return (
-    <div className="space-y-6">
-      <Reveal>
-        <PageHeader
-          icon="fees"
-          title="Fees"
-          subtitle="Fee structures, invoice generation and offline collection."
-        />
-      </Reveal>
-
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Reveal delay={40}>
-          <StatCard label="Invoices" value={invoices.length} tone="brand" icon="fees" />
-        </Reveal>
-        <Reveal delay={80}>
-          <StatCard label="Billed" value={invoices.reduce((s, i) => s + i.totalAmount, 0)} tone="violet" icon="reports" prefix="₹" />
-        </Reveal>
-        <Reveal delay={120}>
-          <StatCard label="Collected" value={invoices.reduce((s, i) => s + i.paid_amount, 0)} tone="emerald" icon="check" prefix="₹" />
-        </Reveal>
-        <Reveal delay={160}>
-          <StatCard label="Outstanding" value={invoices.reduce((s, i) => s + i.balance, 0)} tone="rose" icon="alert" prefix="₹" />
-        </Reveal>
+    <div className="relative min-h-screen">
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-bl from-emerald-500/10 to-transparent rounded-full blur-3xl" />
+        <div className="absolute bottom-0 left-0 w-80 h-80 bg-gradient-to-tr from-blue-500/10 to-transparent rounded-full blur-3xl" />
       </div>
 
-      <Reveal delay={60} className="flex flex-wrap gap-2">
-        {(["structures", "invoices"] as Tab[]).map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`relative overflow-hidden rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-300 ${
-              tab === t ? "text-white shadow-lift" : "border border-slate-200 bg-white text-slate-600 hover:border-brand-200 hover:text-brand-700"
-            }`}>
-            {tab === t && <span className="absolute inset-0 bg-gradient-to-br from-brand-600 to-brand-800" />}
-            <span className="relative">{t === "structures" ? "Fee Structures" : "Invoices & Payments"}</span>
+      <div className="relative z-10 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl">
+        <div className="flex items-center justify-between px-6 py-4">
+          <PageHeader icon="fees" title="Fees & Payments" subtitle="Manage fee structures, generate invoices, and track payments" />
+          <Button variant="soft"><Download className="h-4 w-4" /> Export</Button>
+        </div>
+        <div className="flex items-center gap-2 px-6">
+          <button onClick={() => setTab("invoices")} className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 ${tab === "invoices" ? "bg-slate-900 text-white shadow-lg" : "text-slate-600 hover:bg-slate-100"}`}>
+            <Receipt className="h-4 w-4" /> Invoices & Payments
+            {invoices.length > 0 && <span className="px-2 py-0.5 text-xs rounded-full bg-slate-200 text-slate-600">{invoices.length}</span>}
           </button>
-        ))}
-      </Reveal>
-
-      <Reveal delay={100}>
-        <div className="card p-4">
-          <div className="mb-2 flex items-center justify-between text-sm">
-            <span className="font-semibold text-slate-700">Collection progress</span>
-            <span className="tnum text-slate-500">
-              {fmt(billed ? (billed - outstanding) / billed * 100 : 0)}%
-            </span>
-          </div>
-          <ProgressBar value={billed ? (billed - outstanding) / billed * 100 : 0} tone="emerald" />
+          <button onClick={() => setTab("structures")} className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 ${tab === "structures" ? "bg-slate-900 text-white shadow-lg" : "text-slate-600 hover:bg-slate-100"}`}>
+            <TrendingUp className="h-4 w-4" /> Fee Structures
+          </button>
         </div>
-      </Reveal>
+      </div>
 
-      {tab === "structures" && (
-        <div className="space-y-4" key="structures">
-          <div className="card flex flex-wrap items-center gap-2 p-4">
-            <select value={sfClass} aria-label="Class" onChange={(e) => setSfClass(e.target.value)} className="field w-auto">
-              {classes.map((c) => <option key={c.id} value={c.id}>{c.name} {c.section ?? ""}</option>)}
+      <div className="relative z-10 p-6 space-y-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Reveal delay={0}><div className="rounded-2xl bg-slate-900 p-5 text-white shadow-xl"><div className="flex items-center justify-between mb-3"><span className="text-xs font-medium text-slate-400 uppercase tracking-wide">Total Invoices</span><Receipt className="h-5 w-5 text-slate-500" /></div><p className="text-3xl font-bold">{invoices.length}</p></div></Reveal>
+          <Reveal delay={100}><div className="rounded-2xl bg-blue-50 border border-blue-200 p-5"><div className="flex items-center justify-between mb-3"><span className="text-xs font-medium text-blue-600 uppercase tracking-wide">Total Billed</span><span className="text-xl font-bold text-blue-700">{fmt(totalBilled)}</span></div><div className="mt-2 h-2 bg-blue-200 rounded-full overflow-hidden"><div className="h-full bg-blue-500 rounded-full" style={{ width: "100%" }} /></div></div></Reveal>
+          <Reveal delay={200}><div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-5"><div className="flex items-center justify-between mb-3"><span className="text-xs font-medium text-emerald-600 uppercase tracking-wide">Collected</span><span className="text-xl font-bold text-emerald-700">{fmt(totalCollected)}</span></div><div className="mt-2 h-2 bg-emerald-200 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${collectionRate}%` }} /></div></div></Reveal>
+          <Reveal delay={300}><div className="rounded-2xl bg-rose-50 border border-rose-200 p-5"><div className="flex items-center justify-between mb-3"><span className="text-xs font-medium text-rose-600 uppercase tracking-wide">Outstanding</span><span className="text-xl font-bold text-rose-700">{fmt(totalOutstanding)}</span></div><div className="mt-2 flex items-center gap-2"><AlertCircle className="h-5 w-5 text-rose-500" /><span className="text-sm text-rose-600">{collectionRate < 80 ? "Needs attention" : "On track"}</span></div></div></Reveal>
+        </div>
+
+        <Reveal delay={100}>
+          <div className="flex flex-wrap items-center gap-4 p-4 rounded-2xl bg-white border border-slate-200 shadow-sm">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search by name or admission no..." className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 py-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" />
+            </div>
+            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 pr-10 text-sm text-slate-700 focus:border-blue-500">
+              <option value="">All Status</option>
+              <option value="Paid">Paid</option>
+              <option value="Partial">Partial</option>
+              <option value="Unpaid">Unpaid</option>
             </select>
-            <input value={sfType} onChange={(e) => setSfType(e.target.value)} placeholder="Fee type (e.g. Tuition)" className="field w-auto" />
-            <input value={sfAmount} onChange={(e) => setSfAmount(e.target.value)} type="number" placeholder="Amount ₹" className="field w-32" />
-            <Button variant="primary" onClick={addStructure} loading={loading}>Add Structure</Button>
           </div>
-          <Reveal delay={80}>
-          <div className="card overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="table-head">
-                <tr><th className="px-4 py-3">Class</th><th className="px-4 py-3">Fee Type</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3"></th></tr>
-              </thead>
-              <tbody>
-                {structures.map((s) => (
-                  <tr key={s.id} className="row-hover border-t border-slate-100">
-                    <td className="px-4 py-3">{s.class ? `${s.class.name} ${s.class.section ?? ""}` : "—"}</td>
-                    <td className="px-4 py-3 font-semibold">{s.feeType}</td>
-                    <td className="px-4 py-3 text-right">{fmt(s.amount)}</td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <button onClick={() => removeStructure(s.id)} className="btn-danger !px-2.5 !py-1 text-xs">Delete</button>
-                    </td>
-                  </tr>
-                ))}
-                {structures.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-400">{loading ? "Loading…" : "No fee structures yet."}</td></tr>}
-              </tbody>
-            </table>
-          </div>
+        </Reveal>
+
+        {tab === "invoices" && (
+          <Reveal delay={150}>
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+              <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left border-collapse">
+                    <thead className="bg-slate-50/70 border-b border-slate-200">
+                      <tr className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        <th className="px-5 py-3.5 whitespace-nowrap">Student</th>
+                        <th className="px-4 py-3.5 whitespace-nowrap">Class</th>
+                        <th className="px-4 py-3.5 whitespace-nowrap">Term</th>
+                        <th className="px-4 py-3.5 whitespace-nowrap text-right">Amount</th>
+                        <th className="px-4 py-3.5 whitespace-nowrap text-right">Paid</th>
+                        <th className="px-4 py-3.5 whitespace-nowrap text-right">Balance</th>
+                        <th className="px-5 py-3.5 whitespace-nowrap text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredInvoices.map((inv) => (
+                        <tr key={inv.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="px-5 py-3.5 whitespace-nowrap">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white text-xs font-bold flex items-center justify-center shadow-xs">{inv.student.fullName.charAt(0)}</div>
+                              <div>
+                                <p className="font-semibold text-slate-900">{inv.student.fullName}</p>
+                                <p className="text-xs text-slate-400 font-mono">{inv.student.admissionNo}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3.5 whitespace-nowrap text-xs text-slate-600">{inv.student.class?.name} {inv.student.class?.section}</td>
+                          <td className="px-4 py-3.5 whitespace-nowrap text-xs text-slate-600 font-medium">{inv.term}</td>
+                          <td className="px-4 py-3.5 whitespace-nowrap text-right font-mono text-xs font-semibold text-slate-800">{fmt(inv.totalAmount)}</td>
+                          <td className="px-4 py-3.5 whitespace-nowrap text-right font-mono text-xs text-emerald-600 font-semibold">{fmt(inv.paid_amount)}</td>
+                          <td className="px-4 py-3.5 whitespace-nowrap text-right font-mono text-xs font-bold">
+                            {inv.balance > 0 ? (
+                              <span className="text-slate-800">{fmt(inv.balance)}</span>
+                            ) : (
+                              <span className="text-emerald-600 font-semibold">Paid</span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3.5 whitespace-nowrap text-center">
+                            <Badge tone={inv.status === "Paid" ? "emerald" : inv.status === "Partial" ? "amber" : "rose"} className="px-2.5 py-1">
+                              {inv.status}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredInvoices.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
+                            No invoices found
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div className="space-y-6">
+                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6">
+                  <h3 className="font-semibold text-slate-800 mb-4">Generate Invoice</h3>
+                  <div className="space-y-4">
+                    <select value={genClass} onChange={(e) => setGenClass(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500"><option value="">Select Class</option>{classes.map(c => <option key={c.id} value={c.id}>{c.name} {c.section}</option>)}</select>
+                    <div className="grid grid-cols-2 gap-3">
+                      <select value={genTerm} onChange={(e) => setGenTerm(e.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500"><option value="Term 1">Term 1</option><option value="Term 2">Term 2</option><option value="Annual">Annual</option></select>
+                      <div><input type="date" value={genDue} onChange={(e) => setGenDue(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500" /></div>
+                    </div>
+                    <Button variant="primary" onClick={generateInvoices} loading={generating} className="w-full shadow-lg shadow-blue-500/20"><Plus className="h-4 w-4" /> Generate Invoices</Button>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6">
+                  <h3 className="font-semibold text-slate-800 mb-4">Record Payment</h3>
+                  <div className="space-y-4">
+                    <select value={payInvoice} onChange={(e) => setPayInvoice(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500"><option value="">Select Invoice</option>{invoices.filter(i => i.balance > 0).map(i => <option key={i.id} value={i.id}>{i.student.fullName} - {fmt(i.balance)}</option>)}</select>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div><input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder="Amount" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500" /></div>
+                      <select value={payMode} onChange={(e) => setPayMode(e.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500"><option>Cash</option><option>UPI</option><option>Cheque</option><option>NEFT</option></select>
+                    </div>
+                    <Button variant="primary" onClick={recordPayment} loading={paying} disabled={!payInvoice || !payAmount} className="w-full shadow-lg shadow-blue-500/20"><Coins className="h-4 w-4" /> Record Payment</Button>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6">
+                  <h3 className="font-semibold text-slate-800 mb-2">Collection Progress</h3>
+                  <ProgressBar value={collectionRate} tone="emerald" className="h-3" />
+                  <p className="text-sm text-slate-500 mt-2">{collectionRate}% collected of {fmt(totalBilled)}</p>
+                </div>
+              </div>
+            </div>
           </Reveal>
-        </div>
-      )}
-
-      {tab === "invoices" && (
-        <div className="space-y-4" key="invoices">
-          <div className="card flex flex-wrap items-center gap-2 p-4">
-            <select value={genClass} aria-label="Class" onChange={(e) => setGenClass(e.target.value)} className="field w-auto">
-              {classes.map((c) => <option key={c.id} value={c.id}>{c.name} {c.section ?? ""}</option>)}
-            </select>
-            <input value={genTerm} onChange={(e) => setGenTerm(e.target.value)} placeholder="Term" className="field w-28" />
-            <input value={genDue} onChange={(e) => setGenDue(e.target.value)} type="date" className="field w-auto" />
-            <Button variant="accent" onClick={generate} loading={loading}>
-              <Icon name="spark" className="h-4 w-4" /> Generate Invoices
-            </Button>
-          </div>
-
-          <div className="card flex flex-wrap items-center gap-2 p-4">
-            <select value={payInvoice} aria-label="Invoice" onChange={(e) => setPayInvoice(e.target.value)} className="field max-w-xs">
-              <option value="">Select invoice to pay…</option>
-              {invoices.filter((i) => i.balance > 0).map((i) => (
-                <option key={i.id} value={i.id}>{i.student.fullName} — {i.term} — balance {fmt(i.balance)}</option>
-              ))}
-            </select>
-            <input value={payAmount} onChange={(e) => setPayAmount(e.target.value)} type="number" placeholder="Amount ₹" className="field w-32" />
-            <select value={payMode} aria-label="Payment mode" onChange={(e) => setPayMode(e.target.value)} className="field w-auto">
-              {["Cash", "Cheque", "UPI", "Bank Transfer"].map((m) => <option key={m}>{m}</option>)}
-            </select>
-            <input value={payRef} onChange={(e) => setPayRef(e.target.value)} placeholder="Reference no" className="field w-36" />
-            <Button variant="primary" onClick={recordPayment} loading={loading}>
-              <Icon name="check" className="h-4 w-4" /> Record Payment
-            </Button>
-          </div>
-
-          <Reveal delay={80}>
-          <div className="card overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="table-head">
-                <tr><th className="px-4 py-3">Invoice</th><th className="px-4 py-3">Student</th><th className="px-4 py-3">Term</th><th className="px-4 py-3">Due</th><th className="px-4 py-3 text-right">Total</th><th className="px-4 py-3 text-right">Paid</th><th className="px-4 py-3 text-right">Balance</th><th className="px-4 py-3">Status</th><th className="px-4 py-3"></th></tr>
-              </thead>
-              <tbody>
-                {invoices.map((i) => (
-                  <tr key={i.id} className="row-hover border-t border-slate-100">
-                    <td className="px-4 py-3 font-mono text-xs">{i.invoiceNo ?? "—"}</td>
-                    <td className="px-4 py-3"><span className="font-semibold">{i.student.fullName}</span> <span className="text-xs text-slate-400">({i.student.admissionNo})</span></td>
-                    <td className="px-4 py-3">{i.term}</td>
-                    <td className="px-4 py-3 text-xs">{i.dueDate?.slice(0, 10)}</td>
-                    <td className="px-4 py-3 text-right">{fmt(i.totalAmount)}</td>
-                    <td className="px-4 py-3 text-right text-emerald-700">{fmt(i.paid_amount)}</td>
-                    <td className="px-4 py-3 text-right text-rose-600">{fmt(i.balance)}</td>
-                    <td className="px-4 py-3">
-                      <Badge tone={i.status === "Paid" ? "emerald" : i.status === "Partially Paid" ? "amber" : "rose"}>{i.status}</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <button onClick={() => printReceipt(i)} className="btn-soft !px-2.5 !py-1 text-xs">
-                        <Icon name="print" className="h-3.5 w-3.5" /> Receipt
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {invoices.length === 0 && <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-400">{loading ? "Loading…" : "No invoices yet."}</td></tr>}
-              </tbody>
-            </table>
-          </div>
-          </Reveal>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
+

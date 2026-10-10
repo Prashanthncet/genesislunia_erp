@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import {
   BadRequestException,
   Body,
@@ -18,7 +19,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 type ReqWithUser = { user: { sub: string; role: string; branch_id: string } };
 
 function rid(prefix: string): string {
-  return `${prefix}_${Math.random().toString(36).slice(2, 11)}`;
+  return `${prefix}_${crypto.randomBytes(6).toString('hex')}`;
 }
 
 @Controller('admissions')
@@ -94,10 +95,9 @@ export class AdmissionsController {
     const generated = [];
 
     for (const parent of parents) {
-      const loginId = `P${Math.floor(1000 + Math.random() * 9000)}`;
-      const password = Math.random().toString(36).slice(-8);
-
-      const token = `tok_${Math.random().toString(36).slice(2, 14)}`;
+      const loginId = `P${crypto.randomInt(1000, 9999)}`;
+      const password = crypto.randomBytes(6).toString('base64url');
+      const token = `tok_${crypto.randomBytes(16).toString('hex')}`;
       const app = await this.prisma.admission.create({
         data: {
           branchId: req.user.branch_id,
@@ -310,6 +310,16 @@ export class AdmissionsController {
 
   // ─── Documents ───────────────────────────────────────────────
 
+  // Allowed MIME types for uploaded admission documents (prevents XSS via SVG/HTML and malicious binaries)
+  private static readonly ALLOWED_MIME_TYPES = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'application/pdf',
+  ]);
+
+  private static readonly ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf']);
+
   @Post(':id/documents')
   async uploadDocument(
     @Req() req: ReqWithUser,
@@ -321,16 +331,47 @@ export class AdmissionsController {
     if (!body?.doc_type || !body?.file_name || !body?.data_url) {
       throw new BadRequestException('doc_type, file_name and data_url are required');
     }
-    const sizeBytes = Math.floor((body.data_url.length * 3) / 4);
-    if (sizeBytes > 2 * 1024 * 1024) {
-      throw new BadRequestException('File too large (max 2 MB)');
+
+    // 1. Validate Data URL format and MIME type
+    const dataUrlMatch = body.data_url.match(/^data:([a-zA-Z0-9.+/-]+);base64,([A-Za-z0-9+/=]+)$/);
+    if (!dataUrlMatch) {
+      throw new BadRequestException('Invalid document data URL format');
     }
+
+    const mimeType = dataUrlMatch[1].toLowerCase();
+    if (!AdmissionsController.ALLOWED_MIME_TYPES.has(mimeType)) {
+      throw new BadRequestException(`Unsupported file type: ${mimeType}. Allowed types: JPEG, PNG, WebP, PDF`);
+    }
+
+    // 2. Validate and sanitize filename (block path traversal & dangerous extensions)
+    const sanitizedFileName = body.file_name
+      .replace(/[/\\?%*:|"<>]/g, '_')
+      .replace(/\.\./g, '_')
+      .trim();
+
+    if (!sanitizedFileName || sanitizedFileName.length > 120) {
+      throw new BadRequestException('Invalid file name length');
+    }
+
+    const dotIndex = sanitizedFileName.lastIndexOf('.');
+    const ext = dotIndex !== -1 ? sanitizedFileName.slice(dotIndex).toLowerCase() : '';
+    if (!AdmissionsController.ALLOWED_EXTENSIONS.has(ext)) {
+      throw new BadRequestException(`File extension ${ext || 'none'} is not permitted`);
+    }
+
+    // 3. Validate calculated binary size
+    const base64Data = dataUrlMatch[2];
+    const sizeBytes = Math.floor((base64Data.length * 3) / 4);
+    if (sizeBytes > 5 * 1024 * 1024) {
+      throw new BadRequestException('File too large (max 5 MB)');
+    }
+
     const doc = await this.prisma.admissionDocument.create({
       data: {
         branchId: req.user.branch_id,
         admissionId: id,
         docType: body.doc_type,
-        fileName: body.file_name,
+        fileName: sanitizedFileName,
         dataUrl: body.data_url,
         sizeBytes,
       },

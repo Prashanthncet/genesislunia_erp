@@ -4,187 +4,271 @@ import * as bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
-  const branchId = 'sainik01';
+  console.log('🌱 Seeding mock data...');
 
-  await prisma.branch.upsert({
-    where: { id: branchId },
-    update: {},
-    create: { id: branchId, name: 'Sainik School', location: 'Bengaluru' },
-  });
-
-  // Classes
-  const classes = [
-    { id: 'cls_10a', name: 'Class 10', section: 'A' },
-    { id: 'cls_10b', name: 'Class 10', section: 'B' },
-    { id: 'cls_12_sci', name: 'Class 12', section: 'Science' },
-  ];
-  for (const c of classes) {
-    await prisma.class.upsert({
-      where: { id: c.id },
+  // Get or create branch
+  let branch = await prisma.branch.findFirst({ where: { id: 'sainik01' } });
+  if (!branch) {
+    branch = await prisma.branch.upsert({
+      where: { id: 'sainik01' },
+      create: {
+        id: 'sainik01',
+        name: 'Sainik School',
+        location: 'New Delhi, India',
+      },
       update: {},
-      create: { ...c, branchId },
     });
+    console.log('✓ Created/ensured branch sainik01');
   }
 
-  // Staff / teachers
-  const teachers = [
-    { id: 't_rajesh', name: 'Col. Rajesh Sharma', email: 'rajesh@sainik01.edu', subjects: 'English' },
-    { id: 't_meera', name: 'Mrs. Meera Iyer', email: 'meera@sainik01.edu', subjects: 'Maths' },
-    { id: 't_arjun', name: 'Mr. Arjun Rao', email: 'arjun@sainik01.edu', subjects: 'Physics' },
-    { id: 't_kavya', name: 'Ms. Kavya Nair', email: 'kavya@sainik01.edu', subjects: 'Chemistry' },
+  // Clear existing data - delete in correct dependency order
+  console.log('🧹 Clearing existing data...');
+  
+  // 1. Delete payslips (references staff)
+  await prisma.payslip.deleteMany({ where: { branchId: branch.id } });
+  
+  // 2. Delete staff leaves (references staff)
+  await prisma.staffLeave.deleteMany({ where: { branchId: branch.id } });
+  
+  // 3. Delete users (references staff via staffId)
+  await prisma.user.deleteMany({ where: { branchId: branch.id } });
+  
+  // 4. Delete salary structures (references staff)
+  await prisma.salaryStructure.deleteMany({ where: { staff: { branchId: branch.id } } });
+  
+  // 5. Delete timetable slots (references staff as teacher)
+  await prisma.timetableSlot.deleteMany({ where: { branchId: branch.id } });
+  
+  // 6. Delete substitutions (references staff)
+  await prisma.substitution.deleteMany({ where: { branchId: branch.id } });
+  
+  // 7. Delete lesson plans (references staff as teacher)
+  await prisma.lessonPlan.deleteMany({ where: { branchId: branch.id } });
+  
+  // 8. Delete assignments (references staff as teacher)
+  await prisma.assignment.deleteMany({ where: { branchId: branch.id } });
+  
+  // 9. Delete incidents (references staff as reporter)
+  await prisma.incident.deleteMany({ where: { branchId: branch.id } });
+  
+  // 10. Delete hostels (references staff as warden)
+  await prisma.hostel.deleteMany({ where: { branchId: branch.id } });
+  
+  // 11. Delete offline payments (references staff as collector)
+  await prisma.offlinePayment.deleteMany({ where: { branchId: branch.id } });
+  
+  // 12. Delete exam schedules (references staff as invigilator)
+  await prisma.examSchedule.deleteMany({ where: { branchId: branch.id } });
+  
+  // 13. Finally delete staff
+  await prisma.staff.deleteMany({ where: { branchId: branch.id } });
+  
+  console.log('✓ Cleared all existing data');
+
+  const staffData = [
+    { name: 'Col. Rajesh Sharma', email: 'rajesh.sharma@sainik01.edu', role: 'Principal', subjects: '', maxPeriods: 0, salary: { basicSalary: 120000, hra: 48000, da: 15000, tdsPercent: 10, epfPercent: 0 } },
+    { name: 'Ms. Priya Menon', email: 'priya.menon@sainik01.edu', role: 'Vice Principal', subjects: 'English', maxPeriods: 4, salary: { basicSalary: 90000, hra: 36000, da: 11250, tdsPercent: 10, epfPercent: 12 } },
+    { name: 'Mr. Arjun Singh', email: 'arjun.singh@sainik01.edu', role: 'Teacher', subjects: 'Mathematics, NDA Mathematics', maxPeriods: 6, salary: { basicSalary: 55000, hra: 22000, da: 6875, tdsPercent: 5, epfPercent: 12 } },
+    { name: 'Mrs. Sneha Iyer', email: 'sneha.iyer@sainik01.edu', role: 'Teacher', subjects: 'Physics, Chemistry', maxPeriods: 6, salary: { basicSalary: 52000, hra: 20800, da: 6500, tdsPercent: 5, epfPercent: 12 } },
+    { name: 'Mr. Vikram Malhotra', email: 'vikram.m@sainik01.edu', role: 'Teacher', subjects: 'English, Communication Skills', maxPeriods: 6, salary: { basicSalary: 48000, hra: 19200, da: 6000, tdsPercent: 5, epfPercent: 12 } },
+    { name: 'Mrs. Anjali Verma', email: 'anjali.verma@sainik01.edu', role: 'Teacher', subjects: 'Hindi, Sanskrit', maxPeriods: 6, salary: { basicSalary: 45000, hra: 18000, da: 5625, tdsPercent: 5, epfPercent: 12 } },
+    { name: 'Mr. Deepak Kumar', email: 'deepak.kumar@sainik01.edu', role: 'Teacher', subjects: 'Physical Drill, Sports', maxPeriods: 8, salary: { basicSalary: 50000, hra: 20000, da: 6250, tdsPercent: 5, epfPercent: 12 } },
+    { name: 'Mrs. Kavita Joshi', email: 'kavita.joshi@sainik01.edu', role: 'Teacher', subjects: 'History, Geography, Political Science', maxPeriods: 6, salary: { basicSalary: 47000, hra: 18800, da: 5875, tdsPercent: 5, epfPercent: 12 } },
+    { name: 'Mr. Ramesh Patel', email: 'ramesh.patel@sainik01.edu', role: 'Teacher', subjects: 'Computer Science, I.T.', maxPeriods: 6, salary: { basicSalary: 58000, hra: 23200, da: 7250, tdsPercent: 5, epfPercent: 12 } },
+    { name: 'Mrs. Neha Agarwal', email: 'neha.agarwal@sainik01.edu', role: 'Teacher', subjects: 'Chemistry, Laboratory', maxPeriods: 6, salary: { basicSalary: 53000, hra: 21200, da: 6625, tdsPercent: 5, epfPercent: 12 } },
+    { name: 'Mr. Sanjay Bansal', email: 'sanjay.bansal@sainik01.edu', role: 'Accountant', subjects: '', maxPeriods: 0, salary: { basicSalary: 40000, hra: 16000, da: 5000, tdsPercent: 10, epfPercent: 12 } },
+    { name: 'Mrs. Meenakshi Rao', email: 'meenakshi.rao@sainik01.edu', role: 'Librarian', subjects: '', maxPeriods: 0, salary: { basicSalary: 35000, hra: 14000, da: 4375, tdsPercent: 5, epfPercent: 12 } },
+    { name: 'Mr. Amit Khanna', email: 'amit.khanna@sainik01.edu', role: 'Warden', subjects: '', maxPeriods: 4, salary: { basicSalary: 55000, hra: 22000, da: 6875, tdsPercent: 5, epfPercent: 12 } },
+    { name: 'Mrs. Pooja Sharma', email: 'pooja.sharma@sainik01.edu', role: 'Teacher', subjects: 'Biology, Zoology, Botany', maxPeriods: 6, salary: { basicSalary: 51000, hra: 20400, da: 6375, tdsPercent: 5, epfPercent: 12 } },
+    { name: 'Mr. Harish Chandra', email: 'harish.chandra@sainik01.edu', role: 'Teacher', subjects: 'Physics, NDA Physics', maxPeriods: 6, salary: { basicSalary: 54000, hra: 21600, da: 6750, tdsPercent: 5, epfPercent: 12 } },
+    { name: 'Mrs. Divya Singh', email: 'divya.singh@sainik01.edu', role: 'Teacher', subjects: 'Mathematics', maxPeriods: 6, salary: { basicSalary: 46000, hra: 18400, da: 5750, tdsPercent: 5, epfPercent: 12 } },
+    { name: 'Mr. Naveen Kumar', email: 'naveen.kumar@sainik01.edu', role: 'Teacher', subjects: 'English Literature', maxPeriods: 6, salary: { basicSalary: 49000, hra: 19600, da: 6125, tdsPercent: 5, epfPercent: 12 } },
+    { name: 'Mrs. Rekha Pandey', email: 'rekha.pandey@sainik01.edu', role: 'Teacher', subjects: 'Hindi, Literature', maxPeriods: 6, salary: { basicSalary: 44000, hra: 17600, da: 5500, tdsPercent: 5, epfPercent: 12 } },
+    { name: 'Mr. Sunil Yadav', email: 'sunil.yadav@sainik01.edu', role: 'Teacher', subjects: 'Sports, Drill', maxPeriods: 8, salary: { basicSalary: 47000, hra: 18800, da: 5875, tdsPercent: 5, epfPercent: 12 } },
+    { name: 'Mrs. Sangeeta Mishra', email: 'sangeeta.m@sainik01.edu', role: 'Teacher', subjects: 'Civics, Economics', maxPeriods: 6, salary: { basicSalary: 48000, hra: 19200, da: 6000, tdsPercent: 5, epfPercent: 12 } },
   ];
-  for (const t of teachers) {
-    await prisma.staff.upsert({
-      where: { branchId_email: { branchId, email: t.email } },
-      update: {},
-      create: { ...t, branchId, role: 'Teacher', isActive: true },
+
+  const createdStaff: { id: string; name: string; salary: any }[] = [];
+
+  // Create staff members
+  for (const s of staffData) {
+    const staff = await prisma.staff.create({
+      data: {
+        branchId: branch.id,
+        name: s.name,
+        email: s.email,
+        role: s.role,
+        subjects: s.subjects || null,
+        maxPeriodsPerDay: s.maxPeriods,
+        isActive: true,
+      },
     });
+
+    // Create salary structure
+    await prisma.salaryStructure.create({
+      data: {
+        staffId: staff.id,
+        basicSalary: s.salary.basicSalary,
+        hra: s.salary.hra,
+        da: s.salary.da,
+        tdsPercent: s.salary.tdsPercent,
+        epfPercent: s.salary.epfPercent,
+      },
+    });
+
+    createdStaff.push({ id: staff.id, name: s.name, salary: s.salary });
+    console.log(`✓ Created staff: ${s.name}`);
   }
 
-  // Users
-  const users = [
-    { id: 'u_admin', email: 'admin@sainik01.edu', role: 'super_admin', password: 'Admin@123' },
-    { id: 'u_principal', email: 'principal@sainik01.edu', role: 'branch_admin', password: 'Demo@Principal1' },
-    { id: 'u_teacher', email: 'teacher@sainik01.edu', role: 'teacher', password: 'Demo@Teacher1', staffId: 't_rajesh' },
-    { id: 'u_warden', email: 'warden@sainik01.edu', role: 'warden', password: 'Demo@Warden1' },
+  // Create default demo users with bcrypt passwords
+  const usersToSeed = [
+    { email: 'principal@sainik01.edu', password: 'Demo@Principal1', role: 'branch_admin' },
+    { email: 'admin@sainik01.edu', password: 'Admin@123', role: 'super_admin' },
+    { email: 'teacher@sainik01.edu', password: 'Demo@Teacher1', role: 'teacher' },
+    { email: 'warden@sainik01.edu', password: 'Demo@Warden1', role: 'warden' },
   ];
-  for (const u of users) {
-    const hash = await bcrypt.hash(u.password, 10);
+
+  for (const u of usersToSeed) {
+    const hashedPassword = await bcrypt.hash(u.password, 10);
+    const existingStaff = createdStaff.find((s) => s.name.toLowerCase().includes(u.role.replace('_', '')));
     await prisma.user.upsert({
       where: { email: u.email },
-      update: { password: hash },
       create: {
-        id: u.id,
-        branchId,
         email: u.email,
-        password: hash,
+        password: hashedPassword,
         role: u.role,
-        staffId: u.staffId ?? null,
+        branchId: branch.id,
+        staffId: existingStaff?.id ?? null,
+      },
+      update: {
+        password: hashedPassword,
+        role: u.role,
+        branchId: branch.id,
+      },
+    });
+    console.log(`✓ Created/updated user: ${u.email} (${u.role})`);
+  }
+
+  // Generate payslips for Oct 2026
+  console.log('\n📄 Generating payslips for October 2026...');
+  
+  const monthYear = '2026-10';
+  const generatedAt = new Date();
+
+  for (const staff of createdStaff) {
+    const gross = staff.salary.basicSalary + staff.salary.hra + staff.salary.da;
+    const tds = Math.round((gross * staff.salary.tdsPercent) / 100);
+    const epf = Math.round((staff.salary.basicSalary * staff.salary.epfPercent) / 100);
+    const netSalary = gross - tds - epf;
+
+    // Random status for variety
+    const statuses = ['Paid', 'Paid', 'Processed', 'Pending', 'Paid'];
+    const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
+
+    await prisma.payslip.create({
+      data: {
+        branchId: branch.id,
+        staffId: staff.id,
+        monthYear: monthYear,
+        basicSalary: staff.salary.basicSalary,
+        hra: staff.salary.hra,
+        da: staff.salary.da,
+        grossSalary: gross,
+        tdsDeduction: tds,
+        epfDeduction: epf,
+        otherDeductions: 0,
+        netSalary: Math.round(netSalary),
+        status: randomStatus,
+        generatedAt: generatedAt,
+      },
+    });
+
+    console.log(`  ✓ ${staff.name}: ${monthYear} - ₹${netSalary.toLocaleString('en-IN')} (${randomStatus})`);
+  }
+
+  // Generate payslips for September 2026 (previous month, all paid)
+  console.log('\n📄 Generating payslips for September 2026...');
+  
+  for (const staff of createdStaff) {
+    const gross = staff.salary.basicSalary + staff.salary.hra + staff.salary.da;
+    const tds = Math.round((gross * staff.salary.tdsPercent) / 100);
+    const epf = Math.round((staff.salary.basicSalary * staff.salary.epfPercent) / 100);
+    const netSalary = gross - tds - epf;
+
+    await prisma.payslip.create({
+      data: {
+        branchId: branch.id,
+        staffId: staff.id,
+        monthYear: '2026-09',
+        basicSalary: staff.salary.basicSalary,
+        hra: staff.salary.hra,
+        da: staff.salary.da,
+        grossSalary: gross,
+        tdsDeduction: tds,
+        epfDeduction: epf,
+        otherDeductions: 0,
+        netSalary: Math.round(netSalary),
+        status: 'Paid',
+        generatedAt: new Date(2026, 8, 5),
       },
     });
   }
+  console.log('  ✓ September 2026 payslips generated (all paid)');
 
-  // Students
-  const students = [
-    { id: 'stu_001', admissionNo: 'S2023-045', fullName: 'Aditya Vardhan Singh', classId: 'cls_10a', gender: 'Male' },
-    { id: 'stu_002', admissionNo: 'S2023-046', fullName: 'Rahul Verma', classId: 'cls_10a', gender: 'Male' },
-    { id: 'stu_003', admissionNo: 'S2023-047', fullName: 'Priya Menon', classId: 'cls_10a', gender: 'Female' },
-    { id: 'stu_004', admissionNo: 'S2023-048', fullName: 'Vikram Malhotra', classId: 'cls_10b', gender: 'Male' },
-  ];
-  for (const s of students) {
-    await prisma.student.upsert({
-      where: { branchId_admissionNo: { branchId, admissionNo: s.admissionNo } },
-      update: {},
-      create: { ...s, branchId },
-    });
-  }
-
-  // Subjects (CBSE levels)
-  const subjects = [
-    { id: 'sub_eng', name: 'English', code: 'ENG', level: 'Class 6-8', groupId: 1 },
-    { id: 'sub_hin', name: 'Hindi', code: 'HIN', level: 'Class 6-8', groupId: 1 },
-    { id: 'sub_mat', name: 'Mathematics', code: 'MAT', level: 'Class 9-10', groupId: 1 },
-    { id: 'sub_sci', name: 'Science', code: 'SCI', level: 'Class 9-10', groupId: 2 },
-    { id: 'sub_sst', name: 'Social Studies', code: 'SST', level: 'Class 9-10', groupId: 2 },
-  ];
-  for (const s of subjects) {
-    await prisma.subject.upsert({
-      where: { branchId_code: { branchId, code: s.code } },
-      update: {},
-      create: { ...s, branchId },
-    });
-  }
-
-  // Exams
-  const exams = [
-    { id: 'ex_1', name: 'Mid-Term Examinations 2026', date: '2026-07-20', classId: 'cls_10a' },
-    { id: 'ex_2', name: 'Final CBSE Examinations 2026', date: '2026-07-25', classId: 'cls_10a' },
-  ];
-  for (const e of exams) {
-    await prisma.exam.upsert({
-      where: { id: e.id },
-      update: {},
-      create: { ...e, branchId },
-    });
-  }
-
-  // Sample exam marks for stu_001
-  const marks = [
-    { id: 'mk_1', examId: 'ex_1', studentId: 'stu_001', subjectId: 'sub_mat', score: 78, maxScore: 100 },
-    { id: 'mk_2', examId: 'ex_1', studentId: 'stu_001', subjectId: 'sub_sci', score: 85, maxScore: 100 },
-  ];
-  for (const m of marks) {
-    await prisma.examMark.upsert({
-      where: {
-        examId_studentId_subjectId: {
-          examId: m.examId,
-          studentId: m.studentId,
-          subjectId: m.subjectId,
-        },
+  // Add sample staff leaves
+  console.log('\n📅 Adding sample staff leaves...');
+  await prisma.staffLeave.createMany({
+    data: [
+      {
+        branchId: branch.id,
+        staffId: createdStaff[2].id, // Arjun Singh
+        leaveType: 'Casual',
+        startDate: '2026-10-10',
+        endDate: '2026-10-11',
+        reason: 'Family event',
+        status: 'Approved',
       },
-      update: { score: m.score },
-      create: { ...m, branchId },
-    });
-  }
-
-  // Rooms
-  const rooms = [
-    { id: 'room_101', name: 'Room 101', type: 'Classroom' },
-    { id: 'room_102', name: 'Room 102', type: 'Classroom' },
-    { id: 'lab_402', name: 'Lab 402', type: 'Lab' },
-  ];
-  for (const r of rooms) {
-    await prisma.academicRoom.upsert({
-      where: { id: r.id },
-      update: {},
-      create: { ...r, branchId, capacity: 40 },
-    });
-  }
-
-  // Period configs
-  const periods = [
-    { periodNumber: 1, startTime: '08:00', endTime: '08:45' },
-    { periodNumber: 2, startTime: '08:45', endTime: '09:30' },
-    { periodNumber: 3, startTime: '09:30', endTime: '10:15', isBreak: true, breakName: 'Short Break' },
-    { periodNumber: 4, startTime: '10:45', endTime: '11:30' },
-    { periodNumber: 5, startTime: '11:30', endTime: '12:15' },
-    { periodNumber: 6, startTime: '13:00', endTime: '13:45' },
-  ];
-  const existingPeriods = await prisma.periodConfig.count({ where: { branchId } });
-  if (existingPeriods === 0) {
-    for (const p of periods) {
-      await prisma.periodConfig.create({ data: { ...p, branchId } });
-    }
-  }
-
-  // Base timetable for Class 10 A (Mon only, 3 periods) so demo views are not empty
-  const tt = [
-    { id: 'tt_1', classId: 'cls_10a', dayOfWeek: 'Mon', periodNumber: 1, subject: 'Mathematics', teacherId: 't_meera', roomId: 'room_101' },
-    { id: 'tt_2', classId: 'cls_10a', dayOfWeek: 'Mon', periodNumber: 2, subject: 'English', teacherId: 't_rajesh', roomId: 'room_101' },
-    { id: 'tt_3', classId: 'cls_10a', dayOfWeek: 'Mon', periodNumber: 4, subject: 'Physics', teacherId: 't_arjun', roomId: 'lab_402' },
-  ];
-  for (const slot of tt) {
-    await prisma.timetableSlot.upsert({
-      where: {
-        classId_dayOfWeek_periodNumber: {
-          classId: slot.classId,
-          dayOfWeek: slot.dayOfWeek,
-          periodNumber: slot.periodNumber,
-        },
+      {
+        branchId: branch.id,
+        staffId: createdStaff[4].id, // Vikram Malhotra
+        leaveType: 'Sick',
+        startDate: '2026-10-15',
+        endDate: '2026-10-16',
+        reason: 'Medical appointment',
+        status: 'Approved',
       },
-      update: {},
-      create: { ...slot, branchId },
-    });
-  }
+      {
+        branchId: branch.id,
+        staffId: createdStaff[6].id, // Deepak Kumar
+        leaveType: 'Casual',
+        startDate: '2026-10-20',
+        endDate: '2026-10-20',
+        reason: 'Personal work',
+        status: 'Pending',
+      },
+    ],
+  });
+  console.log('✓ Sample leaves added');
 
-  // eslint-disable-next-line no-console
-  console.log('✅ Seed complete: branch, classes, staff, users, students, subjects, exams, rooms, periods, timetable');
+  const totalPayroll = createdStaff.reduce((sum, staff) => {
+    const gross = staff.salary.basicSalary + staff.salary.hra + staff.salary.da;
+    const tds = Math.round((gross * staff.salary.tdsPercent) / 100);
+    const epf = Math.round((staff.salary.basicSalary * staff.salary.epfPercent) / 100);
+    return sum + (gross - tds - epf);
+  }, 0);
+
+  console.log('\n✅ Seed completed successfully!');
+  console.log(`   Total Staff: ${createdStaff.length}`);
+  console.log(`   Total Payslips (Oct 2026): ${createdStaff.length}`);
+  console.log(`   Total Payslips (Sep 2026): ${createdStaff.length}`);
+  console.log(`   Monthly Payroll Cost: ₹${totalPayroll.toLocaleString('en-IN')}`);
 }
 
 main()
   .catch((e) => {
-    // eslint-disable-next-line no-console
-    console.error(e);
+    console.error('❌ Seed failed:', e);
     process.exit(1);
   })
-  .finally(() => prisma.$disconnect());
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

@@ -39,12 +39,27 @@ async function bootstrap() {
     process.exit(1);
   }
 
-  // Security headers. CSP is left off because Swagger UI needs inline scripts;
-  // enable it once /api/docs is gated behind auth.
+  // Security headers: Helmet with sensible defaults
   app.use(
     helmet({
-      contentSecurityPolicy: false,
+      contentSecurityPolicy: isProd
+        ? {
+            directives: {
+              defaultSrc: ["'self'"],
+              scriptSrc: ["'self'"],
+              styleSrc: ["'self'", "'unsafe-inline'"],
+              imgSrc: ["'self'", 'data:', 'blob:'],
+              connectSrc: ["'self'"],
+              fontSrc: ["'self'"],
+              objectSrc: ["'none'"],
+              frameAncestors: ["'self'"],
+            },
+          }
+        : false, // Swagger UI requires inline scripts in dev mode
       crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: { policy: 'same-site' },
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+      hsts: isProd ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
     }),
   );
 
@@ -59,8 +74,11 @@ async function bootstrap() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'x-signature'],
+    maxAge: 86400,
   });
 
+  app.setGlobalPrefix('api');
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalPipes(
     new ValidationPipe({

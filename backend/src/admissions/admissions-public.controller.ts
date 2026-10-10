@@ -1,4 +1,5 @@
 import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Post } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -15,6 +16,7 @@ export class AdmissionsPublicController {
   ) {}
 
   @Get(':token')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async getForm(@Param('token') token: string) {
     const app = await this.prisma.admission.findUnique({ where: { token } });
     if (!app) throw new NotFoundException('Invalid or expired admission link');
@@ -42,6 +44,7 @@ export class AdmissionsPublicController {
   }
 
   @Post(':token/submit')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async submit(@Param('token') token: string, @Body() body: Record<string, unknown>) {
     const app = await this.prisma.admission.findUnique({ where: { token } });
     if (!app) throw new NotFoundException('Invalid or expired admission link');
