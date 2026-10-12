@@ -153,37 +153,43 @@ export function Card({
   );
 }
 
-const STAT_TONES: Record<string, { chip: string; glow: string }> = {
-  brand: { chip: "bg-brand-50 text-brand-700", glow: "from-brand-500/20" },
-  emerald: { chip: "bg-emerald-50 text-emerald-700", glow: "from-emerald-500/20" },
-  amber: { chip: "bg-amber-50 text-amber-700", glow: "from-amber-500/20" },
-  rose: { chip: "bg-rose-50 text-rose-700", glow: "from-rose-500/20" },
-  violet: { chip: "bg-violet-50 text-violet-700", glow: "from-violet-500/20" },
-  teal: { chip: "bg-teal-50 text-teal-700", glow: "from-teal-500/20" },
+const STAT_TONES: Record<string, { chip: string; iconColor: string }> = {
+  brand: { chip: "bg-[#2563EB]/10", iconColor: "text-[#2563EB]" },
+  emerald: { chip: "bg-[#10B981]/10", iconColor: "text-[#10B981]" },
+  amber: { chip: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
+  rose: { chip: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
+  violet: { chip: "bg-[#7C3AED]/10", iconColor: "text-[#7C3AED]" },
+  teal: { chip: "bg-[#0D9488]/10", iconColor: "text-[#0D9488]" },
+  sky: { chip: "bg-[#0EA5E9]/10", iconColor: "text-[#0EA5E9]" },
+  pink: { chip: "bg-[#EC4899]/10", iconColor: "text-[#EC4899]" },
 };
 
 export function StatCard({
-  label, value, hint, tone = "brand", icon, prefix, suffix, decimals = 0,
+  label, value, hint, tone = "brand", icon, prefix, suffix, decimals = 0, trend, trendPositive = true,
 }: {
   label: string; value: number | null; hint?: string; tone?: keyof typeof STAT_TONES;
   icon?: string; prefix?: string; suffix?: string; decimals?: number;
+  trend?: string; trendPositive?: boolean;
 }) {
   const t = STAT_TONES[tone] ?? STAT_TONES.brand;
   return (
-    <div className="card card-hover group relative overflow-hidden p-4">
-      <div className={`pointer-events-none absolute -right-8 -top-10 h-24 w-24 rounded-full bg-gradient-to-br ${t.glow} to-transparent opacity-0 blur-2xl transition-opacity duration-500 group-hover:opacity-100`} />
-      <div className="relative flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-          <p className="mt-2 text-2xl font-bold text-slate-900">
-            {value === null ? <span className="text-slate-300">—</span> : <AnimatedNumber value={value} prefix={prefix} suffix={suffix} decimals={decimals} />}
-          </p>
-          {hint && <p className="mt-1 truncate text-xs text-slate-400">{hint}</p>}
-        </div>
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-4.5 shadow-xs hover:shadow-sm transition-all duration-200">
+      <div className="flex items-center justify-between">
         {icon && (
-          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl transition-transform duration-300 group-hover:scale-110 ${t.chip}`}>
-            <Icon name={icon} />
-          </span>
+          <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${t.chip} ${t.iconColor}`}>
+            <Icon name={icon} className="h-5 w-5" />
+          </div>
+        )}
+      </div>
+      <div className="mt-3">
+        <div className="text-xl sm:text-2xl font-bold text-slate-900 tnum tracking-tight">
+          {value === null ? <span className="text-slate-300">—</span> : <AnimatedNumber value={value} prefix={prefix} suffix={suffix} decimals={decimals} />}
+        </div>
+        <div className="text-[12px] font-medium text-slate-500 mt-0.5">{label}</div>
+        {(trend || hint) && (
+          <div className={`mt-1 flex items-center text-[11px] font-semibold ${trend ? (trendPositive ? "text-emerald-600" : "text-rose-500") : "text-slate-400"}`}>
+            <span>{trend ? `${trendPositive ? "↑" : "↓"} ${trend}` : hint}</span>
+          </div>
         )}
       </div>
     </div>
@@ -198,9 +204,19 @@ type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 export function Button({ variant = "soft", loading, className = "", children, disabled, ...rest }: BtnProps) {
-  const v = { primary: "btn-primary", accent: "btn-accent", soft: "btn-soft", danger: "btn-danger" }[variant];
+  const v = {
+    primary: "bg-blue-600 text-white hover:bg-blue-700 shadow-sm active:scale-[0.98] border border-blue-600",
+    accent: "bg-[#0F172A] text-white hover:bg-slate-800 shadow-sm active:scale-[0.98] border border-slate-900",
+    soft: "bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200/80 active:scale-[0.98]",
+    danger: "bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 active:scale-[0.98]",
+  }[variant];
+
   return (
-    <button className={`${v} ${className}`} disabled={disabled || loading} {...rest}>
+    <button
+      className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all duration-150 disabled:opacity-50 disabled:pointer-events-none ${v} ${className}`}
+      disabled={disabled || loading}
+      {...rest}
+    >
       {loading && (
         <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />
       )}

@@ -14,7 +14,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuthGuard } from '../auth/auth.guard';
+import { AuthGuard, Roles, RolesGuard } from '../auth/auth.guard';
 
 type JwtUser = { sub: string; role: string; branch_id: string };
 type ReqWithUser = { user: JwtUser };
@@ -31,7 +31,7 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_ORDER: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
 @Controller('timetable')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RolesGuard)
 export class TimetableController {
   constructor(private prisma: PrismaService) {}
 
@@ -46,6 +46,7 @@ export class TimetableController {
   }
 
   @Post('teachers')
+  @Roles('super_admin', 'branch_admin')
   async createTeacher(
     @Req() req: ReqWithUser,
     @Body() body: { name?: string; email?: string; subjects?: string; max_periods_per_day?: number },
@@ -75,6 +76,7 @@ export class TimetableController {
   }
 
   @Put('teachers/:id')
+  @Roles('super_admin', 'branch_admin')
   async updateTeacher(
     @Req() req: ReqWithUser,
     @Param('id') id: string,
@@ -104,6 +106,7 @@ export class TimetableController {
   }
 
   @Post('rooms')
+  @Roles('super_admin', 'branch_admin')
   async createRoom(
     @Req() req: ReqWithUser,
     @Body() body: { name?: string; type?: string; capacity?: number },
@@ -121,6 +124,7 @@ export class TimetableController {
   }
 
   @Put('rooms/:id')
+  @Roles('super_admin', 'branch_admin')
   async updateRoom(
     @Req() req: ReqWithUser,
     @Param('id') id: string,
@@ -138,6 +142,7 @@ export class TimetableController {
   }
 
   @Delete('rooms/:id')
+  @Roles('super_admin', 'branch_admin')
   async deleteRoom(@Req() req: ReqWithUser, @Param('id') id: string) {
     await this.prisma.academicRoom.deleteMany({ where: { id, branchId: req.user.branch_id } });
     return { success: true };
@@ -154,6 +159,7 @@ export class TimetableController {
   }
 
   @Post('periods')
+  @Roles('super_admin', 'branch_admin')
   async savePeriods(
     @Req() req: ReqWithUser,
     @Body() body: { periods?: Array<{ period_number: number; start_time: string; end_time: string; is_break?: boolean; break_name?: string }> },
@@ -206,6 +212,7 @@ export class TimetableController {
   }
 
   @Post('exams/schedule')
+  @Roles('super_admin', 'branch_admin', 'teacher')
   async scheduleExam(
     @Req() req: ReqWithUser,
     @Body() body: { exam_id?: string; date?: string; period_number?: number; room_id?: string; invigilator_id?: string; subject?: string },
@@ -248,6 +255,7 @@ export class TimetableController {
   }
 
   @Delete('exams/schedule/:id')
+  @Roles('super_admin', 'branch_admin')
   async deleteExamSchedule(@Req() req: ReqWithUser, @Param('id') id: string) {
     await this.prisma.examSchedule.deleteMany({ where: { id, branchId: req.user.branch_id } });
     return { success: true };
@@ -256,6 +264,7 @@ export class TimetableController {
   // ─── Teacher absence → bulk auto-substitution ────────────────
 
   @Post('teachers/:id/absent')
+  @Roles('super_admin', 'branch_admin', 'principal', 'teacher')
   async markTeacherAbsent(
     @Req() req: ReqWithUser,
     @Param('id') teacherId: string,

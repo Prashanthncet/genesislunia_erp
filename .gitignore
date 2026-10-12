@@ -1,7 +1,56 @@
-conn.php
-note.txt
-test.php
-test2.php
-test3.php
-stitch_extracted/
-design.md
+# Dependencies
+node_modules/
+*/node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+*/dist/
+.next/
+*/.next/
+out/
+build/
+
+# SQLite Databases & Local Storage
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+backend/prisma/dev.db
+backend/prisma/dev.db-journal
+backend/test/e2e-test.db
+
+# Environment variables
+.env
+.env*.local
+!.env.example
+*/.env
+*/.env*.local
+!*/.env.example
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.tsbuildinfo
+*.swp
+*.bak
+*~
+
+# Temporary & Cache directories
+.freebuff/
+.turbo
+.cache
+

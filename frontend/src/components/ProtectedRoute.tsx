@@ -8,24 +8,31 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
     const token = localStorage.getItem("token");
     if (!token) {
-      router.replace("/login");
+      window.location.href = "/login";
       return;
     }
     try {
-      const payload = JSON.parse(atob(token.split(".")[1]));
-      if (payload.exp * 1000 < Date.now()) {
+      const parts = token.split(".");
+      if (parts.length !== 3) {
         localStorage.removeItem("token");
-        router.replace("/login");
+        window.location.href = "/login";
+        return;
+      }
+      const payload = JSON.parse(atob(parts[1]));
+      if (payload.exp && payload.exp * 1000 < Date.now()) {
+        localStorage.removeItem("token");
+        window.location.href = "/login";
         return;
       }
       setReady(true);
     } catch {
       localStorage.removeItem("token");
-      router.replace("/login");
+      window.location.href = "/login";
     }
-  }, [router]);
+  }, []);
 
   if (!ready) {
     return (

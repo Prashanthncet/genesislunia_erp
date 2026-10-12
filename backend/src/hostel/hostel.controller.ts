@@ -83,8 +83,13 @@ export class HostelController {
     if (!body?.hostel_id || !body?.room_number || typeof body?.capacity !== 'number') {
       throw new BadRequestException('hostel_id, room_number and capacity are required');
     }
+    const hostel = await this.prisma.hostel.findFirst({
+      where: { id: body.hostel_id, branchId: req.user.branch_id },
+    });
+    if (!hostel) throw new NotFoundException('Hostel not found in this branch');
+
     const room = await this.prisma.room.create({
-      data: { hostelId: body.hostel_id, roomNumber: body.room_number, capacity: body.capacity },
+      data: { hostelId: hostel.id, roomNumber: body.room_number, capacity: body.capacity },
     });
     return { id: room.id };
   }

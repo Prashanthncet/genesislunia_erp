@@ -5,9 +5,17 @@ import { PrismaService } from '../prisma/prisma.service';
 
 type ReqWithUser = { user: { sub: string; role: string; branch_id: string } };
 
+/**
+ * Escapes CSV fields and neutralizes formula injection (DDE attacks in Excel/Sheets).
+ * Any cell value starting with =, +, -, @, \t, \r has a single quote prepended.
+ */
 const csvEscape = (v: unknown): string => {
-  const s = v === null || v === undefined ? '' : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  if (v === null || v === undefined) return '';
+  let s = String(v);
+  if (/^[=+\-@\t\r]/.test(s)) {
+    s = `'${s}`;
+  }
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
 @Controller('reports')
