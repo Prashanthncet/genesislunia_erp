@@ -529,3 +529,9 @@ Deps installed once by lead: pdf-lib 1.17.1, exceljs 4.4.0, qrcode 1.5.4 (+@type
   production builds OK; no migration drift. MODULE_ASSESSMENT.md v4 + docs/OPERATIONS.md rewritten.
   Still not real (needs Jayanth): deploy, push (CI never run), Docker images never built, real Razorpay/MSG91/
   Twilio/S3/R2/Sentry accounts, CA check of tax rates, school sign-off on role decisions. Nothing committed.
+- **Commit (2026-10-22):** branch `jayanth/phase-0-11-completion` (Jayanth has no branch on this repo; main is
+  shared via PRs), commit 8c1138c, 265 files, no watermark (doctrine), secret scan clean. CAUGHT before push:
+  backend/.gitignore `storage/` also ignored `src/storage/` (module source) → anchored to `/storage/`; root
+  .gitignore now ignores .playwright-mcp/, .qoder/, .shots/. PUSH REJECTED: gh token (jayanth-torii) lacks the
+  `workflow` scope needed to push .github/workflows/ci.yml → Jayanth must run
+  `gh auth refresh -h github.com -s workflow`, then `git push -u origin jayanth/phase-0-11-completion`.
