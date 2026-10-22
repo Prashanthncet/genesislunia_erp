@@ -15,8 +15,8 @@ export default function NotFound() {
 
       <div className="card w-full max-w-md p-8" style={{ animation: "scale-in 0.4s var(--ease-spring) both" }}>
         <p className="font-mono text-6xl font-black tracking-tight text-brand-200">404</p>
-        <h1 className="mt-2 text-xl font-bold text-slate-900">This page doesn&apos;t exist</h1>
-        <p className="mt-2 text-sm text-slate-500">
+        <h1 className="mt-2 text-xl font-bold text-ink">This page doesn&apos;t exist</h1>
+        <p className="mt-2 text-sm text-ink-2">
           The link may be out of date, or the page may have been renamed. Everything else in the
           ERP is still where you left it.
         </p>

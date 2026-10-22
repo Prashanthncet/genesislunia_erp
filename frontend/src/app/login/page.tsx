@@ -1,78 +1,104 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { R, ROLE_LABEL } from "@/lib/auth";
 
-const DEMO = [
-  { label: "Teacher", role: "teacher", email: "teacher@sainik01.edu", password: "Demo@Teacher1", color: "bg-purple-600" },
-  { label: "Administrator", role: "super_admin", email: "admin@sainik01.edu", password: "Admin@123", color: "bg-blue-600" },
-  { label: "Principal", role: "branch_admin", email: "principal@sainik01.edu", password: "Demo@Principal1", color: "bg-emerald-600" },
-  { label: "Warden", role: "warden", email: "warden@sainik01.edu", password: "Demo@Warden1", color: "bg-amber-600" },
+/** Seeded demo accounts (backend prisma/seed.ts DEMO_LOGINS), grouped the way a school is. */
+const DEMO_GROUPS: { group: string; dot: string; logins: { role: string; email: string; password: string }[] }[] = [
+  {
+    group: "Leadership",
+    dot: "bg-brand-700",
+    logins: [
+      { role: "super_admin", email: "admin@sainik01.edu", password: "Admin@123" },
+      { role: "branch_admin", email: "schooladmin@sainik01.edu", password: "Demo@Admin1" },
+      { role: "principal", email: "principal@sainik01.edu", password: "Demo@Principal1" },
+      { role: "vice_principal", email: "vp@sainik01.edu", password: "Demo@Vp1" },
+    ],
+  },
+  {
+    group: "Office",
+    dot: "bg-accent-600",
+    logins: [
+      { role: "office_superintendent", email: "os@sainik01.edu", password: "Demo@Os1" },
+      { role: "admission_officer", email: "ao@sainik01.edu", password: "Demo@Ao1" },
+      { role: "accounts", email: "accounts@sainik01.edu", password: "Demo@Accounts1" },
+      { role: "hr", email: "hr@sainik01.edu", password: "Demo@Hr1" },
+    ],
+  },
+  {
+    group: "Teaching",
+    dot: "bg-ok",
+    logins: [
+      { role: "hod", email: "hod@sainik01.edu", password: "Demo@Hod1" },
+      { role: "teacher", email: "teacher@sainik01.edu", password: "Demo@Teacher1" },
+    ],
+  },
+  {
+    group: "Welfare",
+    dot: "bg-warn",
+    logins: [
+      { role: "warden", email: "warden@sainik01.edu", password: "Demo@Warden1" },
+      { role: "security", email: "security@sainik01.edu", password: "Demo@Security1" },
+      { role: "discipline_officer", email: "discipline@sainik01.edu", password: "Demo@Discipline1" },
+    ],
+  },
+  {
+    group: "Portal",
+    dot: "bg-danger",
+    logins: [
+      { role: "parent", email: "parent@sainik01.edu", password: "Demo@Parent1" },
+      { role: "student", email: "student@sainik01.edu", password: "Demo@Student1" },
+    ],
+  },
 ];
 
+type LoginResponse = { token: string; role: string; branch_id: string; must_change_password?: boolean };
+
+/**
+ * Sign-in only. Accounts are created by the school (Settings → User management) or by
+ * the admission workflow — there is deliberately no public sign-up and no password-less SSO.
+ */
 export default function LoginPage() {
-  const [authMode, setAuthMode] = useState<"signin" | "signup" | "sso">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [expired, setExpired] = useState(false);
+
+  useEffect(() => {
+    setExpired(new URLSearchParams(window.location.search).get("expired") === "1");
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
-
     try {
-      if (authMode === "sso") {
-        const ssoEmail = email || "admin@sainik01.edu";
-        const res = await apiFetch<{ token: string; role: string; branch_id: string }>(
-          "/api/auth/sso",
-          { method: "POST", body: JSON.stringify({ email: ssoEmail }) },
-        );
-        localStorage.setItem("token", res.token);
-        localStorage.setItem("role", res.role);
-        localStorage.setItem("branch_id", res.branch_id);
-        window.location.href = "/";
-        return;
-      }
-
-      if (authMode === "signup") {
-        const signUpEmail = email || "teacher@sainik01.edu";
-        const signUpPassword = password || "Demo@Teacher1";
-        const res = await apiFetch<{ token: string; role: string; branch_id: string }>(
-          "/api/auth/signup",
-          { method: "POST", body: JSON.stringify({ email: signUpEmail, password: signUpPassword, role: "teacher" }) },
-        );
-        localStorage.setItem("token", res.token);
-        localStorage.setItem("role", res.role);
-        localStorage.setItem("branch_id", res.branch_id);
-        window.location.href = "/";
-        return;
-      }
-
-      const res = await apiFetch<{ token: string; role: string; branch_id: string }>(
-        "/api/auth/login",
-        { method: "POST", body: JSON.stringify({ email, password }) },
-      );
+      const res = await apiFetch<LoginResponse>("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
       localStorage.setItem("token", res.token);
+      // Kept only for legacy readers; the UI decides access from GET /auth/me, not this.
       localStorage.setItem("role", res.role);
       localStorage.setItem("branch_id", res.branch_id);
-      window.location.href = "/";
+      const portal = (R.PORTAL as readonly string[]).includes(res.role);
+      window.location.href = res.must_change_password ? "/account/password" : portal ? "/portal" : "/";
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to authenticate");
-    } finally {
+      setError(err instanceof Error ? err.message : "Sign-in failed");
       setLoading(false);
     }
   };
 
   return (
-    <div className="relative flex min-h-screen w-full flex-col justify-between overflow-hidden bg-[#FAFBFC]">
+    <div className="relative flex min-h-screen w-full flex-col justify-between overflow-hidden bg-page">
       {/* ── 1. Animated World Grid & Dotted Vector Network Background ── */}
       <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
         <div className="absolute inset-0 flex justify-between opacity-30">
           {Array.from({ length: 11 }).map((_, i) => (
-            <div key={i} className="h-full w-px bg-gradient-to-b from-slate-200/50 via-slate-200/10 to-slate-200/50" />
+            <div key={i} className="h-full w-px bg-gradient-to-b from-line/50 via-line/10 to-line/50" />
           ))}
         </div>
 
@@ -89,7 +115,7 @@ export default function LoginPage() {
           <path
             d="M -50 520 Q 380 360 740 440 T 1240 380 T 1750 460"
             fill="none"
-            stroke="#A5B4FC"
+            stroke="#B4CBE6"
             strokeWidth="1.5"
             strokeDasharray="5 5"
             className="animate-dash-flow-reverse"
@@ -166,238 +192,151 @@ export default function LoginPage() {
           ))}
         </svg>
 
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-blue-400/10 blur-[120px]" />
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-brand-400/10 blur-[120px]" />
       </div>
 
       {/* ── 2. Top Header ── */}
       <header className="relative z-10 flex items-center justify-between px-6 py-6 sm:px-10">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0E2442] text-white shadow-sm">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-700 text-white shadow-sm">
             <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 3L1 9L12 15L21 10.09V17H23V9M5 13.18V17.18L12 21L19 17.18V13.18L12 17L5 13.18Z" />
             </svg>
           </div>
           <div>
-            <span className="text-sm font-bold tracking-tight text-slate-900">GENESIS LUMIA ERP</span>
-            <span className="block text-[10px] font-medium text-slate-400 uppercase tracking-wider">Sainik School Core</span>
+            <span className="text-sm font-bold tracking-tight text-ink">GENESIS LUMIA ERP</span>
+            <span className="block text-[10px] font-medium text-ink-3 uppercase tracking-wider">Sainik School Core</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-white/90 px-3.5 py-1 text-xs font-semibold text-emerald-700 shadow-xs backdrop-blur-md">
+        <div className="flex items-center gap-2 rounded-full border border-ok-line bg-white/90 px-3.5 py-1 text-xs font-semibold text-ok-ink shadow-soft backdrop-blur-md">
           <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ok opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-ok" />
           </span>
           <span>Institutional Network Online</span>
         </div>
       </header>
 
-      {/* ── 3. Centered Lightswind Authentication Card ── */}
+      {/* ── 3. Centered Authentication Card ── */}
       <main className="relative z-10 my-auto flex items-center justify-center px-4 py-8">
-        <div className="w-full max-w-[440px] rounded-3xl border border-slate-200/90 bg-white/95 p-7 sm:p-9 shadow-2xl shadow-slate-200/50 backdrop-blur-xl transition-all">
+        <div className="w-full max-w-[440px] rounded-xl border border-line/90 bg-white/95 p-6 sm:p-9 shadow-2xl shadow-line/50 backdrop-blur-xl transition-all">
           <div className="text-center">
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-ink">
               Welcome back
             </h1>
-            <p className="mt-1.5 text-xs text-slate-500 font-medium">
-              Sign in to your distributed cloud workspace
+            <p className="mt-1.5 text-xs text-ink-2 font-medium">
+              Staff, parents and students sign in here
             </p>
           </div>
 
-          {/* Tab Selector: Sign In / Sign Up / SSO */}
-          <div className="mt-6 flex rounded-2xl bg-slate-100/90 p-1 text-xs font-bold text-slate-600">
-            <button
-              type="button"
-              onClick={() => setAuthMode("signin")}
-              className={`flex-1 rounded-xl py-2 transition-all duration-150 ${
-                authMode === "signin" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => setAuthMode("signup")}
-              className={`flex-1 rounded-xl py-2 transition-all duration-150 ${
-                authMode === "signup" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
-              }`}
-            >
-              Sign Up
-            </button>
-            <button
-              type="button"
-              onClick={() => setAuthMode("sso")}
-              className={`flex-1 rounded-xl py-2 transition-all duration-150 ${
-                authMode === "sso" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
-              }`}
-            >
-              SSO
-            </button>
-          </div>
-
-          {/* Social Auth Buttons (shown in Sign In & Sign Up modes) */}
-          {authMode !== "sso" && (
-            <>
-              <div className="mt-5 space-y-2.5">
-                <button
-                  type="button"
-                  onClick={() => { setEmail("teacher@sainik01.edu"); setPassword("Demo@Teacher1"); }}
-                  className="flex w-full items-center justify-between rounded-2xl bg-[#0F172A] px-4 py-3 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 transition active:scale-[0.99]"
-                >
-                  <div className="flex items-center gap-3">
-                    <svg className="h-4 w-4" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
-                      <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
-                      <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
-                      <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
-                    </svg>
-                    <span>Sign in with Google</span>
-                  </div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">DEFAULT</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => { setEmail("admin@sainik01.edu"); setPassword("Admin@123"); }}
-                  className="flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition active:scale-[0.99]"
-                >
-                  <svg className="h-4 w-4" viewBox="0 0 23 23">
-                    <path fill="#f35325" d="M1 1h10v10H1z"/>
-                    <path fill="#81bc06" d="M12 1h10v10H12z"/>
-                    <path fill="#05a6f0" d="M1 12h10v10H1z"/>
-                    <path fill="#ffba08" d="M12 12h10v10H12z"/>
-                  </svg>
-                  <span>Sign in with Microsoft</span>
-                </button>
-              </div>
-
-              <div className="relative my-5 text-center">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-slate-200" />
-                </div>
-                <span className="relative bg-white px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  OR
-                </span>
-              </div>
-            </>
+          {expired && !error && (
+            <div className="mt-5 flex items-start gap-2 rounded-xl border border-warn-line bg-warn-soft p-3 text-xs font-semibold text-warn-ink" role="status">
+              <svg className="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                <circle cx="12" cy="12" r="9" /><path d="M12 7.5V12l3 2" />
+              </svg>
+              <span>Your session expired. Please sign in again.</span>
+            </div>
           )}
 
           {error && (
-            <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700">
+            <div className="mt-5 rounded-xl border border-danger-line bg-danger-soft p-3 text-xs font-semibold text-danger-ink" role="alert">
               {error}
             </div>
           )}
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Work Email</label>
-              <div className="relative">
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@company.com"
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10 transition"
-                />
-              </div>
+              <label htmlFor="login-id" className="block text-xs font-semibold text-ink-2 mb-1">Email or login ID</label>
+              <input
+                id="login-id"
+                type="text"
+                required
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@school.edu or your login ID"
+                className="w-full rounded-lg border border-line-strong bg-white px-4 py-2.5 text-sm text-ink placeholder-slate-400 focus:border-brand-700 focus:outline-none focus:ring-2 focus:ring-accent-500/10 transition"
+              />
             </div>
 
-            {/* Password input only for signin and signup */}
-            {authMode !== "sso" && (
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-slate-700">Password</label>
-                  <a href="#forgot" className="text-[11px] font-semibold text-blue-600 hover:underline">
-                    Forgot?
-                  </a>
-                </div>
-                <div className="relative">
-                  <input
-                    type={showPw ? "text" : "password"}
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••••••"
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10 transition pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPw(!showPw)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                  >
-                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-                    </svg>
-                  </button>
-                </div>
+            <div>
+              <label htmlFor="login-password" className="block text-xs font-semibold text-ink-2 mb-1">Password</label>
+              <div className="relative">
+                <input
+                  id="login-password"
+                  type={showPw ? "text" : "password"}
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  className="w-full rounded-lg border border-line-strong bg-white px-4 py-2.5 text-sm text-ink placeholder-slate-400 focus:border-brand-700 focus:outline-none focus:ring-2 focus:ring-accent-500/10 transition pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPw(!showPw)}
+                  aria-label={showPw ? "Hide password" : "Show password"}
+                  aria-pressed={showPw}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 hover:text-ink-2"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                  </svg>
+                </button>
               </div>
-            )}
+              <p className="mt-1.5 text-[11px] text-ink-3">
+                Forgot your password? The school office can reset it for you.
+              </p>
+            </div>
 
-            {/* Action Buttons with exact labels matching screenshots */}
             <button
               type="submit"
               disabled={loading}
-              className="group flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0F172A] py-3 text-xs font-bold text-white shadow-md hover:bg-slate-800 active:scale-[0.99] disabled:opacity-50 transition"
+              className="group flex w-full items-center justify-center gap-2 rounded-lg bg-brand-700 py-3 text-sm font-semibold text-white shadow-sm hover:bg-brand-600 active:scale-[0.99] disabled:opacity-50 transition"
             >
-              <span>
-                {loading
-                  ? "Authenticating..."
-                  : authMode === "signup"
-                  ? "Create Free Account"
-                  : authMode === "sso"
-                  ? "Continue with SSO"
-                  : "Continue"}
-              </span>
-              <span className="transition-transform group-hover:translate-x-1">→</span>
+              <span>{loading ? "Signing in…" : "Sign in"}</span>
+              <span className="transition-transform group-hover:translate-x-1" aria-hidden>→</span>
             </button>
           </form>
 
-          {/* Quick Demo Pill Chips */}
-          <div className="mt-5 border-t border-slate-100 pt-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 text-center mb-2">
-              Instant Demo Logins
+          {/* Demo quick-fill: every seeded role, grouped */}
+          <div className="mt-6 border-t border-line pt-4">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-ink-3 text-center mb-2.5">
+              Demo logins — tap to fill
             </p>
-            <div className="grid grid-cols-2 gap-1.5">
-              {DEMO.map((d) => (
-                <button
-                  key={d.label}
-                  type="button"
-                  onClick={() => { setEmail(d.email); setPassword(d.password); }}
-                  className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50/70 p-2 text-left text-[11px] hover:border-blue-300 hover:bg-blue-50/30 transition"
-                >
-                  <span className={`h-2 w-2 rounded-full ${d.color}`} />
-                  <span className="font-semibold text-slate-700 truncate">{d.label}</span>
-                </button>
+            <div className="space-y-2.5">
+              {DEMO_GROUPS.map((g) => (
+                <div key={g.group}>
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-3">{g.group}</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {g.logins.map((d) => (
+                      <button
+                        key={d.email}
+                        type="button"
+                        onClick={() => { setEmail(d.email); setPassword(d.password); setError(""); }}
+                        title={d.email}
+                        className={`flex min-h-9 items-center gap-2 rounded-xl border p-2 text-left text-[11px] transition hover:border-brand-300 hover:bg-brand-50/30 ${
+                          email === d.email ? "border-brand-300 bg-brand-50/50" : "border-line bg-surface-2/70"
+                        }`}
+                      >
+                        <span className={`h-2 w-2 shrink-0 rounded-full ${g.dot}`} aria-hidden />
+                        <span className="truncate font-semibold text-ink-2">{ROLE_LABEL[d.role] ?? d.role}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
-          </div>
-
-          {/* Footer links */}
-          <div className="mt-6 flex justify-center gap-4 text-[11px] font-medium text-slate-500">
-            <button
-              type="button"
-              onClick={() => setAuthMode(authMode === "signin" ? "signup" : "signin")}
-              className="hover:text-slate-800"
-            >
-              {authMode === "signin" ? "Create account" : "Sign in instead"}
-            </button>
-            <span>•</span>
-            <button
-              type="button"
-              onClick={() => setAuthMode("sso")}
-              className="hover:text-slate-800"
-            >
-              Sign in with SAML/OIDC
-            </button>
           </div>
         </div>
       </main>
 
       {/* ── 4. Global Timezone Ticker Bar ── */}
-      <footer className="relative z-10 border-t border-slate-200/70 bg-white/70 backdrop-blur-md py-2.5 px-4 overflow-x-auto">
-        <div className="flex items-center justify-between min-w-[720px] max-w-5xl mx-auto text-[10px] font-semibold text-slate-500">
+      <footer className="relative z-10 border-t border-line/70 bg-white/70 backdrop-blur-md py-2.5 px-4 overflow-x-auto">
+        <div className="flex items-center justify-between min-w-[720px] max-w-5xl mx-auto text-[10px] font-semibold text-ink-2">
           {[
             { time: "8:26 AM", tz: "UTC-8" },
             { time: "11:26 AM", tz: "UTC-6" },
@@ -411,8 +350,8 @@ export default function LoginPage() {
             { time: "3:26 AM", tz: "UTC+10" },
           ].map((item, i) => (
             <div key={i} className="text-center">
-              <span className="block text-slate-800">{item.time}</span>
-              <span className="text-slate-400 text-[9px]">{item.tz}</span>
+              <span className="block text-ink">{item.time}</span>
+              <span className="text-ink-3 text-[9px]">{item.tz}</span>
             </div>
           ))}
         </div>

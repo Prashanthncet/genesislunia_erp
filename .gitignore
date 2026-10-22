@@ -54,3 +54,8 @@ Thumbs.db
 .turbo
 .cache
 
+
+# Local tooling output (browser automation logs, IDE assistant state, ad-hoc screenshots)
+.playwright-mcp/
+.qoder/
+.shots/

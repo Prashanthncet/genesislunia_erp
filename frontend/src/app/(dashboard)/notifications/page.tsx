@@ -1,175 +1,527 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { Badge, Button, Icon, PageHeader, Reveal, StatCard, useToast } from "@/components/ui";
-import { Bell, Mail, Send, CheckCircle, AlertCircle, X, Search, Clock, User, Filter } from "lucide-react";
+import { hasRole, isPortal, R, useMe } from "@/lib/auth";
+import { TableView } from "@/components/TableView";
+import { CardBody, CardEmpty, CardGrid, Chip, IconTile, RecordCard, StatusPill, type Tone } from "@/components/RecordCard";
+import { relativeTime } from "@/lib/format";
+import {
+  Badge, Button, Card, CardHead, EmptyState, Field, Icon, IconButton,
+  Input, Modal, PageHeader, Select, SkeletonRows, StatCard, Textarea, useToast,
+} from "@/components/ui";
 
-type Notification = { id: string; channel: string; recipient: string; subject: string | null; body: string; status: string; createdAt: string };
-type NotificationRow = Notification & { _title: string; _message: string; _read: boolean };
-const mapNotification = (n: Notification): NotificationRow => ({ ...n, _title: n.subject ?? n.body.slice(0, 60) + (n.body.length > 60 ? "…" : ""), _message: n.body, _read: n.status === "sent" });
+/** A row of `notification_logs` — an outbound delivery attempt, not an inbox item. */
+type NotificationLog = {
+  id: string;
+  channel: string;
+  recipient: string;
+  subject: string | null;
+  body: string;
+  refType: string | null;
+  refId: string | null;
+  status: string;
+  createdAt: string;
+};
+
+type ClassItem = { id: string; name: string; section: string | null };
+type BroadcastResult = {
+  dispatched: number;
+  sent: number;
+  failed: number;
+  mocked: number;
+  skipped: number;
+};
+
+type Audience = "all_students" | "all_staff" | "class" | "custom";
+
+const STATUS_TONE: Record<string, "emerald" | "rose" | "amber" | "slate"> = {
+  sent: "emerald",
+  failed: "rose",
+  mocked: "amber",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  sent: "Delivered",
+  failed: "Failed",
+  mocked: "Not sent",
+};
+
+const CHANNEL_ICON: Record<string, string> = {
+  email: "mail",
+  sms: "phone",
+  whatsapp: "phone",
+};
+
+const REF_LABEL: Record<string, string> = {
+  broadcast: "Broadcast",
+  admission: "Admission",
+  attendance: "Attendance",
+  gate_pass: "Gate pass",
+  payroll: "Payroll",
+  cbt: "CBT",
+  incident: "Discipline",
+  staff_leave: "Staff leave",
+  fee: "Fees",
+  fees: "Fees",
+  student_leave: "Student leave",
+  assignment: "Assignment",
+  discipline: "Discipline",
+  leave: "Leave",
+};
+
+const emptyDraft = {
+  channel: "email",
+  audience: "all_students" as Audience,
+  classId: "",
+  subject: "",
+  body: "",
+  customRecipients: "",
+};
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState<NotificationRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
+  const [logs, setLogs] = useState<NotificationLog[]>([]);
+  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [message, setMessage] = useState("");
   const toast = useToast();
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filterChannel, setFilterChannel] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
+  const [search, setSearch] = useState("");
+  const [channel, setChannel] = useState("");
+  const [status, setStatus] = useState("");
   const [showComposer, setShowComposer] = useState(false);
-
-  const [newNotif, setNewNotif] = useState({ title: "", message: "", channel: "email", recipients: "" });
-  const emptyNotif = { title: "", message: "", channel: "email", recipients: "" };
+  const [draft, setDraft] = useState(emptyDraft);
+  // Server-side history filters: per-applicant / per-record (ref_type + ref_id) and recipient search.
+  const [refType, setRefType] = useState("");
+  const [refId, setRefId] = useState("");
+  const [recipientQ, setRecipientQ] = useState("");
+  const { me, loading: meLoading } = useMe();
+  const portal = isPortal(me);
+  const canLog = hasRole(me, R.NOTIFICATION_LOG);
+  const canBroadcast = hasRole(me, R.BROADCAST);
 
   useEffect(() => {
     if (!message) return;
-    toast.push(message, /fail|error|required|invalid/i.test(message) ? "error" : "success");
+    toast.push(message, /fail|error|required|invalid|cannot/i.test(message) ? "error" : "success");
     setMessage("");
   }, [message, toast]);
 
   const loadAll = useCallback(async () => {
+    if (!portal && !canLog) return;
     setLoading(true);
     try {
-      const data = await apiFetch<Notification[]>("/api/notifications");
-      setNotifications((data ?? []).map(mapNotification));
+      const params = new URLSearchParams();
+      if (refType) params.set("ref_type", refType);
+      if (refId.trim()) params.set("ref_id", refId.trim());
+      if (recipientQ.trim()) params.set("recipient", recipientQ.trim());
+      const [notes, cls] = await Promise.all([
+        apiFetch<NotificationLog[]>(portal ? "/api/notifications/mine" : `/api/notifications?${params.toString()}`),
+        canBroadcast ? apiFetch<ClassItem[]>("/api/classes") : Promise.resolve([] as ClassItem[]),
+      ]);
+      setLogs(Array.isArray(notes) ? notes : []);
+      setClasses(Array.isArray(cls) ? cls : []);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Load failed");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [portal, canLog, canBroadcast, refType, refId, recipientQ]);
 
   useEffect(() => {
-    loadAll();
+    // Debounce typing in the server-side filters.
+    const t = setTimeout(() => { loadAll(); }, 250);
+    return () => clearTimeout(t);
   }, [loadAll]);
 
+  /** Jump to the full history of one applicant / record. */
+  const showHistory = (n: NotificationLog) => {
+    if (!n.refType || !n.refId) return;
+    setRefType(n.refType);
+    setRefId(n.refId);
+  };
+
   const sendBroadcast = async () => {
-    if (!newNotif.title || !newNotif.message || !newNotif.recipients) return setMessage("All fields required");
+    if (!draft.body.trim()) return setMessage("Message body is required");
+    if (draft.audience === "class" && !draft.classId) return setMessage("Select a class to send to");
+    if (draft.audience === "custom" && !draft.customRecipients.trim()) {
+      return setMessage("Enter at least one recipient");
+    }
+
     setSending(true);
     try {
-      // Backend has no broadcast endpoint. The real contract is:
-      // POST /api/notifications (notify) is internal-only; publicly the page can only
-      // reflect logs from GET /api/notifications. We mirror the draft locally and load,
-      // so the UI stays usable while we point the composer at a real gateway later.
-      setMessage("Broadcast composer is a placeholder — connect NOTIFY_WEBHOOK_URL on the backend to enable sending.");
-      setNewNotif(emptyNotif);
-    } catch (e) { setMessage(e instanceof Error ? e.message : "Failed"); } finally { setSending(false); }
+      const res = await apiFetch<BroadcastResult>("/api/notifications/broadcast", {
+        method: "POST",
+        body: JSON.stringify({
+          channel: draft.channel,
+          audience: draft.audience,
+          class_id: draft.audience === "class" ? draft.classId : undefined,
+          subject: draft.subject || undefined,
+          body: draft.body,
+          recipients: draft.audience === "custom" ? draft.customRecipients : undefined,
+        }),
+      });
+
+      const parts = [`${res.dispatched} logged`];
+      if (res.sent) parts.push(`${res.sent} delivered`);
+      if (res.failed) parts.push(`${res.failed} failed`);
+      if (res.mocked) parts.push(`${res.mocked} awaiting gateway`);
+      if (res.skipped) parts.push(`${res.skipped} unreachable`);
+      setMessage(`Broadcast queued — ${parts.join(", ")}.`);
+      setDraft(emptyDraft);
+      setShowComposer(false);
+      await loadAll();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Broadcast failed");
+    } finally {
+      setSending(false);
+    }
   };
 
-  const markRead = async (id: string) => {
-    // Backend does not expose a per-notification read endpoint. No-op UI-only state
-    // transition is intentionally omitted so the page does not pretend to persist reads.
-    setMessage("Read tracking is not yet wired to the backend. Logs are view-only for now.");
-    await loadAll();
+  const fmtDate = (d: string) =>
+    d ? new Date(d).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+
+  const counts = useMemo(() => {
+    const sent = logs.filter((n) => n.status === "sent").length;
+    const failed = logs.filter((n) => n.status === "failed").length;
+    return { sent, failed, pending: logs.length - sent - failed };
+  }, [logs]);
+
+  const filtered = useMemo(
+    () =>
+      logs.filter((n) => {
+        if (channel && n.channel !== channel) return false;
+        if (status && n.status !== status) return false;
+        if (search) {
+          const hay = `${n.subject ?? ""} ${n.body} ${n.recipient}`.toLowerCase();
+          if (!hay.includes(search.toLowerCase())) return false;
+        }
+        return true;
+      }),
+    [logs, channel, status, search],
+  );
+
+  const CARD_CHANNEL: Record<string, { icon: string; tone: Tone }> = {
+    email: { icon: "mail", tone: "blue" },
+    sms: { icon: "phone", tone: "teal" },
+    whatsapp: { icon: "bell", tone: "ok" },
+  };
+  const CARD_STATUS_TONE: Record<string, Tone> = { sent: "ok", failed: "danger", mocked: "warn" };
+
+  /** Card view: a compact message card — channel tile, headline + 2-line preview, mono recipient, when it went out. */
+  const logCards = (
+    <CardGrid
+      min="20rem"
+      empty={
+        loading ? (
+          <CardEmpty title="Loading messages…" icon="bell" />
+        ) : (
+          <div className="flex flex-col items-center gap-3">
+            <CardEmpty title="No messages match these filters" hint="Clear the filters, or send your first announcement with the composer." icon="bell" />
+            <Button variant="primary" onClick={() => setShowComposer(true)}>
+              <Icon name="upload" className="h-4 w-4" /> New broadcast
+            </Button>
+          </div>
+        )
+      }
+    >
+      {loading ? null : filtered.map((n) => {
+        const ch = CARD_CHANNEL[n.channel] ?? { icon: "mail", tone: "slate" as Tone };
+        const tone = CARD_STATUS_TONE[n.status] ?? "slate";
+        return (
+          <RecordCard key={n.id} rail={tone}>
+            <CardBody className="!gap-2.5">
+              <div className="flex items-start gap-3">
+                <IconTile name={ch.icon} tone={ch.tone} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-3">{n.channel}</span>
+                    <time className="tnum shrink-0 text-[11.5px] text-ink-3" dateTime={n.createdAt} title={fmtDate(n.createdAt)}>
+                      {relativeTime(n.createdAt)}
+                    </time>
+                  </div>
+                  <h3 className="mt-0.5 truncate text-[14px] font-semibold leading-snug text-ink">
+                    {n.subject ?? n.body.slice(0, 70)}
+                  </h3>
+                </div>
+              </div>
+              <p className="line-clamp-2 text-[12.5px] text-ink-3">{n.body}</p>
+              <p className="truncate font-mono text-[12px] text-ink-2" title={n.recipient}>
+                <span className="sr-only">Recipient: </span>{n.recipient}
+              </p>
+              <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
+                <Chip icon="flag">
+                  {REF_LABEL[n.refType ?? ""] ?? (n.refType ? n.refType.replace(/_/g, " ") : "System")}
+                </Chip>
+                <StatusPill status={STATUS_LABEL[n.status] ?? n.status} tone={tone} />
+              </div>
+            </CardBody>
+          </RecordCard>
+        );
+      })}
+    </CardGrid>
+  );
+
+  const audienceHint: Record<Audience, string> = {
+    all_students: "Every active student on this branch.",
+    all_staff: "All active staff members.",
+    class: "Students of one class section.",
+    custom: "A manual list of addresses or numbers.",
   };
 
-  const markAllRead = async () => {
-    // Backend has no /read-all route. Mirror the intent locally for now; log view-only.
-    setMessage("Mark-all-read is not wired to the backend yet. Logs are view-only for now.");
-    await loadAll();
-  };
-
-  const fmtDate = (d: string) => d ? new Date(d).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "--";
-
-  const filtered = notifications.filter((n) => {
-    if (searchQuery && !n._title.toLowerCase().includes(searchQuery.toLowerCase()) && !n._message.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    if (filterChannel && n.channel !== filterChannel) return false;
-    if (filterStatus && n.status !== filterStatus) return false;
-    return true;
-  });
-
-  const unreadCount = notifications.filter((n) => !n._read).length;
-  const sentCount = notifications.filter((n) => n.status === "sent").length;
-  const failedCount = notifications.filter((n) => n.status === "failed" || n.status === "mocked").length;
+  if (!meLoading && me && !portal && !canLog) {
+    return (
+      <div className="card">
+        <EmptyState icon="lock" title="You don't have access to this page" hint="The notification log is available to the office, admissions and leadership." />
+      </div>
+    );
+  }
 
   return (
-    <div className="relative min-h-screen">
-      <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-bl from-blue-500/10 to-transparent rounded-full blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-80 h-80 bg-gradient-to-tr from-violet-500/10 to-transparent rounded-full blur-3xl" />
+    <div className="space-y-5">
+      <PageHeader
+        icon="bell"
+        eyebrow="Insights"
+        title={portal ? "Messages" : "Notifications"}
+        subtitle={portal ? "Messages the school has sent to you or about your child." : "Outbound SMS and email delivery log, with a composer for announcements."}
+        actions={canBroadcast &&
+          <Button variant="primary" onClick={() => setShowComposer(true)}>
+            <Icon name="upload" className="h-4 w-4" /> New broadcast
+          </Button>
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Total logged" value={logs.length} icon="list" tone="brand" delay={0} />
+        <StatCard label="Delivered" value={counts.sent} icon="check" tone="emerald" delay={40} hint="Confirmed by the gateway" />
+        <StatCard label="Failed" value={counts.failed} icon="alert" tone="rose" delay={80} hint="Gateway rejected the send" />
+        <StatCard
+          label="Not sent"
+          value={counts.pending}
+          icon="clock"
+          tone="amber"
+          delay={120}
+          hint="No gateway configured in dev"
+        />
       </div>
 
-      <div className="relative z-10 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl">
-        <div className="flex items-center justify-between px-6 py-4">
-          <PageHeader icon="bell" title="Notifications" subtitle="Manage school-wide announcements and alerts" />
-          {unreadCount > 0 && <Badge tone="brand" className="px-4 py-1.5 text-sm">{unreadCount} New</Badge>}
-        </div>
-        <div className="flex items-center gap-2 px-6">
-          <button onClick={() => setShowComposer(!showComposer)} className="flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg bg-slate-900 text-white shadow-lg hover:bg-slate-800 transition-all duration-200">
-            <Send className="h-4 w-4" /> New Broadcast
-          </button>
-        </div>
-      </div>
-
-      {/* Composer */}
-      {showComposer && (
-        <div className="relative z-10 px-6 py-6">
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6" style={{ animation: "slide-down 0.3s ease-out both", animationName: "slide-down" }}>
-            <h3 className="font-semibold text-slate-800 mb-4">Send Broadcast</h3>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="md:col-span-2"><input value={newNotif.title} onChange={(e) => setNewNotif({ ...newNotif, title: e.target.value })} placeholder="Subject *" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" /></div>
-              <div className="md:col-span-2"><textarea value={newNotif.message} onChange={(e) => setNewNotif({ ...newNotif, message: e.target.value })} placeholder="Message *" rows={4} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" /></div>
-              <div><select value={newNotif.channel} onChange={(e) => setNewNotif({ ...newNotif, channel: e.target.value })} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500"><option>email</option><option>SMS</option></select></div>
-              <div><input value={newNotif.recipients} onChange={(e) => setNewNotif({ ...newNotif, recipients: e.target.value })} placeholder="Recipients (e.g. Grade 10, Parents)" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500" /></div>
-              <div className="md:col-span-2 flex justify-end">
-                <Button variant="primary" onClick={sendBroadcast} loading={sending} className="shadow-lg shadow-blue-500/20"><Send className="h-4 w-4" /> Send Broadcast</Button>
+      <Card>
+        <CardHead
+          title="Delivery log"
+          subtitle={`${filtered.length} of ${logs.length} messages`}
+          icon="filter"
+          actions={
+            <>
+              <div className="relative">
+                <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search subject, message, recipient…"
+                  aria-label="Search messages"
+                  className="w-full pl-9 sm:w-72"
+                />
               </div>
-            </div>
-          </div>
+              {!portal && (
+                <>
+                  <Select value={refType} onChange={(e) => { setRefType(e.target.value); if (!e.target.value) setRefId(""); }} className="w-auto" aria-label="Filter by source">
+                    <option value="">All sources</option>
+                    {Object.entries(REF_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </Select>
+                  <Input value={refId} onChange={(e) => setRefId(e.target.value)} placeholder="Record / applicant id" aria-label="Record id" className="w-auto sm:w-48" />
+                  <Input value={recipientQ} onChange={(e) => setRecipientQ(e.target.value)} placeholder="Recipient email / phone" aria-label="Recipient search" className="w-auto sm:w-52" />
+                  {(refType || refId || recipientQ) && (
+                    <Button size="sm" variant="ghost" onClick={() => { setRefType(""); setRefId(""); setRecipientQ(""); }}>Clear</Button>
+                  )}
+                </>
+              )}
+              <Select value={channel} onChange={(e) => setChannel(e.target.value)} className="w-auto" aria-label="Filter by channel">
+                <option value="">All channels</option>
+                <option value="email">Email</option>
+                <option value="sms">SMS</option>
+                <option value="whatsapp">WhatsApp</option>
+              </Select>
+              <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-auto" aria-label="Filter by status">
+                <option value="">All statuses</option>
+                <option value="sent">Delivered</option>
+                <option value="failed">Failed</option>
+                <option value="mocked">Not sent</option>
+              </Select>
+              <IconButton name="refresh" label="Reload log" onClick={loadAll} variant="soft" />
+            </>
+          }
+        />
+
+        <div className="table-wrap">
+          <TableView id="t1" cards={logCards}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Message</th>
+                <th className="w-32">Channel</th>
+                <th className="w-56">Recipient</th>
+                <th className="w-32">Source</th>
+                <th className="w-40">Status</th>
+                <th className="w-44">Sent</th>
+              </tr>
+            </thead>
+            {loading ? (
+              <SkeletonRows rows={6} cols={6} />
+            ) : (
+              <tbody>
+                {filtered.map((n) => (
+                  <tr key={n.id}>
+                    <td className="max-w-md">
+                      <p className="truncate text-[13px] font-semibold text-ink">
+                        {n.subject ?? n.body.slice(0, 70)}
+                      </p>
+                      {n.subject && (
+                        <p className="mt-0.5 line-clamp-1 text-[11.5px] text-ink-3">{n.body}</p>
+                      )}
+                    </td>
+                    <td>
+                      <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium capitalize text-ink-2">
+                        <Icon name={CHANNEL_ICON[n.channel] ?? "mail"} className="h-3.5 w-3.5 text-ink-3" />
+                        {n.channel}
+                      </span>
+                    </td>
+                    <td className="truncate text-[12.5px] text-ink-2">{n.recipient}</td>
+                    <td>
+                      <Badge tone="slate">
+                        {REF_LABEL[n.refType ?? ""] ?? (n.refType ? n.refType.replace(/_/g, " ") : "System")}
+                      </Badge>
+                      {!portal && n.refType && n.refId && !(refType === n.refType && refId === n.refId) && (
+                        <button type="button" onClick={() => showHistory(n)} className="mt-1 block text-[11.5px] font-medium text-accent-600 hover:underline">
+                          History
+                        </button>
+                      )}
+                    </td>
+                    <td>
+                      <Badge tone={STATUS_TONE[n.status] ?? "slate"}>
+                        {STATUS_LABEL[n.status] ?? n.status}
+                      </Badge>
+                    </td>
+                    <td className="tnum text-[12px] text-ink-3">{fmtDate(n.createdAt)}</td>
+                  </tr>
+                ))}
+                {filtered.length === 0 && !loading && (
+                  <tr>
+                    <td colSpan={6}>
+                      <EmptyState
+                        icon="bell"
+                        title="No messages match these filters"
+                        hint="Clear the filters, or send your first announcement with the composer."
+                        action={
+                          <Button variant="primary" onClick={() => setShowComposer(true)}>
+                            <Icon name="upload" className="h-4 w-4" /> New broadcast
+                          </Button>
+                        }
+                      />
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            )}
+          </table>
+          </TableView>
         </div>
-      )}
+      </Card>
 
-      <div className="relative z-10 px-6 space-y-6">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Reveal delay={0}><div className="rounded-2xl bg-slate-900 p-5 text-white shadow-xl"><div className="flex items-center gap-3 mb-3"><Bell className="h-5 w-5 text-slate-500" /><span className="text-xs font-medium text-slate-400 uppercase tracking-wide">Total</span></div><p className="text-3xl font-bold">{notifications.length}</p></div></Reveal>
-          <Reveal delay={100}><div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-5"><div className="flex items-center gap-3 mb-3"><CheckCircle className="h-5 w-5 text-emerald-600" /><span className="text-xs font-medium text-emerald-600 uppercase tracking-wide">Sent</span></div><p className="text-3xl font-bold text-emerald-700">{sentCount}</p></div></Reveal>
-          <Reveal delay={200}><div className="rounded-2xl bg-rose-50 border border-rose-200 p-5"><div className="flex items-center gap-3 mb-3"><AlertCircle className="h-5 w-5 text-rose-600" /><span className="text-xs font-medium text-rose-600 uppercase tracking-wide">Failed</span></div><p className="text-3xl font-bold text-rose-700">{failedCount}</p></div></Reveal>
-          <Reveal delay={300}><div className="rounded-2xl bg-amber-50 border border-amber-200 p-5"><div className="flex items-center gap-3 mb-3"><Mail className="h-5 w-5 text-amber-600" /><span className="text-xs font-medium text-amber-600 uppercase tracking-wide">Unread</span></div><p className="text-3xl font-bold text-amber-700">{unreadCount}</p></div></Reveal>
-        </div>
+      <Modal
+        open={showComposer}
+        onClose={() => setShowComposer(false)}
+        title="Send a broadcast"
+        subtitle="One message is logged per recipient, so delivery is traceable."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowComposer(false)}>Cancel</Button>
+            <Button variant="primary" loading={sending} onClick={sendBroadcast}>
+              <Icon name="upload" className="h-4 w-4" /> Send broadcast
+            </Button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Audience" required hint={audienceHint[draft.audience]}>
+            <Select
+              value={draft.audience}
+              onChange={(e) => setDraft({ ...draft, audience: e.target.value as Audience, classId: "" })}
+            >
+              <option value="all_students">All students</option>
+              <option value="all_staff">All staff</option>
+              <option value="class">A specific class</option>
+              <option value="custom">Custom recipients</option>
+            </Select>
+          </Field>
 
-        <Reveal delay={100}>
-          <div className="flex flex-wrap items-center gap-4 p-4 rounded-2xl bg-white border border-slate-200 shadow-sm">
-            <div className="relative flex-1 min-w-[200px]"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search notifications..." className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 py-2.5 text-sm focus:border-blue-500" /></div>
-            <select value={filterChannel} onChange={(e) => setFilterChannel(e.target.value)} className="appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 pr-10 text-sm text-slate-700 focus:border-blue-500"><option value="">All Channels</option><option value="email">Email</option><option value="sms">SMS</option></select>
-            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 pr-10 text-sm text-slate-700 focus:border-blue-500"><option value="">All Status</option><option value="sent">Sent</option><option value="failed">Failed</option></select>
-            <Button variant="soft" onClick={markAllRead} className="!px-4"><CheckCircle className="h-4 w-4" /> Mark All Read</Button>
-          </div>
-        </Reveal>
+          <Field label="Channel" required>
+            <Select value={draft.channel} onChange={(e) => setDraft({ ...draft, channel: e.target.value })}>
+              <option value="email">Email</option>
+              <option value="sms">SMS</option>
+              <option value="whatsapp">WhatsApp</option>
+            </Select>
+          </Field>
 
-        <Reveal delay={150}>
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-            <div className="divide-y divide-slate-100">
-              {filtered.map((n, idx) => (
-                <div key={n.id} className={`p-4 transition-all duration-200 hover:bg-slate-50 ${!n._read ? "bg-blue-50/30 border-l-2 border-l-blue-500" : ""}`} style={{ animation: `fade-in 0.3s ease-out ${idx * 30}ms both`, animationName: "fade-in" }}>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-1">
-                        <h4 className={`font-semibold ${!n._read ? "text-slate-900" : "text-slate-700"}`}>{n._title}</h4>
-                        <Badge tone={n.channel === "email" ? "sky" : "violet"} className="text-xs">{n.channel.toUpperCase()}</Badge>
-                        {!n._read && <span className="w-2 h-2 rounded-full bg-blue-500" />}
-                      </div>
-                      <p className="text-sm text-slate-600">{n._message}</p>
-                      <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
-                        <span className="flex items-center gap-1"><User className="h-3 w-3" />{n.recipient}</span>
-                        <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{fmtDate(n.createdAt)}</span>
-                        <Badge tone={n.status === "sent" ? "emerald" : "rose"} className="ml-auto">{n.status}</Badge>
-                      </div>
-                    </div>                      <div className="flex items-center gap-2">
-                      {!n._read && <button onClick={() => markRead(n.id)} className="p-2 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors" title="Read tracking is not wired to the backend yet"><CheckCircle className="h-4 w-4" /></button>}
-                      <button className="p-2 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"><X className="h-4 w-4" /></button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {filtered.length === 0 && <div className="px-6 py-12 text-center text-slate-400">No notifications found</div>}
+          {draft.audience === "class" && (
+            <div className="sm:col-span-2">
+              <Field label="Class" required>
+                <Select value={draft.classId} onChange={(e) => setDraft({ ...draft, classId: e.target.value })}>
+                  <option value="">Select a class…</option>
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name} {c.section ?? ""}</option>
+                  ))}
+                </Select>
+              </Field>
             </div>
+          )}
+
+          {draft.audience === "custom" && (
+            <div className="sm:col-span-2">
+              <Field label="Recipients" required hint="Comma or newline separated email addresses or phone numbers.">
+                <Textarea
+                  value={draft.customRecipients}
+                  onChange={(e) => setDraft({ ...draft, customRecipients: e.target.value })}
+                  placeholder="parent@example.com, +91 98765 43210"
+                  rows={3}
+                />
+              </Field>
+            </div>
+          )}
+
+          <div className="sm:col-span-2">
+            <Field label="Subject" hint="Used by email only; SMS and WhatsApp ignore it.">
+              <Input
+                value={draft.subject}
+                onChange={(e) => setDraft({ ...draft, subject: e.target.value })}
+                placeholder="e.g. Annual Sports Day — 24 October"
+              />
+            </Field>
           </div>
-        </Reveal>
-      </div>
+
+          <div className="sm:col-span-2">
+            <Field label="Message" required hint={`${draft.body.length} characters`}>
+              <Textarea
+                value={draft.body}
+                onChange={(e) => setDraft({ ...draft, body: e.target.value })}
+                placeholder="Type the announcement parents will receive…"
+                rows={5}
+              />
+            </Field>
+          </div>
+
+          {!process.env.NEXT_PUBLIC_NOTIFY_GATEWAY && (
+            <p className="sm:col-span-2 flex items-start gap-2 rounded-xl border border-warn/25 bg-warn-soft p-3 text-[12px] leading-relaxed text-warn">
+              <Icon name="info" className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                No messaging gateway is configured, so messages are logged with status
+                <strong> Not sent</strong> instead of being transmitted. Set
+                <code className="mx-1 rounded bg-surface px-1 py-0.5">NOTIFY_WEBHOOK_URL</code>
+                on the API to enable real delivery.
+              </span>
+            </p>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }
-

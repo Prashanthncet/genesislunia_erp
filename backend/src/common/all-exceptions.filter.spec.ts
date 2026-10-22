@@ -97,4 +97,19 @@ describe('AllExceptionsFilter', () => {
     expect(body.path).toBe('/api/test');
     expect(new Date(body.timestamp).toString()).not.toBe('Invalid Date');
   });
+
+  it('reports 5xx (and only 5xx) to the alerting service', () => {
+    const reportServerError = jest.fn().mockResolvedValue(true);
+    const alerting = new AllExceptionsFilter({ reportServerError } as never);
+    const restore = silenceLogger();
+    const err = new Error('db exploded');
+    const a = makeHost();
+    alerting.catch(err, a.host as never);
+    const b = makeHost();
+    alerting.catch(new NotFoundException('nope'), b.host as never);
+    expect(reportServerError).toHaveBeenCalledTimes(1);
+    expect(reportServerError.mock.calls[0][0]).toBe(err);
+    expect(reportServerError.mock.calls[0][1]).toMatchObject({ status: 500, method: 'POST', path: '/api/test' });
+    restore();
+  });
 });

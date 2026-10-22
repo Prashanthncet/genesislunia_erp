@@ -1,10 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { apiFetch } from "@/lib/api";
-import { Badge, Button, Field, Icon, Input, MailLink, PageHeader, PhoneLink, Reveal, Select, StatCard, useToast } from "@/components/ui";
-import { X } from "lucide-react";
+import { hasRole, R, useMe } from "@/lib/auth";
+import { Badge, Button, EmptyState, Field, Icon, Input, MailLink, PageHeader, PhoneLink, Reveal, Select, StatCard, useToast, Portal } from "@/components/ui";
 
+import { TableView } from "@/components/TableView";
+import { initials } from "@/components/RecordCard";
 type ClassItem = { id: string; name: string; section: string | null };
 type Student = {
   id: string;
@@ -19,7 +22,9 @@ type Student = {
   status: string;
   class?: { id: string; name: string; section: string | null } | null;
 };
-type Paged = { total: number; page: number; page_size: number; data: Student[] };
+type Paged = { total: number; page: number; page_size: number; contacts_hidden?: boolean; data: Student[] };
+
+const STATUSES = ["Active", "Inactive", "Left", "Transferred", "Alumni"];
 
 const EMPTY_FORM = {
   id: "",
@@ -48,6 +53,10 @@ export default function StudentsPage() {
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const toast = useToast();
+  const { me, loading: meLoading } = useMe();
+  const canRead = hasRole(me, R.STUDENT_READ);
+  const canWrite = hasRole(me, R.STUDENT_WRITE);
+  const canDelete = hasRole(me, R.ADMINS);
 
   useEffect(() => {
     if (!message) return;
@@ -56,6 +65,7 @@ export default function StudentsPage() {
   }, [message, toast]);
 
   const load = useCallback(async () => {
+    if (!canRead) return;
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: String(page), page_size: "10" });
@@ -69,13 +79,14 @@ export default function StudentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, query, classFilter, statusFilter]);
+  }, [page, query, classFilter, statusFilter, canRead]);
 
   useEffect(() => {
+    if (!canRead) return;
     apiFetch<ClassItem[]>("/api/classes")
       .then(setClasses)
       .catch(() => undefined);
-  }, []);
+  }, [canRead]);
 
   useEffect(() => {
     load();
@@ -138,24 +149,28 @@ export default function StudentsPage() {
     }
   };
 
-  const remove = async (id: string) => {
+  /** Hard delete only succeeds for a record with no history; otherwise the API answers 409. */
+  const remove = async (s: Student) => {
+    if (!window.confirm(`Delete ${s.fullName}? This only works for a record created by mistake (no attendance, marks or fees). Use "Mark as Left" for students who have left.`)) return;
     setLoading(true);
     try {
-      await apiFetch(`/api/students/${id}`, { method: "DELETE" });
+      await apiFetch(`/api/students/${s.id}`, { method: "DELETE" });
       await load();
       setMessage("Deleted");
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Delete failed");
+      setMessage(`Delete failed: ${e instanceof Error ? e.message : "error"}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const setInactive = async (id: string) => {
+  const setLeft = async (s: Student) => {
+    const reason = window.prompt(`Mark ${s.fullName} as Left? Their records are kept and a Transfer Certificate can be issued. Reason (optional):`);
+    if (reason === null) return;
     try {
-      await apiFetch(`/api/students/${id}/status`, { method: "PUT", body: JSON.stringify({ status: "Inactive" }) });
+      await apiFetch(`/api/students/${s.id}/status`, { method: "PUT", body: JSON.stringify({ status: "Left", ...(reason.trim() ? { reason: reason.trim() } : {}) }) });
       await load();
-      setMessage("Marked inactive");
+      setMessage("Marked as Left");
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Failed");
     }
@@ -163,23 +178,13 @@ export default function StudentsPage() {
 
   const totalPages = result ? Math.max(1, Math.ceil(result.total / result.page_size)) : 1;
 
-  const StatCardSimple = ({ label, value, icon, colorClass, bgClass }: { label: string; value: number | null; icon: string; colorClass: string; bgClass: string }) => (
-    <Reveal>
-      <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs hover:shadow-md hover:border-slate-300 transition-all duration-300 group">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{label}</p>
-            <p className={`mt-2 text-3xl font-bold ${colorClass} transition-all duration-300 group-hover:scale-105`}>
-              {value === null ? <span className="text-slate-300">—</span> : value}
-            </p>
-          </div>
-          <div className={`p-3 rounded-xl ${bgClass} ${colorClass} group-hover:rotate-6 transition-transform duration-300`}>
-            <Icon name={icon} className="h-6 w-6" />
-          </div>
-        </div>
+  if (!meLoading && me && !canRead) {
+    return (
+      <div className="card">
+        <EmptyState icon="lock" title="You don't have access to this page" hint="Student records are available to office, leadership and teaching staff." />
       </div>
-    </Reveal>
-  );
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -190,8 +195,8 @@ export default function StudentsPage() {
             icon="students"
             title="Students"
             subtitle="The master record — admission, profile and status for every student."
-            actions={
-              <Button variant="primary" onClick={openCreate} className="shadow-lg shadow-blue-500/20 hover:shadow-xl hover:shadow-blue-500/30 transition-all duration-300">
+            actions={canWrite &&
+              <Button variant="primary" onClick={openCreate} className="shadow-lg shadow-brand-700/20 hover:shadow-xl hover:shadow-brand-700/30 transition-all duration-300">
                 <Icon name="plus" className="h-4 w-4" /> Add Student
               </Button>
             }
@@ -201,24 +206,24 @@ export default function StudentsPage() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCardSimple label="Total Students" value={result?.total ?? null} icon="students" colorClass="text-blue-600" bgClass="bg-blue-50" />
-        <StatCardSimple label="On This Page" value={result?.data.length ?? null} icon="reports" colorClass="text-teal-600" bgClass="bg-teal-50" />
-        <StatCardSimple label="Classes" value={classes.length} icon="timetable" colorClass="text-violet-600" bgClass="bg-violet-50" />
-        <StatCardSimple label="Active" value={result?.data.filter((s) => s.status === "Active").length ?? null} icon="check" colorClass="text-emerald-600" bgClass="bg-emerald-50" />
+        <StatCard label="Total Students" value={result?.total ?? null} icon="students" tone="brand" delay={0} />
+        <StatCard label="On This Page" value={result?.data.length ?? null} icon="list" tone="teal" delay={60} />
+        <StatCard label="Classes" value={classes.length} icon="layers" tone="sky" delay={120} />
+        <StatCard label="Active" value={result?.data.filter((s) => s.status === "Active").length ?? null} icon="check" tone="emerald" delay={180} />
       </div>
 
       {/* Filter Bar */}
       <Reveal delay={60}>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+        <div className="rounded-2xl border border-line bg-white/80 p-4 shadow-soft backdrop-blur-sm">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[200px]">
-              <Icon name="spark" className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <div className="relative flex-1 min-w-[220px]">
+              <Icon name="search" className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-3" />
               <input
                 value={query}
                 onChange={(e) => { setQuery(e.target.value); setPage(1); }}
-                placeholder="Search name..."
+                placeholder="Search by student name or roll..."
                 aria-label="Search students by name"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 py-2.5 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition-all duration-200"
+                className="w-full rounded-xl border border-line bg-surface-2/60 pl-10 pr-4 py-2.5 text-sm text-ink placeholder-ink-3/60 focus:border-accent-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-500/20 transition-all duration-200"
               />
             </div>
             <div className="relative">
@@ -226,27 +231,26 @@ export default function StudentsPage() {
                 value={classFilter}
                 onChange={(e) => { setClassFilter(e.target.value); setPage(1); }}
                 aria-label="Filter by class"
-                className="appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 pr-10 text-sm text-slate-700 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition-all duration-200"
+                className="appearance-none rounded-xl border border-line bg-surface-2/60 px-4 py-2.5 pr-10 text-sm font-medium text-ink focus:border-accent-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-500/20 transition-all duration-200"
               >
                 <option value="">All classes</option>
                 {classes.map((c) => (
                   <option key={c.id} value={c.id}>{c.name} {c.section ?? ""}</option>
                 ))}
               </select>
-              <Icon name="menu" className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+              <Icon name="chevronDown" className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-3 pointer-events-none" />
             </div>
             <div className="relative">
               <select
                 value={statusFilter}
                 onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
                 aria-label="Filter by status"
-                className="appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 pr-10 text-sm text-slate-700 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition-all duration-200"
+                className="appearance-none rounded-xl border border-line bg-surface-2/60 px-4 py-2.5 pr-10 text-sm font-medium text-ink focus:border-accent-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-500/20 transition-all duration-200"
               >
                 <option value="">Any status</option>
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
+                {STATUSES.map((st) => <option key={st} value={st}>{st}</option>)}
               </select>
-              <Icon name="menu" className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+              <Icon name="chevronDown" className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-3 pointer-events-none" />
             </div>
           </div>
         </div>
@@ -254,13 +258,16 @@ export default function StudentsPage() {
 
       {/* Table Card */}
       <Reveal delay={120}>
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="rounded-2xl border border-line bg-white shadow-soft overflow-hidden">
           {/* Table Header */}
-          <div className="border-b border-slate-200 bg-slate-50/50 px-6 py-4">
+          <div className="border-b border-line bg-surface px-6 py-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-800">Student Records</h3>
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                <Icon name="spark" className="h-4 w-4" />
+              <div>
+                <h3 className="text-[17px] font-semibold text-ink">Student Records</h3>
+                <p className="text-xs text-ink-3 mt-0.5">Comprehensive directory of enrolled students</p>
+              </div>
+              <div className="flex items-center gap-2 rounded-full border border-line bg-surface-2/80 px-3 py-1 text-xs font-medium text-ink-2 shadow-2xs">
+                <Icon name="sparkles" className="h-3.5 w-3.5 text-accent-500" />
                 <span>Sorted by admission date</span>
               </div>
             </div>
@@ -268,148 +275,166 @@ export default function StudentsPage() {
 
           {/* Table */}
           <div className="overflow-x-auto">
+            <TableView id="t1" title="Name">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/30">
-                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Adm No</th>
-                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Name</th>
-                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Class</th>
-                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Roll</th>
-                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Contact</th>
-                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
+                <tr className="border-b border-line bg-surface-2/30">
+                  <th className="whitespace-nowrap px-3 py-3.5 text-left text-xs font-semibold text-ink-2 uppercase tracking-wider">Adm No</th>
+                  <th className="whitespace-nowrap px-3 py-3.5 text-left text-xs font-semibold text-ink-2 uppercase tracking-wider">Name</th>
+                  <th className="whitespace-nowrap px-3 py-3.5 text-left text-xs font-semibold text-ink-2 uppercase tracking-wider">Class</th>
+                  <th className="whitespace-nowrap px-3 py-3.5 text-left text-xs font-semibold text-ink-2 uppercase tracking-wider">Roll</th>
+                  <th className="whitespace-nowrap px-3 py-3.5 text-left text-xs font-semibold text-ink-2 uppercase tracking-wider">Contact</th>
+                  <th className="whitespace-nowrap px-3 py-3.5 text-left text-xs font-semibold text-ink-2 uppercase tracking-wider">Status</th>
+                  <th className="whitespace-nowrap px-3 py-3.5 text-right text-xs font-semibold text-ink-2 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-line">
                 {(result?.data ?? []).map((s, index) => (
                   <tr
                     key={s.id}
-                    className="group transition-all duration-200 hover:bg-blue-50/50 hover:shadow-sm"
-                    style={{
-                      animation: `fade-in 0.4s ease-out ${index * 50}ms both`,
-                      animationName: "fade-in",
-                    }}
+                    className="group row-enter transition-all duration-200 hover:bg-brand-50/50 hover:shadow-sm"
+                    style={{ animationDelay: `${index * 50}ms` }}
                   >
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-mono font-medium text-slate-600">
-                        <Icon name="spark" className="h-3 w-3 text-slate-400" />
+                    <td className="px-3 py-3">
+                      <span className="inline-flex whitespace-nowrap rounded-md bg-slate-100 px-2 py-1 text-xs font-mono font-medium text-ink-2">
                         {s.admissionNo}
                       </span>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-blue-600 text-white text-sm font-bold shadow-sm">
-                          {s.fullName.charAt(0).toUpperCase()}
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-[12px] font-bold text-brand-700">
+                          {initials(s.fullName)}
                         </div>
-                        <div>
-                          <p className="font-semibold text-slate-800">{s.fullName}</p>
-                          <p className="text-xs text-slate-400">{s.gender}</p>
+                        <div className="min-w-0">
+                          <Link href={`/students/${s.id}`} className="whitespace-nowrap font-semibold text-ink hover:text-brand-700 hover:underline">{s.fullName}</Link>
+                          <p className="text-xs text-ink-3">{s.gender}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-700">
-                        <Icon name="timetable" className="h-3.5 w-3.5" />
+                    <td className="px-3 py-3">
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-accent-50 px-2 py-1 text-xs font-medium text-accent-700">
+                        <Icon name="layers" className="h-3.5 w-3.5" />
                         {s.class ? `${s.class.name} ${s.class.section ?? ""}` : "—"}
                       </span>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className="text-sm text-slate-600">{s.rollNo ?? "—"}</span>
+                    <td className="px-3 py-3">
+                      <span className="whitespace-nowrap font-mono text-[13px] text-ink-2">{s.rollNo ?? "—"}</span>
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col gap-1 text-xs">
-                        <span className="flex items-center gap-1">
-                          <Icon name="print" className="h-3.5 w-3.5 text-slate-400" />
+                    <td className="px-3 py-3">
+                      {result?.contacts_hidden ? <span className="text-xs text-ink-3" title="Parent contact details are visible to office and leadership roles">Restricted</span> :
+                      <div className="flex flex-col gap-1 whitespace-nowrap text-xs">
+                        <span className="flex items-center gap-1.5">
+                          <Icon name="phone" className="h-3.5 w-3.5 text-ink-3" />
                           {s.mobileNumber ? (
-                            <PhoneLink value={s.mobileNumber} className="text-blue-600 hover:underline" />
-                          ) : <span className="text-slate-400">—</span>}
+                            <PhoneLink value={s.mobileNumber} className="text-accent-600 hover:underline" />
+                          ) : <span className="text-ink-3">—</span>}
                         </span>
                         {s.email && (
-                          <span className="flex items-center gap-1 text-slate-400">
-                            <Icon name="spark" className="h-3.5 w-3.5" />
-                            <MailLink value={s.email} className="text-blue-600 hover:underline" />
+                          <span className="flex items-center gap-1.5 text-ink-3">
+                            <Icon name="mail" className="h-3.5 w-3.5" />
+                            <span className="block max-w-[12.5rem] truncate" title={s.email}><MailLink value={s.email} className="text-accent-600 hover:underline" /></span>
                           </span>
                         )}
-                      </div>
+                      </div>}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 py-3">
                       <Badge
                         tone={s.status === "Active" ? "emerald" : "slate"}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold ${s.status === "Active" ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"}`}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold ${s.status === "Active" ? "bg-ok-soft text-ok-ink ring-1 ring-ok-line" : "bg-slate-100 text-ink-2 ring-1 ring-line"}`}
                       >
                         <Icon name={s.status === "Active" ? "check" : "x"} className="h-3.5 w-3.5" />
                         {s.status}
                       </Badge>
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                        <button
+                    <td className="px-3 py-3 text-right">
+                      {/* Always visible — they used to appear only on hover and sat off-screen.
+                          Icon-only in table view; `.row-action-label` shows the words on cards. */}
+                      <div className="flex items-center justify-end gap-2 flex-wrap">
+                        <Link
+                          href={`/students/${s.id}`}
+                          title="View profile"
+                          aria-label={`View profile of ${s.fullName}`}
+                          className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-line-strong bg-white px-2.5 text-xs font-semibold text-ink-2 shadow-xs transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
+                        >
+                          <Icon name="eye" className="h-3.5 w-3.5 shrink-0" />
+                          <span className="row-action-label hidden">Profile</span>
+                        </Link>
+                        {canWrite && <button
                           onClick={() => openEdit(s)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-800 shadow-xs transition-all duration-150"
+                          title="Edit student"
+                          aria-label={`Edit ${s.fullName}`}
+                          className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-line-strong bg-white px-2.5 text-xs font-semibold text-ink-2 shadow-xs transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
                         >
-                          <Icon name="plus" className="h-3.5 w-3.5 rotate-45" />
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => setInactive(s.id)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 hover:border-amber-300 hover:text-amber-800 shadow-xs transition-all duration-150"
+                          <Icon name="edit" className="h-3.5 w-3.5 shrink-0" />
+                          <span className="row-action-label hidden">Edit</span>
+                        </button>}
+                        {canWrite && s.status === "Active" && (
+                          <button
+                            onClick={() => setLeft(s)}
+                            title="Mark as Left"
+                            aria-label={`Mark ${s.fullName} as Left`}
+                            className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-warn-line bg-warn-soft px-2.5 text-xs font-semibold text-warn-ink shadow-xs transition-colors hover:border-warn"
+                          >
+                            <Icon name="lock" className="h-3.5 w-3.5 shrink-0" />
+                            <span className="row-action-label hidden">Mark Left</span>
+                          </button>
+                        )}
+                        {canDelete && <button
+                          onClick={() => remove(s)}
+                          title="Delete student"
+                          aria-label={`Delete ${s.fullName}`}
+                          className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-danger-line bg-danger-soft px-2.5 text-xs font-semibold text-danger-ink shadow-xs transition-colors hover:border-danger"
                         >
-                          <Icon name="alert" className="h-3.5 w-3.5" />
-                          Deactivate
-                        </button>
-                        <button
-                          onClick={() => remove(s.id)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 hover:border-rose-300 hover:text-rose-800 shadow-xs transition-all duration-150"
-                        >
-                          <Icon name="x" className="h-3.5 w-3.5" />
-                          Delete
-                        </button>
+                          <Icon name="trash" className="h-3.5 w-3.5 shrink-0" />
+                          <span className="row-action-label hidden">Delete</span>
+                        </button>}
                       </div>
                     </td>
                   </tr>
                 ))}
                 {(result?.data.length ?? 0) === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center">
+                    <td colSpan={7} className="px-4 py-12 text-center">
                       <div className="flex flex-col items-center gap-3">
                         <div className="rounded-full bg-slate-100 p-4">
-                          <Icon name="students" className="h-8 w-8 text-slate-400" />
+                          <Icon name="students" className="h-8 w-8 text-ink-3" />
                         </div>
-                        <p className="text-sm font-medium text-slate-600">{loading ? "Loading students..." : "No students found"}</p>
-                        <p className="text-xs text-slate-400">Try adjusting your search or filters</p>
+                        <p className="text-sm font-medium text-ink-2">{loading ? "Loading students..." : "No students found"}</p>
+                        <p className="text-xs text-ink-3">Try adjusting your search or filters</p>
                       </div>
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
+            </TableView>
           </div>
 
           {/* Footer */}
-          <div className="border-t border-slate-200 bg-slate-50/50 px-6 py-4">
+          <div className="border-t border-line bg-surface-2/50 px-6 py-4">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-600">
-                <span className="font-semibold text-slate-800">{result?.total ?? 0}</span> student(s)
+              <span className="text-ink-2">
+                <span className="font-semibold text-ink">{result?.total ?? 0}</span> student(s)
               </span>
               <div className="flex items-center gap-2">
                 <button
                   disabled={page <= 1}
                   onClick={() => setPage(page - 1)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-surface-2 hover:border-line-strong disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150"
                 >
-                  <Icon name="menu" className="h-4 w-4 -rotate-90" />
+                  <Icon name="chevronLeft" className="h-4 w-4" />
                   Prev
                 </button>
-                <span className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white rounded-lg border border-slate-200">
+                <span className="px-3 py-1.5 text-xs font-medium text-ink-2 bg-white rounded-lg border border-line">
                   Page {page} / {totalPages}
                 </span>
                 <button
                   disabled={page >= totalPages}
                   onClick={() => setPage(page + 1)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-surface-2 hover:border-line-strong disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150"
                 >
                   Next
-                  <Icon name="menu" className="h-4 w-4 rotate-90" />
+                  <Icon name="chevronRight" className="h-4 w-4" />
                 </button>
               </div>
             </div>
@@ -418,29 +443,29 @@ export default function StudentsPage() {
       </Reveal>
 
       {/* Modal */}
-      {showForm && (
+      {showForm && ( <Portal>
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/60 p-4 backdrop-blur-md"
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-brand-900/60 p-4 backdrop-blur-md"
           onClick={() => setShowForm(false)}
         >
           <div
-            className="relative w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl"
+            className="relative w-full max-w-lg rounded-xl border border-line bg-white p-6 shadow-2xl"
             style={{ animation: "scale-in 0.3s var(--ease-spring) both" }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h3 className="text-xl font-bold text-slate-800">{form.id ? "Edit Student" : "Add Student"}</h3>
-                <p className="text-sm text-slate-500 mt-0.5">
+                <h3 className="text-xl font-bold text-ink">{form.id ? "Edit Student" : "Add Student"}</h3>
+                <p className="text-sm text-ink-2 mt-0.5">
                   {form.id ? "Update student information" : "Register a new student in the system"}
                 </p>
               </div>
               <button
                 onClick={() => setShowForm(false)}
-                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-all duration-150"
+                className="rounded-lg p-2 text-ink-3 hover:bg-slate-100 hover:text-ink-2 transition-all duration-150"
               >
-                <X className="h-5 w-5" />
+                <Icon name="x" className="h-5 w-5" />
               </button>
             </div>
 
@@ -452,7 +477,7 @@ export default function StudentsPage() {
                   onChange={(e) => setForm({ ...form, admission_no: e.target.value })}
                   placeholder="ADM-2026-0001"
                   disabled={!!form.id}
-                  className={form.id ? "bg-slate-100 cursor-not-allowed" : "bg-slate-50 hover:bg-white"}
+                  className={form.id ? "bg-slate-100 cursor-not-allowed" : "bg-surface-2 hover:bg-white"}
                 />
               </Field>
               <Field label="Full name" required>
@@ -460,21 +485,21 @@ export default function StudentsPage() {
                   value={form.full_name}
                   onChange={(e) => setForm({ ...form, full_name: e.target.value })}
                   placeholder="Student name"
-                  className="bg-slate-50 hover:bg-white"
+                  className="bg-surface-2 hover:bg-white"
                 />
               </Field>
               <Field label="Father's name">
                 <Input
                   value={form.father_name}
                   onChange={(e) => setForm({ ...form, father_name: e.target.value })}
-                  className="bg-slate-50 hover:bg-white"
+                  className="bg-surface-2 hover:bg-white"
                 />
               </Field>
               <Field label="Mother's name">
                 <Input
                   value={form.mother_name}
                   onChange={(e) => setForm({ ...form, mother_name: e.target.value })}
-                  className="bg-slate-50 hover:bg-white"
+                  className="bg-surface-2 hover:bg-white"
                 />
               </Field>
               <Field label="Mobile">
@@ -483,7 +508,7 @@ export default function StudentsPage() {
                   value={form.mobile_number}
                   onChange={(e) => setForm({ ...form, mobile_number: e.target.value })}
                   placeholder="98XXXXXXXX"
-                  className="bg-slate-50 hover:bg-white"
+                  className="bg-surface-2 hover:bg-white"
                 />
               </Field>
               <Field label="Email">
@@ -491,14 +516,14 @@ export default function StudentsPage() {
                   type="email"
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className="bg-slate-50 hover:bg-white"
+                  className="bg-surface-2 hover:bg-white"
                 />
               </Field>
               <Field label="Gender">
                 <Select
                   value={form.gender}
                   onChange={(e) => setForm({ ...form, gender: e.target.value })}
-                  className="bg-slate-50 hover:bg-white"
+                  className="bg-surface-2 hover:bg-white"
                 >
                   {["Male", "Female", "Other"].map((g) => <option key={g}>{g}</option>)}
                 </Select>
@@ -507,7 +532,7 @@ export default function StudentsPage() {
                 <Select
                   value={form.class_id}
                   onChange={(e) => setForm({ ...form, class_id: e.target.value })}
-                  className="bg-slate-50 hover:bg-white"
+                  className="bg-surface-2 hover:bg-white"
                 >
                   <option value="">Select class *</option>
                   {classes.map((c) => <option key={c.id} value={c.id}>{c.name} {c.section ?? ""}</option>)}
@@ -518,32 +543,32 @@ export default function StudentsPage() {
                   value={form.roll_no}
                   onChange={(e) => setForm({ ...form, roll_no: e.target.value })}
                   placeholder="Auto-assigned if blank"
-                  className="bg-slate-50 hover:bg-white"
+                  className="bg-surface-2 hover:bg-white"
                 />
               </Field>
               <Field label="Status">
                 <Select
                   value={form.status}
                   onChange={(e) => setForm({ ...form, status: e.target.value })}
-                  className="bg-slate-50 hover:bg-white"
+                  className="bg-surface-2 hover:bg-white"
                 >
-                  {["Active", "Inactive"].map((s) => <option key={s}>{s}</option>)}
+                  {STATUSES.map((s) => <option key={s}>{s}</option>)}
                 </Select>
               </Field>
             </div>
 
             {/* Modal Footer */}
-            <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-slate-100">
+            <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-line">
               <Button variant="soft" onClick={() => setShowForm(false)}>
                 Cancel
               </Button>
-              <Button variant="primary" onClick={save} loading={loading} className="shadow-lg shadow-blue-500/20">
+              <Button variant="primary" onClick={save} loading={loading} className="shadow-lg shadow-brand-700/20">
                 {form.id ? "Update" : "Save"} Student
               </Button>
             </div>
           </div>
         </div>
-      )}
+      </Portal>)}
     </div>
   );
 }
