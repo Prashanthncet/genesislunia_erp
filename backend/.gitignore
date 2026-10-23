@@ -7,3 +7,6 @@ prisma/dev.db-journal
 .env
 test/e2e-test.db
 *.log
+# Local document storage (STORAGE_DRIVER=local)
+# Anchored: a bare "storage/" also matched src/storage (the module source).
+/storage/

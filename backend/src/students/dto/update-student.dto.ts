@@ -1,4 +1,5 @@
 import { IsEmail, IsIn, IsOptional, IsString, ValidateIf } from 'class-validator';
+import { STUDENT_STATUSES } from './student-status.dto';
 
 export class UpdateStudentDto {
   @IsOptional()
@@ -39,7 +40,7 @@ export class UpdateStudentDto {
   roll_no?: string;
 
   @IsOptional()
-  @IsIn(['Active', 'Inactive', 'Alumni', 'Transferred'])
+  @IsIn(STUDENT_STATUSES)
   status?: string;
 
   @IsOptional()

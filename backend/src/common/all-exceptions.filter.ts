@@ -2,6 +2,7 @@ import {
   ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import type { AlertingService } from './alerting';
 
 type ErrorBody = { statusCode: number; error: string; message: string; path: string; timestamp: string };
 
@@ -17,6 +18,9 @@ type ErrorBody = { statusCode: number; error: string; message: string; path: str
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger('ExceptionFilter');
+
+  /** Optional: 5xx responses are reported to Sentry / the alert webhook (common/alerting.ts). */
+  constructor(private readonly alerts?: AlertingService) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
@@ -58,6 +62,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const safeMessage = sanitizeLog(message);
     if (status >= 500) {
       this.logger.error(`${req.method} ${req.url} → ${status}: ${safeMessage}`);
+      // Fire-and-forget: alerting must never delay or break the error response.
+      void this.alerts
+        ?.reportServerError(exception, {
+          status,
+          method: req.method,
+          path: sanitizeLog(req.originalUrl ?? req.url),
+          requestId: res.getHeader?.('X-Request-Id') as string | undefined,
+        })
+        .catch(() => undefined);
     } else {
       this.logger.warn(`${req.method} ${req.url} → ${status}: ${safeMessage}`);
     }

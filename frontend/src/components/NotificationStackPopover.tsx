@@ -1,181 +1,172 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { motion, AnimatePresence } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { Icon } from "@/components/ui";
 
-type NotificationItem = {
+/** Shape of a row from `GET /api/notifications` (NotificationLog). */
+export type Notice = {
   id: string;
-  title: string;
-  description: string;
-  time: string;
-  type: "academic" | "fees" | "attendance" | "system";
-  unread?: boolean;
+  channel: string;
+  recipient: string;
+  subject: string | null;
+  body: string;
+  refType: string | null;
+  refId: string | null;
+  status: string;
+  createdAt: string;
 };
 
-const SAMPLE_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: "1",
-    title: "Mid-Term Examination Schedule Released",
-    description: "Classes 8 to 10 exam timetables and hall tickets are now published.",
-    time: "10m ago",
-    type: "academic",
-    unread: true,
-  },
-  {
-    id: "2",
-    title: "Fee Collection Milestone Reached",
-    description: "Batch A collected ₹12,50,000 (72% target achieved today).",
-    time: "1h ago",
-    type: "fees",
-    unread: true,
-  },
-  {
-    id: "3",
-    title: "Daily Morning Roll Call Completed",
-    description: "Cadet parade attendance verified with 96.8% active attendance.",
-    time: "3h ago",
-    type: "attendance",
-    unread: false,
-  },
-];
+const REF_META: Record<string, { icon: string; chip: string; label: string }> = {
+  admission: { icon: "admissions", chip: "bg-brand-50 text-brand-600", label: "Admission" },
+  attendance: { icon: "attendance", chip: "bg-ok-soft text-ok", label: "Attendance" },
+  gate_pass: { icon: "door", chip: "bg-warn-soft text-warn", label: "Gate pass" },
+  payroll: { icon: "wallet", chip: "bg-accent-50 text-accent-600", label: "Payroll" },
+  cbt: { icon: "cbt", chip: "bg-info-soft text-info", label: "CBT" },
+  fees: { icon: "fees", chip: "bg-ok-soft text-ok", label: "Fees" },
+  discipline: { icon: "shield", chip: "bg-danger-soft text-danger", label: "Discipline" },
+  leave: { icon: "leaves", chip: "bg-warn-soft text-warn", label: "Leave" },
+};
 
-export function NotificationStackPopover() {
+function relative(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(diff)) return "";
+  const mins = Math.round(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? "yesterday" : `${days}d ago`;
+}
+
+/** Notifications created in the last 24h — the badge count, derived from real data. */
+export function recentCount(items: Notice[]): number {
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  return items.filter((n) => new Date(n.createdAt).getTime() >= cutoff).length;
+}
+
+/**
+ * Bell + hover preview. `href` is where "View all" goes: the staff log for office
+ * roles, the portal message list for parents. `emptyText` lets each caller say what
+ * an empty list means for them.
+ */
+export function NotificationStackPopover({
+  items, href = "/notifications", emptyText = "Nothing has been sent from this branch yet.",
+}: { items: Notice[]; href?: string; emptyText?: string }) {
   const [isHovered, setIsHovered] = useState(false);
-  const [notifications, setNotifications] = useState(SAMPLE_NOTIFICATIONS);
-
-  const unreadCount = notifications.filter((n) => n.unread).length;
+  const shown = items.slice(0, 4);
+  const newCount = recentCount(items);
 
   return (
     <div
-      className="relative inline-block"
+      className="relative"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Bell Trigger Button */}
       <Link
-        href="/notifications"
-        className={`relative flex h-9 w-9 items-center justify-center rounded-xl border transition-all duration-200 ${
+        href={href}
+        aria-label={`Notifications${newCount ? `, ${newCount} in the last 24 hours` : ""}`}
+        className={`relative grid h-9 w-9 place-items-center rounded-xl border transition-all duration-200 ${
           isHovered
-            ? "border-blue-400 bg-blue-50/70 text-blue-600 shadow-sm"
-            : "border-slate-200 text-slate-600 hover:bg-slate-50"
+            ? "border-brand-300 bg-brand-50 text-brand-600 shadow-soft"
+            : "border-line-strong bg-surface text-ink-2 hover:bg-surface-2"
         }`}
       >
-        <svg
-          className="h-4.5 w-4.5 transition-transform duration-200"
-          style={{ transform: isHovered ? "scale(1.1) rotate(8deg)" : "scale(1)" }}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-        </svg>
-
-        {unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#EF4444] text-[9px] font-bold text-white shadow-xs">
-            {unreadCount}
+        <Icon
+          name="bell"
+          className="h-[18px] w-[18px] transition-transform duration-200"
+        />
+        {newCount > 0 && (
+          <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[9px] font-bold text-white">
+            {newCount}
           </span>
         )}
       </Link>
 
-      {/* Hover Dropdown Stack Menu */}
       <AnimatePresence>
         {isHovered && (
           <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.96 }}
+            initial={{ opacity: 0, y: 8, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.96 }}
+            exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute right-0 top-full z-50 mt-2 w-80 sm:w-96 rounded-2xl border border-slate-200/90 bg-white/95 p-3 shadow-2xl shadow-slate-900/10 backdrop-blur-xl"
+            className="absolute right-0 top-full z-50 mt-2 w-80 rounded-xl border border-line bg-surface/97 p-3 shadow-pop backdrop-blur-xl sm:w-96"
           >
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 px-1.5">
+            <div className="flex items-center justify-between border-b border-line px-1.5 pb-2.5">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-900">Notifications</span>
-                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
-                  {unreadCount} new
-                </span>
+                <span className="font-display text-[13px] font-bold text-ink">Notifications</span>
+                {newCount > 0 && (
+                  <span className="badge badge-brand">{newCount} new</span>
+                )}
               </div>
               <Link
-                href="/notifications"
-                className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 hover:underline"
+                href={href}
+                className="text-[11px] font-semibold text-brand-600 hover:text-brand-800 hover:underline"
               >
                 View all
               </Link>
             </div>
 
-            {/* Motion Stack Items */}
-            <div className="mt-2 space-y-1.5">
-              {notifications.map((item, index) => (
-                <motion.div
-                  key={item.id}
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.05, duration: 0.2 }}
-                  className={`group relative flex items-start gap-3 rounded-xl p-2.5 transition-all duration-150 hover:bg-slate-50 cursor-pointer ${
-                    item.unread ? "bg-blue-50/40" : "bg-transparent"
-                  }`}
-                >
-                  {/* Type Icon Badge */}
-                  <div
-                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                      item.type === "academic"
-                        ? "bg-purple-100 text-purple-600"
-                        : item.type === "fees"
-                        ? "bg-emerald-100 text-emerald-600"
-                        : "bg-blue-100 text-blue-600"
-                    }`}
-                  >
-                    {item.type === "academic" && (
-                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-                      </svg>
-                    )}
-                    {item.type === "fees" && (
-                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <line x1="12" y1="1" x2="12" y2="23" />
-                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-                      </svg>
-                    )}
-                    {item.type === "attendance" && (
-                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                        <polyline points="22 4 12 14.01 9 11.01" />
-                      </svg>
-                    )}
-                  </div>
+            {shown.length === 0 ? (
+              <p className="px-2 py-6 text-center text-[12px] text-ink-3">
+                {emptyText}
+              </p>
+            ) : (
+              <div className="mt-2 space-y-1">
+                {shown.map((item, index) => {
+                  const meta = REF_META[item.refType ?? ""] ?? {
+                    icon: "bell",
+                    chip: "bg-surface-2 text-ink-2",
+                    label: item.channel,
+                  };
+                  return (
+                    <motion.div
+                      key={item.id}
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.05, duration: 0.2 }}
+                      className="group flex items-start gap-3 rounded-xl p-2.5 transition-colors duration-150 hover:bg-surface-2"
+                    >
+                      <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${meta.chip}`}>
+                        <Icon name={meta.icon} className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <p className="truncate text-[12px] font-bold text-ink">
+                            {item.subject ?? `${meta.label} notification`}
+                          </p>
+                          <span className="shrink-0 text-[10px] font-medium text-ink-3">
+                            {relative(item.createdAt)}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-ink-2">
+                          {item.body}
+                        </p>
+                        <p className="mt-1 flex items-center gap-2 text-[10px] text-ink-3">
+                          <span className="uppercase tracking-wide">{item.channel}</span>
+                          <span aria-hidden>·</span>
+                          <span className="truncate">{item.recipient}</span>
+                          {item.status !== "sent" && (
+                            <span className={`font-bold ${item.status === "failed" ? "text-danger" : "text-warn"}`}>
+                              {item.status}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
 
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-1">
-                      <p className="text-xs font-bold text-slate-800 truncate">{item.title}</p>
-                      <span className="shrink-0 text-[10px] font-medium text-slate-400">{item.time}</span>
-                    </div>
-                    <p className="mt-0.5 text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
-                      {item.description}
-                    </p>
-                  </div>
-
-                  {/* Unread indicator dot */}
-                  {item.unread && (
-                    <span className="h-2 w-2 shrink-0 rounded-full bg-blue-600 mt-1" />
-                  )}
-                </motion.div>
-              ))}
-            </div>
-
-            {/* Footer */}
-            <div className="mt-2 border-t border-slate-100 pt-2 text-center">
+            <div className="mt-2 border-t border-line pt-2 text-center">
               <Link
-                href="/notifications"
-                className="block rounded-lg py-1.5 text-center text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition"
+                href={href}
+                className="block rounded-lg py-1.5 text-[12px] font-semibold text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink"
               >
-                Open Notification Center →
+                Open notification centre →
               </Link>
             </div>
           </motion.div>

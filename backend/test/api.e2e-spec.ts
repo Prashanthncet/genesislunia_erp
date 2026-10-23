@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { NotificationsService } from '../src/notifications/notifications.service';
 
 /**
  * Full-surface e2e suite.
@@ -73,12 +74,25 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
     request(server).put(url).set('Authorization', `Bearer ${token}`).send(body as object);
   const del = (url: string) => request(server).delete(url).set('Authorization', `Bearer ${token}`);
 
+  /** Request helpers bound to another role's token (most of this suite runs as the school admin). */
+  const loginAs = async (email: string, password: string) => {
+    const res = await request(server).post('/api/auth/login').send({ email, password });
+    expect(res.status).toBe(200);
+    const t = res.body.token as string;
+    return {
+      get: (url: string) => request(server).get(url).set('Authorization', `Bearer ${t}`),
+      post: (url: string, body?: object) => request(server).post(url).set('Authorization', `Bearer ${t}`).send(body as object),
+      put: (url: string, body?: object) => request(server).put(url).set('Authorization', `Bearer ${t}`).send(body as object),
+      del: (url: string) => request(server).delete(url).set('Authorization', `Bearer ${t}`),
+    };
+  };
+
   // ─── AUTH ────────────────────────────────────────────────────
 
   it('POST /api/auth/login → 200 with token for valid credentials', async () => {
     const res = await request(server)
       .post('/api/auth/login')
-      .send({ email: 'principal@sainik01.edu', password: 'Demo@Principal1' });
+      .send({ email: 'schooladmin@sainik01.edu', password: 'Demo@Admin1' });
     expect(res.status).toBe(200);
     expect(res.body.token).toBeDefined();
     expect(res.body.role).toBe('branch_admin');
@@ -89,7 +103,7 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
   it('POST /api/auth/login → 401 for invalid credentials', async () => {
     const res = await request(server)
       .post('/api/auth/login')
-      .send({ email: 'principal@sainik01.edu', password: 'wrong' });
+      .send({ email: 'schooladmin@sainik01.edu', password: 'wrong' });
     expect(res.status).toBe(401);
   });
 
@@ -408,7 +422,9 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
       overwrite: true,
       subjects: [
         { name: 'Maths', teacher_id: 't_meera', periods_per_week: 2 },
-        { name: 'English', teacher_id: 't_rajesh', periods_per_week: 1 },
+        // Not t_rajesh: he already teaches his 4-period daily maximum elsewhere on Mon/Tue,
+        // and the generator now (correctly) counts lessons in other classes.
+        { name: 'English', teacher_id: 't_naveen', periods_per_week: 1 },
         { name: 'Physics', teacher_id: 't_arjun', periods_per_week: 1 },
       ],
     });
@@ -463,28 +479,17 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
   });
 
   // ─── ADMISSIONS ──────────────────────────────────────────────
+  // The workflow is role-per-step (AO → parent via link → AO → payment → Accounts → OS
+  // → VP → Principal sign-off) and is covered end to end, role by role, in
+  // test/admissions.e2e-spec.ts. The walk-through that used to live here drove every
+  // step as one admin and had staff submit the parent's form — both now forbidden.
 
   let applicationId = '';
 
-  it('POST /api/admissions/fields → 201 create field; GET → listed; DELETE → 200', async () => {
-    const created = await post('/api/admissions/fields', {
-      label: 'Aadhar Number',
-      field_type: 'text',
-      is_required: true,
-    });
-    expect(created.status).toBe(201);
-
-    const list = await get('/api/admissions/fields');
-    expect(list.body.some((f: { label: string }) => f.label === 'Aadhar Number')).toBe(true);
-
-    const removed = await del(`/api/admissions/fields/${created.body.id}`);
-    expect(removed.status).toBe(200);
-  });
-
-  it('POST /api/admissions/setup-fields → 200', async () => {
-    const res = await post('/api/admissions/setup-fields');
-    expect(res.status).toBe(201);
-    expect(res.body.success).toBe(true);
+  it('GET /api/admissions/fields → published template for the session', async () => {
+    const res = await get('/api/admissions/fields');
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThan(0);
   });
 
   it('POST /api/admissions/trigger-links → 201 generates applications', async () => {
@@ -499,50 +504,11 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
     applicationId = res.body.generated[0].id;
   });
 
-  it('POST /api/admissions/:id/submit → 200', async () => {
-    const res = await post(`/api/admissions/${applicationId}/submit`, {
-      student_name: 'Applicant Singh',
-      dob: '2014-05-01',
-    });
-    expect(res.status).toBe(201);
-  });
-
-  it('POST /api/admissions/:id/validate → 200', async () => {
-    const res = await post(`/api/admissions/${applicationId}/validate`, { isValid: true });
-    expect(res.status).toBe(201);
-  });
-
-  it('POST /api/admissions/:id/pay → 200', async () => {
-    const res = await post(`/api/admissions/${applicationId}/pay`);
-    expect(res.status).toBe(201);
-  });
-
-  it('POST /api/admissions/:id/verify-receipt → 200', async () => {
-    const res = await post(`/api/admissions/${applicationId}/verify-receipt`);
-    expect(res.status).toBe(201);
-    expect(res.body.message).toContain('verified');
-  });
-
-  it('POST /api/admissions/:id/allocate → 200 with roll no & house', async () => {
-    const res = await post(`/api/admissions/${applicationId}/allocate`);
-    expect(res.status).toBe(201);
-    expect(res.body.roll_no).toBeDefined();
-    expect(['Red', 'Blue', 'Green', 'Yellow']).toContain(res.body.house);
-  });
-
-  it('POST /api/admissions/:id/vp-approve → 200', async () => {
-    const res = await post(`/api/admissions/${applicationId}/vp-approve`);
-    expect(res.status).toBe(201);
-  });
-
-  it('POST /api/admissions/:id/principal-approve → 200 and student created', async () => {
-    const res = await post(`/api/admissions/${applicationId}/principal-approve`);
-    expect(res.status).toBe(201);
-    expect(res.body.student_id).toBeDefined();
-
-    // The student should now exist in the master table
-    const students = await get('/api/students?page_size=200');
-    expect(students.body.data.some((s: { id: string }) => s.id === res.body.student_id)).toBe(true);
+  it('staff cannot submit a form on the parent\'s behalf, and steps cannot be skipped', async () => {
+    const submit = await post(`/api/admissions/${applicationId}/submit`, { student_name: 'Applicant Singh' });
+    expect(submit.status).toBe(404); // route removed: only the parent's link submits
+    const skip = await post(`/api/admissions/${applicationId}/validate`, { isValid: true });
+    expect(skip.status).toBe(409); // still "Links Sent"
   });
 
   it('POST /api/admissions/999/validate → 404 unknown application', async () => {
@@ -699,25 +665,30 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
   // ─── DISCIPLINE ──────────────────────────────────────────────
 
   it('discipline incidents → create, view (audited), status transitions, audit-log, delete', async () => {
-    const created = await post('/api/discipline/incidents', {
+    // Plan Phase 5: case records are visible to the safeguarding team + principal only.
+    const lead = await loginAs('discipline@sainik01.edu', 'Demo@Discipline1');
+    const principal = await loginAs('principal@sainik01.edu', 'Demo@Principal1');
+    const created = await lead.post('/api/discipline/incidents', {
       student_id: 'stu_002', incident_date: '2026-09-30', description: 'E2E incident description', demerits: 2, confidential_notes: 'E2E confidential',
     });
     expect(created.status).toBe(201);
     ids.incidentId = created.body.id;
 
-    const got = await get(`/api/discipline/incidents/${ids.incidentId}`);
+    const got = await lead.get(`/api/discipline/incidents/${ids.incidentId}`);
     expect(got.status).toBe(200);
+    // School admin is not on the case team; 404 (not 403) so non-team staff can't even confirm a case exists.
+    expect([403, 404]).toContain((await get(`/api/discipline/incidents/${ids.incidentId}`)).status);
 
-    const st = await put(`/api/discipline/incidents/${ids.incidentId}/status`, { status: 'Under Review' });
+    const st = await lead.put(`/api/discipline/incidents/${ids.incidentId}/status`, { status: 'Under Review' });
     expect(st.status).toBe(200);
-    const bad = await put(`/api/discipline/incidents/${ids.incidentId}/status`, { status: 'Bogus' });
+    const bad = await lead.put(`/api/discipline/incidents/${ids.incidentId}/status`, { status: 'Bogus' });
     expect(bad.status).toBe(400);
 
-    const audit = await get('/api/discipline/audit-log?entity=incident');
+    const audit = await lead.get('/api/discipline/audit-log?entity=incident');
     expect(audit.status).toBe(200);
     expect(audit.body.some((e: { action: string; entityId: string }) => e.action === 'VIEW' && e.entityId === ids.incidentId)).toBe(true);
 
-    const removed = await del(`/api/discipline/incidents/${ids.incidentId}`);
+    const removed = await principal.del(`/api/discipline/incidents/${ids.incidentId}`); // soft delete, principal only
     expect(removed.status).toBe(200);
   });
 
@@ -787,23 +758,28 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
 
     const detail = await get(`/api/gate-passes/${ids.passId}`);
     expect(detail.status).toBe(200);
-    const otp = detail.body.parentOtp;
-    expect(otp).toBeDefined();
+    expect(detail.body.parentOtp).toBeUndefined(); // never exposed to staff
 
-    const earlyCheckout = await put(`/api/gate-passes/${ids.passId}/checkout`);
+    const earlyCheckout = await put(`/api/gate-passes/${ids.passId}/checkout`, { otp: '123456' });
     expect(earlyCheckout.status).toBe(400); // must be fully approved first
 
+    // The OTP goes only to the parent, on final approval: capture it from the dispatcher.
+    const notify = jest.spyOn(NotificationsService.prototype, 'notify');
     await put(`/api/gate-passes/${ids.passId}/approve-warden`);
     const principal = await put(`/api/gate-passes/${ids.passId}/approve-principal`);
     expect(principal.status).toBe(200);
+    const sent = notify.mock.calls.map((c) => c[0]).find((n) => n.ref_type === 'gate_pass' && n.ref_id === ids.passId && (n.redact?.length ?? 0) > 0);
+    notify.mockRestore();
+    const otp = sent?.redact?.[0] as string;
+    expect(otp).toMatch(/^\d{6}$/);
 
-    const co = await put(`/api/gate-passes/${ids.passId}/checkout`);
+    const badOtp = await put(`/api/gate-passes/${ids.passId}/checkout`, { otp: otp === '000000' ? '111111' : '000000' });
+    expect([400, 403]).toContain(badOtp.status);
+
+    const co = await put(`/api/gate-passes/${ids.passId}/checkout`, { otp });
     expect(co.status).toBe(200);
 
-    const badOtp = await put(`/api/gate-passes/${ids.passId}/checkin`, { otp: '000000' });
-    expect(badOtp.status).toBe(400);
-
-    const ci = await put(`/api/gate-passes/${ids.passId}/checkin`, { otp });
+    const ci = await put(`/api/gate-passes/${ids.passId}/checkin`);
     expect(ci.status).toBe(200);
     expect(ci.body.status).toBe('Returned');
   });
@@ -877,19 +853,21 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
     expect(created.status).toBe(201);
     ids.testId = created.body.id;
 
-    const paper = await get(`/api/cbt/tests/${ids.testId}`);
-    expect(paper.status).toBe(200);
-    expect(paper.body.questions[0].correctOption).toBeUndefined(); // answers stripped for students
-
     const pub = await put(`/api/cbt/tests/${ids.testId}/publish`);
     expect(pub.status).toBe(200);
 
-    const start = await post(`/api/cbt/tests/${ids.testId}/start`, { student_id: 'stu_001' });
+    // Staff can no longer start/submit on a student's behalf; the student logs in.
+    expect((await post(`/api/cbt/tests/${ids.testId}/start`, { student_id: 'stu_001' })).status).toBe(403);
+    const student = await loginAs('student@sainik01.edu', 'Demo@Student1'); // stu_001
+
+    const start = await student.post(`/api/cbt/tests/${ids.testId}/start`);
     expect(start.status).toBe(201);
     ids.attemptId = start.body.attempt_id;
+    const paper = await student.get(`/api/cbt/attempts/${ids.attemptId}`);
+    expect(paper.status).toBe(200);
+    expect(JSON.stringify(paper.body)).not.toContain('correctOption'); // answers stripped for students
 
-    const submit = await post(`/api/cbt/tests/${ids.testId}/submit`, {
-      student_id: 'stu_001',
+    const submit = await student.post(`/api/cbt/attempts/${ids.attemptId}/submit`, {
       answers: { [ids.q1]: 'B', [ids.q2]: 'gravity pulls things down' },
     });
     expect(submit.status).toBe(201);
@@ -927,7 +905,10 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
 
     const dl = await get(`/api/admissions/documents/${docId}/download`);
     expect(dl.status).toBe(200);
-    expect(dl.body.data_url).toContain('base64');
+    // Documents live in object storage now: the API hands out a short-lived signed URL.
+    expect(dl.body.url).toEqual(expect.any(String));
+    const file = await request(server).get(new URL(dl.body.url, 'http://localhost').pathname);
+    expect(file.status).toBe(200);
 
     const rm = await del(`/api/admissions/documents/${docId}`);
     expect(rm.status).toBe(200);
@@ -965,12 +946,12 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
     const [app1, app2] = created.body.generated;
     expect(app1.token).toBeDefined();
 
-    for (const app of [app1, app2]) {
-      await post(`/api/admissions/${app.id}/submit`, { student_name: 'Roll Test Student', dob: '2014-03-03' });
-      await post(`/api/admissions/${app.id}/validate`, { isValid: true });
-      await post(`/api/admissions/${app.id}/pay`);
-      await post(`/api/admissions/${app.id}/verify-receipt`);
-    }
+    // Put both straight at the OS step: the steps before it are covered per role in
+    // admissions.e2e-spec.ts; this test is about the roll-number and house rules.
+    await app.get(PrismaService).admission.updateMany({
+      where: { id: { in: [app1.id, app2.id] } },
+      data: { status: 'Fee Approved', studentName: 'Roll Test Student', paymentStatus: 'Verified' },
+    });
 
     const alloc1 = await post(`/api/admissions/${app1.id}/allocate`, { class_id: 'cls_10a' });
     expect(alloc1.status).toBe(201);
@@ -979,8 +960,9 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
 
     const alloc2 = await post(`/api/admissions/${app2.id}/allocate`, { class_id: 'cls_10a' });
     expect(alloc2.body.roll_no).toMatch(/^[A-Z0-9]+-\d{4}-\d{3}$/);
-    // sequential SEQ and balanced houses differ when both classes start empty
-    expect(alloc2.body.roll_no).not.toBe(alloc1.body.roll_no);
+    // SEQ is sequential within class + year
+    const seq = (r: string) => Number(r.split('-').pop());
+    expect(seq(alloc2.body.roll_no)).toBe(seq(alloc1.body.roll_no) + 1);
   });
 
   it('public parent form → GET by token, submit without auth, office sees it', async () => {
@@ -994,9 +976,14 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
     expect(anon.body.already_submitted).toBe(false);
     expect(Array.isArray(anon.body.fields)).toBe(true);
 
-    const submitted = await request(server)
-      .post(`/api/admissions/public/${token}/submit`)
-      .send({ student_name: 'Public Kid', dob: '2015-06-06' });
+    // Submissions are validated against the PUBLISHED template, so fill every field it has.
+    const form: Record<string, string> = {};
+    for (const f of anon.body.fields as { key: string; field_type: string; validation_rule: string | null }[]) {
+      form[f.key] = f.field_type === 'date' ? '2015-06-06' : f.validation_rule ? '123456789012' : 'Public Kid';
+    }
+    const incomplete = await request(server).post(`/api/admissions/public/${token}/submit`).send({ student_name: 'Public Kid' });
+    expect(incomplete.status).toBe(400); // required template fields missing
+    const submitted = await request(server).post(`/api/admissions/public/${token}/submit`).send(form);
     expect(submitted.status).toBe(201);
 
     const bad = await request(server).get('/api/admissions/public/tok_does_not_exist');
@@ -1015,17 +1002,18 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
     expect(res.body.some((n: { status: string }) => n.status === 'mocked')).toBe(true); // no NOTIFY_WEBHOOK_URL in dev
   });
 
+  // Numbers are per school (INV-<SCHOOLCODE>-<YEAR>-NNNN): the column is globally unique.
   it('fees → invoices get INV- numbers and payments get RCPT- receipt numbers', async () => {
     const created = await post('/api/fees/invoices', { student_id: 'stu_002', term: 'E2E-Term', total_amount: 300, due_date: '2026-10-20' });
     expect(created.status).toBe(201);
-    expect(created.body.invoice_no).toMatch(/^INV-\d{4}-\d{4}$/);
+    expect(created.body.invoice_no).toMatch(/^INV-[A-Z0-9]+-\d{4}-\d{4}$/);
 
     const paid = await post('/api/fees/payments', { invoice_id: created.body.id, amount_paid: 300, payment_mode: 'Cash' });
     expect(paid.status).toBe(201);
-    expect(paid.body.receipt_no).toMatch(/^RCPT-\d{4}-\d{4}$/);
+    expect(paid.body.receipt_no).toMatch(/^RCPT-[A-Z0-9]+-\d{4}-\d{4}$/);
 
     const detail = await get(`/api/fees/invoices/${created.body.id}`);
-    expect(detail.body.payments[0].receiptNo).toMatch(/^RCPT-\d{4}-\d{4}$/);
+    expect(detail.body.payments[0].receiptNo).toMatch(/^RCPT-[A-Z0-9]+-\d{4}-\d{4}$/);
   });
 
   it('attendance register → per-student × per-day matrix for a month', async () => {
@@ -1063,7 +1051,7 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
     const notes = await get('/api/notifications?ref_type=incident');
     expect(notes.body.some((n: { recipient: string }) => n.recipient === '9999000011')).toBe(true);
 
-    await del(`/api/discipline/incidents/${created.body.id}`);
+    await (await loginAs('principal@sainik01.edu', 'Demo@Principal1')).del(`/api/discipline/incidents/${created.body.id}`);
   });
 
   it('reports CSV export → students / fees / attendance', async () => {
@@ -1094,7 +1082,7 @@ describe('Genesis ERP API (e2e) — full endpoint coverage', () => {
     const a2 = await post('/api/hostel/allocations', { student_id: 'stu_004', room_id: r2.body.id });
     expect(a2.status).toBe(201);
 
-    const audit = await get('/api/discipline/audit-log?entity=hostel_allocation');
+    const audit = await get('/api/audit-log?entity=hostel_allocation');
     expect(audit.status).toBe(200);
     expect(audit.body.some((e: { detail: string | null }) => (e.detail ?? '').includes('E2E-101'))).toBe(true);
 

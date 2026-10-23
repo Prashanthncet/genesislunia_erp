@@ -4,6 +4,7 @@ import {
   ConflictException,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   NotFoundException,
   Param,
@@ -15,29 +16,63 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthGuard, Roles, RolesGuard } from '../auth/auth.guard';
+import { R, ROLE, isPortalRole } from '../auth/roles';
+import { AuthUser, ReqWithUser, assertInBranch, currentStaffId, portalStudentIds } from '../common/access';
+import { SubstitutionService } from './substitution.service';
+import { DAY_ORDER, classLabel, dayOfWeek, todayISO, weekDates } from './timetable.util';
+import {
+  AssignSubstitutionDto, CreateTeacherDto, GenerateDto, GenerateSubjectDto, RoomDto, SavePeriodsDto, ScheduleExamDto,
+  SubstituteDto, SubstitutionRequestDto, TeacherAbsentDto, UpdateRoomDto, UpdateTeacherDto, UpsertSlotDto,
+} from './dto/timetable.dto';
 
-type JwtUser = { sub: string; role: string; branch_id: string };
-type ReqWithUser = { user: JwtUser };
-
-type GenerateSlotInput = {
-  name: string;
-  teacher_id: string;
-  periods_per_week: number;
-  room_id?: string;
-  double_periods?: boolean;
-};
-
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const DAY_ORDER: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+/** Class timetables are readable by staff and by the portal (own child's / own class only). */
+const CLASS_READ: string[] = [...R.STAFF, ROLE.PARENT, ROLE.STUDENT];
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 @Controller('timetable')
 @UseGuards(AuthGuard, RolesGuard)
 export class TimetableController {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private subs: SubstitutionService) {}
+
+  // ─── Access helpers ──────────────────────────────────────────
+
+  /** Staff: class must be in their school. Portal: class must be their child's / their own. */
+  private async assertCanSeeClass(user: AuthUser, classId: string) {
+    await assertInBranch(this.prisma, 'class', classId, user.branch_id);
+    if (!isPortalRole(user.role)) return;
+    const allowed = await this.portalClassIds(user);
+    if (!allowed.includes(classId)) throw new ForbiddenException('You can only view your own class timetable');
+  }
+
+  private async portalClassIds(user: AuthUser): Promise<string[]> {
+    const ids = (await portalStudentIds(this.prisma, user)) ?? [];
+    const students = await this.prisma.student.findMany({
+      where: { id: { in: ids }, branchId: user.branch_id }, select: { classId: true },
+    });
+    return [...new Set(students.map((s) => s.classId).filter((c): c is string => !!c))];
+  }
+
+  private async teachingPeriods(branchId: string) {
+    return this.prisma.periodConfig.findMany({ where: { branchId }, orderBy: { periodNumber: 'asc' } });
+  }
+
+  // ─── Classes (role-aware list for the timetable screens) ─────
+
+  @Get('classes')
+  @Roles(...CLASS_READ)
+  async classes(@Req() req: ReqWithUser) {
+    const portal = isPortalRole(req.user.role) ? await this.portalClassIds(req.user) : null;
+    return this.prisma.class.findMany({
+      where: { branchId: req.user.branch_id, ...(portal ? { id: { in: portal } } : {}) },
+      orderBy: [{ name: 'asc' }, { section: 'asc' }],
+      select: { id: true, name: true, section: true },
+    });
+  }
 
   // ─── Teachers ────────────────────────────────────────────────
 
   @Get('teachers')
+  @Roles(...R.STAFF)
   listTeachers(@Req() req: ReqWithUser) {
     return this.prisma.staff.findMany({
       where: { branchId: req.user.branch_id, role: 'Teacher' },
@@ -46,12 +81,8 @@ export class TimetableController {
   }
 
   @Post('teachers')
-  @Roles('super_admin', 'branch_admin')
-  async createTeacher(
-    @Req() req: ReqWithUser,
-    @Body() body: { name?: string; email?: string; subjects?: string; max_periods_per_day?: number },
-  ) {
-    if (!body?.name) throw new BadRequestException('name is required');
+  @Roles(...R.ADMINS)
+  async createTeacher(@Req() req: ReqWithUser, @Body() body: CreateTeacherDto) {
     let teacher;
     try {
       teacher = await this.prisma.staff.create({
@@ -76,13 +107,9 @@ export class TimetableController {
   }
 
   @Put('teachers/:id')
-  @Roles('super_admin', 'branch_admin')
-  async updateTeacher(
-    @Req() req: ReqWithUser,
-    @Param('id') id: string,
-    @Body() body: { name?: string; email?: string; subjects?: string; max_periods_per_day?: number; is_active?: boolean },
-  ) {
-    await this.prisma.staff.updateMany({
+  @Roles(...R.ADMINS)
+  async updateTeacher(@Req() req: ReqWithUser, @Param('id') id: string, @Body() body: UpdateTeacherDto) {
+    const res = await this.prisma.staff.updateMany({
       where: { id, branchId: req.user.branch_id, role: 'Teacher' },
       data: {
         ...(body.name !== undefined && { name: body.name }),
@@ -92,45 +119,31 @@ export class TimetableController {
         ...(body.is_active !== undefined && { isActive: body.is_active }),
       },
     });
+    if (res.count === 0) throw new NotFoundException('teacher not found');
     return { success: true };
   }
 
   // ─── Rooms ───────────────────────────────────────────────────
 
   @Get('rooms')
+  @Roles(...R.STAFF)
   listRooms(@Req() req: ReqWithUser) {
-    return this.prisma.academicRoom.findMany({
-      where: { branchId: req.user.branch_id },
-      orderBy: { name: 'asc' },
-    });
+    return this.prisma.academicRoom.findMany({ where: { branchId: req.user.branch_id }, orderBy: { name: 'asc' } });
   }
 
   @Post('rooms')
-  @Roles('super_admin', 'branch_admin')
-  async createRoom(
-    @Req() req: ReqWithUser,
-    @Body() body: { name?: string; type?: string; capacity?: number },
-  ) {
-    if (!body?.name || !body?.type) throw new BadRequestException('name and type are required');
+  @Roles(...R.TIMETABLE_ADMIN)
+  async createRoom(@Req() req: ReqWithUser, @Body() body: RoomDto) {
     const room = await this.prisma.academicRoom.create({
-      data: {
-        branchId: req.user.branch_id,
-        name: body.name,
-        type: body.type,
-        capacity: body.capacity ?? 40,
-      },
+      data: { branchId: req.user.branch_id, name: body.name, type: body.type, capacity: body.capacity ?? 40 },
     });
     return { id: room.id };
   }
 
   @Put('rooms/:id')
-  @Roles('super_admin', 'branch_admin')
-  async updateRoom(
-    @Req() req: ReqWithUser,
-    @Param('id') id: string,
-    @Body() body: { name?: string; type?: string; capacity?: number },
-  ) {
-    await this.prisma.academicRoom.updateMany({
+  @Roles(...R.TIMETABLE_ADMIN)
+  async updateRoom(@Req() req: ReqWithUser, @Param('id') id: string, @Body() body: UpdateRoomDto) {
+    const res = await this.prisma.academicRoom.updateMany({
       where: { id, branchId: req.user.branch_id },
       data: {
         ...(body.name !== undefined && { name: body.name }),
@@ -138,11 +151,12 @@ export class TimetableController {
         ...(body.capacity !== undefined && { capacity: body.capacity }),
       },
     });
+    if (res.count === 0) throw new NotFoundException('room not found');
     return { success: true };
   }
 
   @Delete('rooms/:id')
-  @Roles('super_admin', 'branch_admin')
+  @Roles(...R.TIMETABLE_ADMIN)
   async deleteRoom(@Req() req: ReqWithUser, @Param('id') id: string) {
     await this.prisma.academicRoom.deleteMany({ where: { id, branchId: req.user.branch_id } });
     return { success: true };
@@ -151,21 +165,16 @@ export class TimetableController {
   // ─── Period configs ──────────────────────────────────────────
 
   @Get('periods')
+  @Roles(...CLASS_READ)
   listPeriods(@Req() req: ReqWithUser) {
-    return this.prisma.periodConfig.findMany({
-      where: { branchId: req.user.branch_id },
-      orderBy: { periodNumber: 'asc' },
-    });
+    return this.teachingPeriods(req.user.branch_id);
   }
 
   @Post('periods')
-  @Roles('super_admin', 'branch_admin')
-  async savePeriods(
-    @Req() req: ReqWithUser,
-    @Body() body: { periods?: Array<{ period_number: number; start_time: string; end_time: string; is_break?: boolean; break_name?: string }> },
-  ) {
-    if (!Array.isArray(body?.periods)) throw new BadRequestException('periods array is required');
-
+  @Roles(...R.TIMETABLE_ADMIN)
+  async savePeriods(@Req() req: ReqWithUser, @Body() body: SavePeriodsDto) {
+    const nums = body.periods.map((p) => p.period_number);
+    if (new Set(nums).size !== nums.length) throw new BadRequestException('period_number values must be unique');
     await this.prisma.$transaction([
       this.prisma.periodConfig.deleteMany({ where: { branchId: req.user.branch_id } }),
       ...body.periods.map((p) =>
@@ -187,14 +196,11 @@ export class TimetableController {
   // ─── Exam invigilation scheduler ─────────────────────────────
 
   @Get('exams')
+  @Roles(...R.STAFF)
   async listExamSchedules(@Req() req: ReqWithUser) {
     const schedules = await this.prisma.examSchedule.findMany({
       where: { branchId: req.user.branch_id },
-      include: {
-        exam: { select: { name: true } },
-        room: { select: { name: true } },
-        invigilator: { select: { name: true } },
-      },
+      include: { exam: { select: { name: true } }, room: { select: { name: true } }, invigilator: { select: { name: true } } },
       orderBy: [{ date: 'asc' }, { periodNumber: 'asc' }],
     });
     return schedules.map((s) => ({
@@ -212,50 +218,38 @@ export class TimetableController {
   }
 
   @Post('exams/schedule')
-  @Roles('super_admin', 'branch_admin', 'teacher')
-  async scheduleExam(
-    @Req() req: ReqWithUser,
-    @Body() body: { exam_id?: string; date?: string; period_number?: number; room_id?: string; invigilator_id?: string; subject?: string },
-  ) {
-    const { exam_id, date, period_number, room_id, invigilator_id, subject } = body ?? {};
-    if (!exam_id || !date || !period_number || !subject) {
-      throw new BadRequestException('exam_id, date, period_number, and subject are required');
-    }
+  @Roles(...R.TIMETABLE_ADMIN)
+  async scheduleExam(@Req() req: ReqWithUser, @Body() body: ScheduleExamDto) {
+    const { exam_id, date, period_number, room_id, invigilator_id, subject } = body;
+    const branchId = req.user.branch_id;
+    await assertInBranch(this.prisma, 'exam', exam_id, branchId);
+    await assertInBranch(this.prisma, 'academicRoom', room_id, branchId);
+    await assertInBranch(this.prisma, 'staff', invigilator_id, branchId);
 
     if (invigilator_id) {
       const clash = await this.prisma.examSchedule.findFirst({
-        where: { branchId: req.user.branch_id, date, periodNumber: period_number, invigilatorId: invigilator_id },
+        where: { branchId, date, periodNumber: period_number, invigilatorId: invigilator_id },
       });
-      if (clash) {
-        throw new ConflictException('Teacher is already assigned as an invigilator for another room during this period.');
-      }
+      if (clash) throw new ConflictException('Teacher is already assigned as an invigilator for another room during this period.');
     }
-
     if (room_id) {
       const clash = await this.prisma.examSchedule.findFirst({
-        where: { branchId: req.user.branch_id, date, periodNumber: period_number, roomId: room_id },
+        where: { branchId, date, periodNumber: period_number, roomId: room_id },
       });
-      if (clash) {
-        throw new ConflictException('Room is already assigned to another exam during this period.');
-      }
+      if (clash) throw new ConflictException('Room is already assigned to another exam during this period.');
     }
 
     const schedule = await this.prisma.examSchedule.create({
       data: {
-        branchId: req.user.branch_id,
-        examId: exam_id,
-        date,
-        periodNumber: period_number,
-        roomId: room_id ?? null,
-        invigilatorId: invigilator_id ?? null,
-        subject,
+        branchId, examId: exam_id, date, periodNumber: period_number,
+        roomId: room_id ?? null, invigilatorId: invigilator_id ?? null, subject,
       },
     });
     return { id: schedule.id };
   }
 
   @Delete('exams/schedule/:id')
-  @Roles('super_admin', 'branch_admin')
+  @Roles(...R.TIMETABLE_ADMIN)
   async deleteExamSchedule(@Req() req: ReqWithUser, @Param('id') id: string) {
     await this.prisma.examSchedule.deleteMany({ where: { id, branchId: req.user.branch_id } });
     return { success: true };
@@ -264,32 +258,23 @@ export class TimetableController {
   // ─── Teacher absence → bulk auto-substitution ────────────────
 
   @Post('teachers/:id/absent')
-  @Roles('super_admin', 'branch_admin', 'principal', 'teacher')
-  async markTeacherAbsent(
-    @Req() req: ReqWithUser,
-    @Param('id') teacherId: string,
-    @Body() body: { date?: string; reason?: string },
-  ) {
-    const date = body?.date;
-    if (!date) throw new BadRequestException('date is required (YYYY-MM-DD)');
+  @Roles(...R.TIMETABLE_ADMIN)
+  async markTeacherAbsent(@Req() req: ReqWithUser, @Param('id') teacherId: string, @Body() body: TeacherAbsentDto) {
+    const { date } = body;
     const branchId = req.user.branch_id;
-    const dow = dayOfWeek(date);
+    await assertInBranch(this.prisma, 'staff', teacherId, branchId);
 
     const slots = await this.prisma.timetableSlot.findMany({
-      where: {
-        branchId,
-        teacherId,
-        dayOfWeek: dow,
-      },
+      where: { branchId, teacherId, dayOfWeek: dayOfWeek(date) },
+      orderBy: { periodNumber: 'asc' },
     });
-
-    // Filter out slots that already have a substitution for that date
-    const existingSubs = await this.prisma.substitution.findMany({
-      where: { branchId, date },
+    // Periods that already have cover keep it; open requests get filled.
+    const existing = await this.prisma.substitution.findMany({
+      where: { branchId, date, status: 'Assigned' },
       select: { classId: true, periodNumber: true },
     });
-    const subKey = new Set(existingSubs.map((s) => `${s.classId}:${s.periodNumber}`));
-    const affected = slots.filter((s) => !subKey.has(`${s.classId}:${s.periodNumber}`));
+    const covered = new Set(existing.map((s) => `${s.classId}:${s.periodNumber}`));
+    const affected = slots.filter((s) => !covered.has(`${s.classId}:${s.periodNumber}`));
 
     if (affected.length === 0) {
       return { message: 'No unsubstituted periods found for this teacher on that day.', substitutions: [] };
@@ -297,32 +282,29 @@ export class TimetableController {
 
     const results = [];
     for (const slot of affected) {
-      const result = await this.assignSubstitute({
-        branchId,
-        date,
-        dow,
-        classId: slot.classId,
-        periodNumber: slot.periodNumber,
-        originalTeacherId: teacherId,
-        reason: body?.reason ?? 'Teacher Absent',
-        createdBy: req.user.sub,
-      });
-      results.push({ class_id: slot.classId, period_number: slot.periodNumber, ...result });
+      try {
+        const r = await this.subs.assignCover({
+          branchId, date, classId: slot.classId, periodNumber: slot.periodNumber,
+          originalTeacherId: teacherId, reason: body.reason ?? 'Teacher Absent', createdBy: req.user.sub,
+        });
+        results.push({ class_id: slot.classId, period_number: slot.periodNumber, ...r });
+      } catch (e) {
+        if (!(e instanceof ConflictException)) throw e;
+        results.push({ class_id: slot.classId, period_number: slot.periodNumber, error: e.message });
+      }
     }
     return { substitutions: results };
   }
 
-  // ─── Master / live views ─────────────────────────────────────
+  // ─── Class views ─────────────────────────────────────────────
 
   @Get('master/:classId')
+  @Roles(...CLASS_READ)
   async master(@Req() req: ReqWithUser, @Param('classId') classId: string) {
+    await this.assertCanSeeClass(req.user, classId);
     const slots = await this.prisma.timetableSlot.findMany({
       where: { branchId: req.user.branch_id, classId },
-      include: {
-        teacher: { select: { name: true } },
-        room: { select: { name: true } },
-      },
-      orderBy: [{ dayOfWeek: 'asc' }, { periodNumber: 'asc' }],
+      include: { teacher: { select: { name: true } }, room: { select: { name: true } } },
     });
     return slots
       .map((s) => ({
@@ -336,89 +318,74 @@ export class TimetableController {
         room_id: s.roomId,
         room_name: s.room?.name ?? null,
       }))
-      .sort(
-        (a, b) =>
-          (DAY_ORDER[a.day_of_week] ?? 99) - (DAY_ORDER[b.day_of_week] ?? 99) ||
-          a.period_number - b.period_number,
-      );
+      .sort((a, b) => (DAY_ORDER[a.day_of_week] ?? 99) - (DAY_ORDER[b.day_of_week] ?? 99) || a.period_number - b.period_number);
   }
 
   @Get('today/:classId')
+  @Roles(...CLASS_READ)
   async today(@Req() req: ReqWithUser, @Param('classId') classId: string, @Query('date') dateQ?: string) {
-    const date = dateQ ?? todayISO();
+    await this.assertCanSeeClass(req.user, classId);
+    const date = dateQ && ISO_DATE.test(dateQ) ? dateQ : todayISO();
     const dow = dayOfWeek(date);
 
-    const slots = await this.prisma.timetableSlot.findMany({
-      where: { branchId: req.user.branch_id, classId, dayOfWeek: dow },
-      include: {
-        teacher: { select: { name: true } },
-        room: { select: { name: true } },
-      },
-      orderBy: { periodNumber: 'asc' },
-    });
-
-    const subs = await this.prisma.substitution.findMany({
-      where: { branchId: req.user.branch_id, classId, date },
-      include: {
-        substitute: { select: { id: true, name: true } },
-        room: { select: { name: true } },
-      },
-    });
+    const [slots, subs] = await Promise.all([
+      this.prisma.timetableSlot.findMany({
+        where: { branchId: req.user.branch_id, classId, dayOfWeek: dow },
+        include: { teacher: { select: { name: true } }, room: { select: { name: true } } },
+        orderBy: { periodNumber: 'asc' },
+      }),
+      this.prisma.substitution.findMany({
+        where: { branchId: req.user.branch_id, classId, date, status: { in: ['Assigned', 'Requested'] } },
+        include: { substitute: { select: { id: true, name: true } }, room: { select: { name: true } } },
+      }),
+    ]);
     const subMap = new Map(subs.map((s) => [s.periodNumber, s]));
 
     return {
       date,
       day: dow,
-      schedule: slots.map((s) => ({
-        id: s.id,
-        period_number: s.periodNumber,
-        subject: s.subject,
-        teacher_id: s.teacherId,
-        teacher_name: s.teacher.name,
-        room_id: s.roomId,
-        room_name: s.room?.name ?? null,
-        substitution: subMap.has(s.periodNumber)
-          ? {
-              substitute_name: subMap.get(s.periodNumber)!.substitute.name,
-              substitute_id: subMap.get(s.periodNumber)!.substitute.id,
-              reason: subMap.get(s.periodNumber)!.reason,
-              room_name: subMap.get(s.periodNumber)!.room?.name ?? null,
-            }
-          : null,
-      })),
+      schedule: slots.map((s) => {
+        const sub = subMap.get(s.periodNumber);
+        return {
+          id: s.id,
+          period_number: s.periodNumber,
+          subject: s.subject,
+          teacher_id: s.teacherId,
+          teacher_name: s.teacher.name,
+          room_id: s.roomId,
+          room_name: s.room?.name ?? null,
+          cover_requested: sub?.status === 'Requested',
+          substitution:
+            sub && sub.status === 'Assigned'
+              ? { substitute_name: sub.substitute.name, substitute_id: sub.substitute.id, reason: sub.reason, room_name: sub.room?.name ?? null }
+              : null,
+        };
+      }),
     };
   }
 
   @Get('school-view')
+  @Roles(...R.STAFF)
   async schoolView(@Req() req: ReqWithUser, @Query('date') dateQ?: string) {
-    const date = dateQ ?? todayISO();
+    const date = dateQ && ISO_DATE.test(dateQ) ? dateQ : todayISO();
     const dow = dayOfWeek(date);
 
-    const slots = await this.prisma.timetableSlot.findMany({
-      where: { branchId: req.user.branch_id, dayOfWeek: dow },
-      include: {
-        teacher: { select: { name: true } },
-        class: { select: { id: true, name: true } },
-        room: { select: { name: true } },
-      },
-      orderBy: { periodNumber: 'asc' },
-    });
-
-    const subs = await this.prisma.substitution.findMany({
-      where: { branchId: req.user.branch_id, date },
-      include: {
-        substitute: { select: { id: true, name: true } },
-        original: { select: { name: true } },
-        room: { select: { name: true } },
-      },
-    });
+    const [slots, subs] = await Promise.all([
+      this.prisma.timetableSlot.findMany({
+        where: { branchId: req.user.branch_id, dayOfWeek: dow },
+        include: { teacher: { select: { name: true } }, class: { select: { id: true, name: true } }, room: { select: { name: true } } },
+        orderBy: { periodNumber: 'asc' },
+      }),
+      this.prisma.substitution.findMany({
+        where: { branchId: req.user.branch_id, date, status: 'Assigned' },
+        include: { substitute: { select: { id: true, name: true } }, original: { select: { name: true } }, room: { select: { name: true } } },
+      }),
+    ]);
     const subMap = new Map(subs.map((s) => [`${s.classId}:${s.periodNumber}`, s]));
 
     const grouped: Record<string, { class_id: string; class_name: string; periods: unknown[] }> = {};
     for (const s of slots) {
-      if (!grouped[s.classId]) {
-        grouped[s.classId] = { class_id: s.classId, class_name: s.class.name, periods: [] };
-      }
+      if (!grouped[s.classId]) grouped[s.classId] = { class_id: s.classId, class_name: s.class.name, periods: [] };
       const sub = subMap.get(`${s.classId}:${s.periodNumber}`);
       grouped[s.classId].periods.push({
         class_id: s.classId,
@@ -440,36 +407,309 @@ export class TimetableController {
           : null,
       });
     }
-
     return { date, day: dow, classes: Object.values(grouped) };
   }
 
+  // ─── Teacher views ───────────────────────────────────────────
+
+  /** Weekly grid for one teacher: regular lessons, plus covers they take / hand over in that week. */
+  @Get('teacher/:staffId/week')
+  @Roles(...R.STAFF)
+  async teacherWeek(@Req() req: ReqWithUser, @Param('staffId') staffId: string, @Query('date') dateQ?: string) {
+    const branchId = req.user.branch_id;
+    const teacher = await this.prisma.staff.findFirst({
+      where: { id: staffId, branchId }, select: { id: true, name: true, maxPeriodsPerDay: true, subjects: true },
+    });
+    if (!teacher) throw new NotFoundException('teacher not found');
+    const anchor = dateQ && ISO_DATE.test(dateQ) ? dateQ : todayISO();
+    const dates = weekDates(anchor);
+
+    const [slots, covers, handedOver] = await Promise.all([
+      this.prisma.timetableSlot.findMany({
+        where: { branchId, teacherId: staffId },
+        include: { class: { select: { name: true, section: true } }, room: { select: { name: true } } },
+      }),
+      this.prisma.substitution.findMany({
+        where: { branchId, substituteTeacherId: staffId, status: 'Assigned', date: { in: dates } },
+        include: { class: { select: { name: true, section: true } }, original: { select: { name: true } } },
+      }),
+      this.prisma.substitution.findMany({
+        where: { branchId, originalTeacherId: staffId, date: { in: dates }, status: { in: ['Assigned', 'Requested'] } },
+        include: { class: { select: { name: true, section: true } }, substitute: { select: { name: true } } },
+      }),
+    ]);
+    const subjectAt = new Map(slots.map((s) => [`${s.classId}|${s.dayOfWeek}|${s.periodNumber}`, s.subject]));
+
+    return {
+      teacher: { id: teacher.id, name: teacher.name, max_periods: teacher.maxPeriodsPerDay, subjects: teacher.subjects },
+      week: { from: dates[0], to: dates[6], dates },
+      slots: slots
+        .map((s) => ({
+          day_of_week: s.dayOfWeek,
+          period_number: s.periodNumber,
+          subject: s.subject,
+          class_id: s.classId,
+          class_name: classLabel(s.class),
+          room_name: s.room?.name ?? null,
+        }))
+        .sort((a, b) => (DAY_ORDER[a.day_of_week] ?? 99) - (DAY_ORDER[b.day_of_week] ?? 99) || a.period_number - b.period_number),
+      covers: covers.map((c) => ({
+        id: c.id,
+        date: c.date,
+        day_of_week: dayOfWeek(c.date),
+        period_number: c.periodNumber,
+        class_id: c.classId,
+        class_name: classLabel(c.class),
+        subject: subjectAt.get(`${c.classId}|${dayOfWeek(c.date)}|${c.periodNumber}`) ?? null,
+        original_teacher_name: c.original?.name ?? null,
+        reason: c.reason,
+      })),
+      handed_over: handedOver.map((c) => ({
+        id: c.id,
+        date: c.date,
+        day_of_week: dayOfWeek(c.date),
+        period_number: c.periodNumber,
+        class_id: c.classId,
+        class_name: classLabel(c.class),
+        status: c.status,
+        substitute_name: c.status === 'Assigned' ? c.substitute.name : null,
+      })),
+    };
+  }
+
+  /**
+   * The logged-in teacher's day: every configured period, marked as a lesson, a
+   * cover they were assigned, one of their own lessons handed to a substitute
+   * (`relieved` — it is off their plate), a break, or free.
+   */
+  @Get('me/today')
+  @Roles(...R.STAFF)
+  async myDay(@Req() req: ReqWithUser, @Query('date') dateQ?: string) {
+    const branchId = req.user.branch_id;
+    const staffId = await currentStaffId(this.prisma, req.user);
+    if (!staffId) throw new NotFoundException('No staff profile is linked to this login');
+    const date = dateQ && ISO_DATE.test(dateQ) ? dateQ : todayISO();
+    const dow = dayOfWeek(date);
+
+    const [staff, periods, slots, covers, mine] = await Promise.all([
+      this.prisma.staff.findUnique({ where: { id: staffId }, select: { id: true, name: true, maxPeriodsPerDay: true } }),
+      this.teachingPeriods(branchId),
+      this.prisma.timetableSlot.findMany({
+        where: { branchId, teacherId: staffId, dayOfWeek: dow },
+        include: { class: { select: { name: true, section: true } }, room: { select: { name: true } } },
+      }),
+      this.prisma.substitution.findMany({
+        where: { branchId, date, substituteTeacherId: staffId, status: 'Assigned' },
+        include: { class: { select: { name: true, section: true } }, original: { select: { name: true } }, room: { select: { name: true } } },
+      }),
+      this.prisma.substitution.findMany({
+        where: { branchId, date, originalTeacherId: staffId },
+        include: { substitute: { select: { name: true } } },
+      }),
+    ]);
+
+    type Entry = {
+      period_number: number; start_time: string | null; end_time: string | null;
+      kind: 'lesson' | 'cover' | 'relieved' | 'break' | 'free';
+      subject: string | null; class_id: string | null; class_name: string | null; room_name: string | null;
+      note: string | null; substitution_id: string | null;
+    };
+    const entries: Entry[] = [];
+    const cfg = new Map(periods.map((p) => [p.periodNumber, p]));
+    const nums = new Set<number>([...periods.map((p) => p.periodNumber), ...slots.map((s) => s.periodNumber), ...covers.map((c) => c.periodNumber)]);
+
+    for (const n of [...nums].sort((a, b) => a - b)) {
+      const p = cfg.get(n);
+      const base = { period_number: n, start_time: p?.startTime ?? null, end_time: p?.endTime ?? null };
+      const lesson = slots.find((s) => s.periodNumber === n);
+      const cover = covers.find((c) => c.periodNumber === n);
+      if (lesson) {
+        const handed = mine.find((m) => m.classId === lesson.classId && m.periodNumber === n);
+        const relieved = handed?.status === 'Assigned';
+        entries.push({
+          ...base,
+          kind: relieved ? 'relieved' : 'lesson',
+          subject: lesson.subject, class_id: lesson.classId, class_name: classLabel(lesson.class), room_name: lesson.room?.name ?? null,
+          note: relieved
+            ? `Covered by ${handed!.substitute.name} — you are not teaching this period`
+            : handed?.status === 'Requested'
+              ? 'Cover requested — awaiting assignment'
+              : handed?.status === 'Cancelled'
+                ? 'Cover request cancelled — teach as normal'
+                : null,
+          substitution_id: handed?.id ?? null,
+        });
+      }
+      if (cover) {
+        const subj = await this.prisma.timetableSlot.findFirst({
+          where: { branchId, classId: cover.classId, dayOfWeek: dow, periodNumber: n }, select: { subject: true },
+        });
+        entries.push({
+          ...base, kind: 'cover',
+          subject: subj?.subject ?? null, class_id: cover.classId, class_name: classLabel(cover.class),
+          room_name: cover.room?.name ?? null,
+          note: `Substitution${cover.original ? ` for ${cover.original.name}` : ''}${cover.reason ? ` — ${cover.reason}` : ''}`,
+          substitution_id: cover.id,
+        });
+      }
+      if (!lesson && !cover) {
+        entries.push({
+          ...base, kind: p?.isBreak ? 'break' : 'free',
+          subject: null, class_id: null, class_name: null, room_name: null,
+          note: p?.isBreak ? (p.breakName ?? 'Break') : null, substitution_id: null,
+        });
+      }
+    }
+
+    return {
+      date,
+      day: dow,
+      staff: staff ? { id: staff.id, name: staff.name, max_periods: staff.maxPeriodsPerDay } : null,
+      schedule: entries,
+      counts: {
+        lessons: entries.filter((e) => e.kind === 'lesson').length,
+        covers: entries.filter((e) => e.kind === 'cover').length,
+        relieved: entries.filter((e) => e.kind === 'relieved').length,
+      },
+    };
+  }
+
+  // ─── Substitutions ───────────────────────────────────────────
+
   @Get('substitutions')
-  async listSubstitutions(@Req() req: ReqWithUser, @Query('date') dateQ?: string) {
-    const date = dateQ ?? todayISO();
+  @Roles(...R.STAFF)
+  async listSubstitutions(@Req() req: ReqWithUser, @Query('date') dateQ?: string, @Query('status') status?: string) {
+    const date = dateQ && ISO_DATE.test(dateQ) ? dateQ : todayISO();
     const subs = await this.prisma.substitution.findMany({
-      where: { branchId: req.user.branch_id, date },
+      where: { branchId: req.user.branch_id, date, ...(status ? { status } : {}) },
       include: {
-        class: { select: { name: true } },
+        class: { select: { name: true, section: true } },
         original: { select: { name: true } },
         substitute: { select: { name: true } },
       },
-      orderBy: { periodNumber: 'asc' },
-    });    return subs.map((s) => ({
+      orderBy: [{ periodNumber: 'asc' }],
+    });
+    return subs.map((s) => ({
       id: s.id,
       date: s.date,
       class_id: s.classId,
-      class_name: s.class.name,
+      class_name: classLabel(s.class),
       period_number: s.periodNumber,
       original_teacher_id: s.originalTeacherId,
       original_teacher_name: s.original?.name ?? null,
-      substitute_teacher_id: s.substituteTeacherId,
-      substitute_name: s.substitute.name,
+      // A Requested row has no substitute yet (the column is non-null, so it holds the requester).
+      substitute_teacher_id: s.status === 'Requested' ? null : s.substituteTeacherId,
+      substitute_name: s.status === 'Requested' ? null : s.substitute.name,
       reason: s.reason,
+      status: s.status,
     }));
   }
 
+  /** Free teachers for a class period, least loaded first, with conflict reasons for the rest. */
+  @Get('substitutions/suggest')
+  @Roles(...R.TIMETABLE_ADMIN)
+  async suggest(
+    @Req() req: ReqWithUser,
+    @Query('date') date?: string,
+    @Query('class_id') classId?: string,
+    @Query('period') periodQ?: string,
+  ) {
+    const period = Number(periodQ);
+    if (!date || !ISO_DATE.test(date) || !classId || !Number.isInteger(period) || period < 1) {
+      throw new BadRequestException('date (YYYY-MM-DD), class_id and period are required');
+    }
+    await assertInBranch(this.prisma, 'class', classId, req.user.branch_id);
+    const slot = await this.prisma.timetableSlot.findFirst({
+      where: { branchId: req.user.branch_id, classId, dayOfWeek: dayOfWeek(date), periodNumber: period },
+      include: { teacher: { select: { id: true, name: true } } },
+    });
+    const existing = await this.prisma.substitution.findUnique({
+      where: { date_classId_periodNumber: { date, classId, periodNumber: period } }, select: { id: true },
+    });
+    const candidates = await this.subs.evaluate(req.user.branch_id, date, period, {
+      exclude: slot ? [slot.teacherId] : [], excludeSubId: existing?.id,
+    });
+    return {
+      date,
+      class_id: classId,
+      period_number: period,
+      lesson: slot ? { subject: slot.subject, teacher_id: slot.teacher.id, teacher_name: slot.teacher.name } : null,
+      candidates,
+    };
+  }
+
+  /** A teacher (for their own lesson) or HOD/admin (any lesson) asks for cover. */
+  @Post('substitutions/request')
+  @Roles(...R.TEACHING)
+  async requestCover(@Req() req: ReqWithUser, @Body() body: SubstitutionRequestDto) {
+    const branchId = req.user.branch_id;
+    const { date, class_id, period_number, reason } = body;
+    await assertInBranch(this.prisma, 'class', class_id, branchId);
+    const period = await this.prisma.periodConfig.findFirst({ where: { branchId, periodNumber: period_number } });
+    if (period?.isBreak) throw new BadRequestException(`Period ${period_number} is a break`);
+    const slot = await this.prisma.timetableSlot.findFirst({
+      where: { branchId, classId: class_id, dayOfWeek: dayOfWeek(date), periodNumber: period_number },
+    });
+    if (!slot) throw new NotFoundException('No lesson is scheduled for this class and period on that day');
+
+    if (!(R.TIMETABLE_ADMIN as string[]).includes(req.user.role)) {
+      const me = await currentStaffId(this.prisma, req.user);
+      if (!me || me !== slot.teacherId) throw new ForbiddenException('You can only request cover for your own lessons');
+    }
+
+    const existing = await this.prisma.substitution.findUnique({
+      where: { date_classId_periodNumber: { date, classId: class_id, periodNumber: period_number } },
+    });
+    if (existing && existing.status !== 'Cancelled') {
+      throw new ConflictException(`Cover for this period is already ${existing.status.toLowerCase()}`);
+    }
+    const data = {
+      originalTeacherId: slot.teacherId,
+      substituteTeacherId: slot.teacherId, // placeholder until assigned — the column is NOT NULL
+      reason,
+      status: 'Requested',
+      createdBy: req.user.sub,
+    };
+    const saved = existing
+      ? await this.prisma.substitution.update({ where: { id: existing.id }, data })
+      : await this.prisma.substitution.create({
+          data: { ...data, branchId, date, classId: class_id, periodNumber: period_number },
+        });
+    return { id: saved.id, status: saved.status };
+  }
+
+  /** Admin fills a request: manual pick (validated) or auto-pick when no teacher is given. */
+  @Post('substitutions/:id/assign')
+  @Roles(...R.TIMETABLE_ADMIN)
+  async assign(@Req() req: ReqWithUser, @Param('id') id: string, @Body() body: AssignSubstitutionDto) {
+    const sub = await this.prisma.substitution.findFirst({ where: { id, branchId: req.user.branch_id } });
+    if (!sub) throw new NotFoundException('substitution not found');
+    if (sub.status === 'Cancelled') throw new ConflictException('This substitution was cancelled — raise a new request');
+    return this.subs.assignCover({
+      branchId: req.user.branch_id,
+      createdBy: req.user.sub,
+      date: sub.date,
+      classId: sub.classId,
+      periodNumber: sub.periodNumber,
+      originalTeacherId: sub.originalTeacherId,
+      substituteTeacherId: body.substitute_teacher_id,
+      subId: sub.id,
+    });
+  }
+
+  @Post('substitutions/:id/cancel')
+  @Roles(...R.TIMETABLE_ADMIN)
+  async cancel(@Req() req: ReqWithUser, @Param('id') id: string) {
+    const sub = await this.prisma.substitution.findFirst({ where: { id, branchId: req.user.branch_id } });
+    if (!sub) throw new NotFoundException('substitution not found');
+    if (sub.status === 'Cancelled') throw new ConflictException('Already cancelled');
+    await this.prisma.substitution.update({ where: { id }, data: { status: 'Cancelled' } });
+    const notified = sub.status === 'Assigned' ? await this.subs.notifyCancellation(id) : false;
+    return { success: true, status: 'Cancelled', substitute_notified: notified };
+  }
+
   @Delete('substitutions/:id')
+  @Roles(...R.TIMETABLE_ADMIN)
   async revokeSubstitution(@Req() req: ReqWithUser, @Param('id') id: string) {
     await this.prisma.substitution.deleteMany({ where: { id, branchId: req.user.branch_id } });
     return { success: true };
@@ -478,89 +718,91 @@ export class TimetableController {
   // ─── Manual slot upsert ──────────────────────────────────────
 
   @Put('slot')
-  async upsertSlot(
-    @Req() req: ReqWithUser,
-    @Body() body: { class_id?: string; day_of_week?: string; period_number?: number; subject?: string; teacher_id?: string },
-  ) {
-    const { class_id, day_of_week, period_number, subject, teacher_id } = body ?? {};
-    if (!class_id || !day_of_week || !period_number || !subject || !teacher_id) {
-      throw new BadRequestException('class_id, day_of_week, period_number, subject, and teacher_id are required');
-    }
+  @Roles(...R.TIMETABLE_ADMIN)
+  async upsertSlot(@Req() req: ReqWithUser, @Body() body: UpsertSlotDto) {
+    const { class_id, day_of_week, period_number, subject, teacher_id, room_id } = body;
+    const branchId = req.user.branch_id;
+    await assertInBranch(this.prisma, 'class', class_id, branchId);
+    await assertInBranch(this.prisma, 'staff', teacher_id, branchId);
+    await assertInBranch(this.prisma, 'academicRoom', room_id, branchId);
+
+    const period = await this.prisma.periodConfig.findFirst({ where: { branchId, periodNumber: period_number } });
+    if (period?.isBreak) throw new BadRequestException(`Period ${period_number} is a break (${period.breakName ?? 'Break'})`);
 
     const conflict = await this.prisma.timetableSlot.findFirst({
-      where: {
-        branchId: req.user.branch_id,
-        teacherId: teacher_id,
-        dayOfWeek: day_of_week,
-        periodNumber: period_number,
-        classId: { not: class_id },
-      },
+      where: { branchId, teacherId: teacher_id, dayOfWeek: day_of_week, periodNumber: period_number, classId: { not: class_id } },
+      include: { class: { select: { name: true, section: true } } },
     });
     if (conflict) {
-      throw new ConflictException('Teacher is already assigned to another class at this period.');
+      throw new ConflictException(`Teacher is already assigned to another class at this period (${classLabel(conflict.class)}).`);
+    }
+    // Upcoming covers on this weekday+period would become double bookings.
+    const covers = await this.prisma.substitution.findMany({
+      where: { branchId, substituteTeacherId: teacher_id, periodNumber: period_number, status: 'Assigned', date: { gte: todayISO() }, classId: { not: class_id } },
+      select: { date: true },
+    });
+    const clash = covers.find((c) => dayOfWeek(c.date) === day_of_week);
+    if (clash) {
+      throw new ConflictException(`Teacher is covering another class in period ${period_number} on ${clash.date}.`);
     }
 
     await this.prisma.timetableSlot.upsert({
-      where: {
-        classId_dayOfWeek_periodNumber: { classId: class_id, dayOfWeek: day_of_week, periodNumber: period_number },
-      },
+      where: { classId_dayOfWeek_periodNumber: { classId: class_id, dayOfWeek: day_of_week, periodNumber: period_number } },
       create: {
-        branchId: req.user.branch_id,
-        classId: class_id,
-        dayOfWeek: day_of_week,
-        periodNumber: period_number,
-        subject,
-        teacherId: teacher_id,
+        branchId, classId: class_id, dayOfWeek: day_of_week, periodNumber: period_number,
+        subject, teacherId: teacher_id, roomId: room_id ?? null,
       },
-      update: { subject, teacherId: teacher_id },
+      update: { subject, teacherId: teacher_id, ...(room_id !== undefined ? { roomId: room_id } : {}) },
     });
     return { success: true };
   }
 
-  // ─── Single-period substitution ──────────────────────────────
+  // ─── Single-period substitution (admin) ──────────────────────
 
   @Post('substitute')
-  async substitute(
-    @Req() req: ReqWithUser,
-    @Body() body: { date?: string; class_id?: string; period_number?: number; original_teacher_id?: string; reason?: string },
-  ) {
-    const { date, class_id, period_number, original_teacher_id, reason } = body ?? {};
-    if (!date || !class_id || !period_number) {
-      throw new BadRequestException('date, class_id, and period_number are required');
-    }
-
-    const result = await this.assignSubstitute({
-      branchId: req.user.branch_id,
+  @Roles(...R.TIMETABLE_ADMIN)
+  async substitute(@Req() req: ReqWithUser, @Body() body: SubstituteDto) {
+    const { date, class_id, period_number, reason, substitute_teacher_id } = body;
+    const branchId = req.user.branch_id;
+    await assertInBranch(this.prisma, 'class', class_id, branchId);
+    await assertInBranch(this.prisma, 'staff', body.original_teacher_id, branchId);
+    const slot = await this.prisma.timetableSlot.findFirst({
+      where: { branchId, classId: class_id, dayOfWeek: dayOfWeek(date), periodNumber: period_number },
+      select: { teacherId: true },
+    });
+    const existing = await this.prisma.substitution.findUnique({
+      where: { date_classId_periodNumber: { date, classId: class_id, periodNumber: period_number } }, select: { id: true },
+    });
+    return this.subs.assignCover({
+      branchId,
+      createdBy: req.user.sub,
       date,
-      dow: dayOfWeek(date),
       classId: class_id,
       periodNumber: period_number,
-      originalTeacherId: original_teacher_id,
+      originalTeacherId: body.original_teacher_id ?? slot?.teacherId ?? null,
+      substituteTeacherId: substitute_teacher_id,
       reason,
-      createdBy: req.user.sub,
+      subId: existing?.id,
     });
-
-    if (result.error) throw new ConflictException(result.error);
-    return result;
   }
 
   // ─── Auto generator (CSP) ────────────────────────────────────
 
+  /**
+   * Fills a class week. Lessons go only into NON-break periods from PeriodConfig
+   * (the first `periods_per_day` of them); teachers are never double-booked against
+   * other classes in this school, and each teacher's daily load — counting their
+   * lessons in OTHER classes — stays within maxPeriodsPerDay.
+   */
   @Post('generate')
-  async generate(
-    @Req() req: ReqWithUser,
-    @Body() body: {
-      class_id?: string;
-      periods_per_day?: number;
-      working_days?: string[];
-      subjects?: GenerateSlotInput[];
-      overwrite?: boolean;
-    },
-  ) {
-    const { class_id, periods_per_day, working_days, subjects: subjectList, overwrite } = body ?? {};
-    if (!class_id || !periods_per_day || !working_days?.length || !subjectList?.length) {
-      throw new BadRequestException('class_id, periods_per_day, working_days, and subjects are required');
-    }
+  @Roles(...R.TIMETABLE_ADMIN)
+  async generate(@Req() req: ReqWithUser, @Body() body: GenerateDto) {
+    const { class_id, periods_per_day, working_days, subjects: subjectList, overwrite } = body;
+    const branchId = req.user.branch_id;
+    await assertInBranch(this.prisma, 'class', class_id, branchId);
+
+    const names = subjectList.map((s) => s.name);
+    if (new Set(names).size !== names.length) throw new BadRequestException('Subject names must be unique');
 
     const totalSlots = working_days.length * periods_per_day;
     const totalRequired = subjectList.reduce((sum, s) => sum + s.periods_per_week, 0);
@@ -570,184 +812,97 @@ export class TimetableController {
       );
     }
 
-    const branchId = req.user.branch_id;
+    const teacherIds = [...new Set(subjectList.map((s) => s.teacher_id))];
+    const teachers = await this.prisma.staff.findMany({
+      where: { id: { in: teacherIds }, branchId },
+      select: { id: true, maxPeriodsPerDay: true },
+    });
+    if (teachers.length !== teacherIds.length) throw new NotFoundException('teacher not found');
+    for (const s of subjectList) {
+      await assertInBranch(this.prisma, 'academicRoom', s.room_id || undefined, branchId);
+    }
+    const teacherLimits = new Map(teachers.map((t) => [t.id, t.maxPeriodsPerDay ?? 6]));
+
+    // Teaching periods: configured non-break periods in order (fallback 1..N if none configured).
+    const config = await this.teachingPeriods(branchId);
+    const teachingNums = config.length
+      ? config.filter((p) => !p.isBreak).map((p) => p.periodNumber)
+      : Array.from({ length: periods_per_day }, (_, i) => i + 1);
+    if (teachingNums.length < periods_per_day) {
+      throw new BadRequestException(
+        `Only ${teachingNums.length} teaching periods are configured (breaks excluded); cannot fit ${periods_per_day} per day.`,
+      );
+    }
+    const dayPeriods = teachingNums.slice(0, periods_per_day);
 
     const existing = await this.prisma.timetableSlot.findMany({
       where: { branchId, classId: { not: class_id } },
       select: { teacherId: true, roomId: true, dayOfWeek: true, periodNumber: true },
     });
 
-    const teacherIds = [...new Set(subjectList.map((s) => s.teacher_id))];
-    const teachers = await this.prisma.staff.findMany({
-      where: { id: { in: teacherIds } },
-      select: { id: true, maxPeriodsPerDay: true },
-    });
-    const teacherLimits = new Map(teachers.map((t) => [t.id, t.maxPeriodsPerDay ?? 6]));
-
-    // blocked maps: teacher/room busy per day+period
     const teacherBlocked: Record<string, Record<number, Set<string>>> = {};
     const roomBlocked: Record<string, Record<number, Set<string>>> = {};
     for (const day of working_days) {
       teacherBlocked[day] = {};
       roomBlocked[day] = {};
-      for (let p = 1; p <= periods_per_day; p++) {
+      for (const p of dayPeriods) {
         teacherBlocked[day][p] = new Set();
         roomBlocked[day][p] = new Set();
       }
     }
+    const teacherDayLoad = Object.fromEntries(
+      teacherIds.map((t) => [t, Object.fromEntries(working_days.map((d) => [d, 0]))]),
+    ) as Record<string, Record<string, number>>;
     for (const s of existing) {
       teacherBlocked[s.dayOfWeek]?.[s.periodNumber]?.add(s.teacherId);
       if (s.roomId) roomBlocked[s.dayOfWeek]?.[s.periodNumber]?.add(s.roomId);
+      if (teacherDayLoad[s.teacherId]?.[s.dayOfWeek] !== undefined) teacherDayLoad[s.teacherId][s.dayOfWeek]++;
     }
 
-    // Validate requested subject quota against each teacher's daily limit
     const state = {
       remaining: Object.fromEntries(subjectList.map((s) => [s.name, s.periods_per_week])) as Record<string, number>,
       assignments: [] as Array<{ day: string; period: number; subject: string; teacher_id: string; room_id?: string }>,
-      teacherDayLoad: Object.fromEntries(teacherIds.map((t) => [t, Object.fromEntries(working_days.map((d) => [d, 0]))])) as Record<string, Record<string, number>>,
+      teacherDayLoad,
       lastSubjectByDay: Object.fromEntries(working_days.map((d) => [d, null])) as Record<string, string | null>,
       steps: 0,
     };
 
     const cells: Array<{ day: string; period: number }> = [];
-    for (const day of working_days) {
-      for (let p = 1; p <= periods_per_day; p++) cells.push({ day, period: p });
-    }
+    for (const day of working_days) for (const p of dayPeriods) cells.push({ day, period: p });
 
-    const success = backtrack(cells, 0, subjectList, subjectMeta(subjectList), teacherBlocked, roomBlocked, teacherLimits, state);
+    const success = backtrack(cells, 0, subjectMeta(subjectList), teacherBlocked, roomBlocked, teacherLimits, state, dayPeriods);
     if (!success) {
       throw new ConflictException(
-        'Could not generate a conflict-free timetable with these constraints. Try reducing overlapping teacher assignments or adjusting periods_per_week.',
+        'Could not generate a conflict-free timetable with these constraints (teachers busy in other classes or at their daily limit). Try other teachers or adjust periods_per_week.',
       );
     }
 
-    if (overwrite) {
-      await this.prisma.timetableSlot.deleteMany({ where: { branchId, classId: class_id } });
-    }
-
-    await this.prisma.$transaction(
-      state.assignments.map((a) =>
+    await this.prisma.$transaction([
+      ...(overwrite ? [this.prisma.timetableSlot.deleteMany({ where: { branchId, classId: class_id } })] : []),
+      ...state.assignments.map((a) =>
         this.prisma.timetableSlot.upsert({
-          where: {
-            classId_dayOfWeek_periodNumber: {
-              classId: class_id,
-              dayOfWeek: a.day,
-              periodNumber: a.period,
-            },
-          },
+          where: { classId_dayOfWeek_periodNumber: { classId: class_id, dayOfWeek: a.day, periodNumber: a.period } },
           create: {
-            branchId,
-            classId: class_id,
-            dayOfWeek: a.day,
-            periodNumber: a.period,
-            subject: a.subject,
-            teacherId: a.teacher_id,
-            roomId: a.room_id ?? null,
+            branchId, classId: class_id, dayOfWeek: a.day, periodNumber: a.period,
+            subject: a.subject, teacherId: a.teacher_id, roomId: a.room_id ?? null,
           },
           update: { subject: a.subject, teacherId: a.teacher_id, roomId: a.room_id ?? null },
         }),
       ),
-    );
-
-    return { generated: state.assignments.length, timetable: state.assignments };
-  }
-
-  // ─── Shared substitution engine ──────────────────────────────
-
-  private async assignSubstitute(args: {
-    branchId: string;
-    date: string;
-    dow: string;
-    classId: string;
-    periodNumber: number;
-    originalTeacherId?: string;
-    reason?: string;
-    createdBy: string;
-  }): Promise<{ assigned_to?: { id: string; name: string }; substitution_id?: string; error?: string }> {
-    const { branchId, date, dow, classId, periodNumber, originalTeacherId, reason, createdBy } = args;
-
-    const busySubs = await this.prisma.substitution.findMany({
-      where: { branchId, date, periodNumber },
-      select: { substituteTeacherId: true },
-    });
-    const busyPrimary = await this.prisma.timetableSlot.findMany({
-      where: { branchId, dayOfWeek: dow, periodNumber },
-      select: { teacherId: true },
-    });
-
-    const busyIds = new Set<string>([
-      ...busySubs.map((s) => s.substituteTeacherId),
-      ...busyPrimary.map((s) => s.teacherId),
     ]);
-    if (originalTeacherId) busyIds.add(originalTeacherId);
 
-    const available = await this.prisma.staff.findFirst({
-      where: {
-        branchId,
-        role: 'Teacher',
-        isActive: true,
-        id: { notIn: [...busyIds] },
-      },
-      select: { id: true, name: true },
-    });
-
-    if (!available) return { error: 'No available teacher found for this period.' };
-
-    const existing = await this.prisma.substitution.findUnique({
-      where: {
-        date_classId_periodNumber: { date, classId, periodNumber },
-      },
-    });
-
-    const saved = await this.prisma.substitution.upsert({
-      where: { date_classId_periodNumber: { date, classId, periodNumber } },
-      create: {
-        branchId,
-        date,
-        classId,
-        periodNumber,
-        originalTeacherId: originalTeacherId ?? null,
-        substituteTeacherId: available.id,
-        reason: reason ?? 'Manual Substitution',
-        createdBy,
-      },
-      update: {
-        substituteTeacherId: available.id,
-        reason: reason ?? 'Manual Substitution',
-      },
-    });
-
-    return { substitution_id: saved.id, assigned_to: available };
+    return { generated: state.assignments.length, periods_used: dayPeriods, timetable: state.assignments };
   }
 }
 
-// ─── Helpers ───────────────────────────────────────────────────
+// ─── Generator helpers ─────────────────────────────────────────
 
-function todayISO(): string {
-  return new Date().toISOString().split('T')[0];
-}
+type SubjectMeta = { teacher_id: string; name: string; room_id?: string; double_periods: boolean };
 
-function dayOfWeek(dateStr: string): string {
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  return days[new Date(dateStr).getDay()] ?? 'Mon';
-}
-
-type SubjectMeta = {
-  teacher_id: string;
-  name: string;
-  room_id?: string;
-  double_periods: boolean;
-};
-
-function subjectMeta(list: GenerateSlotInput[]): Record<string, SubjectMeta> {
+function subjectMeta(list: GenerateSubjectDto[]): Record<string, SubjectMeta> {
   const map: Record<string, SubjectMeta> = {};
   for (const s of list) {
-    map[s.name] = {
-      teacher_id: s.teacher_id,
-      name: s.name,
-      room_id: s.room_id || undefined,
-      double_periods: !!s.double_periods,
-    };
+    map[s.name] = { teacher_id: s.teacher_id, name: s.name, room_id: s.room_id || undefined, double_periods: !!s.double_periods };
   }
   return map;
 }
@@ -755,7 +910,6 @@ function subjectMeta(list: GenerateSlotInput[]): Record<string, SubjectMeta> {
 function backtrack(
   cells: Array<{ day: string; period: number }>,
   index: number,
-  subjectList: GenerateSlotInput[],
   meta: Record<string, SubjectMeta>,
   teacherBlocked: Record<string, Record<number, Set<string>>>,
   roomBlocked: Record<string, Record<number, Set<string>>>,
@@ -767,6 +921,7 @@ function backtrack(
     lastSubjectByDay: Record<string, string | null>;
     steps: number;
   },
+  dayPeriods: number[],
 ): boolean {
   state.steps++;
   if (state.steps > 50_000) return false;
@@ -777,9 +932,7 @@ function backtrack(
     if (!state.assignments.some((a) => a.day === day && a.period === period)) break;
     curr++;
   }
-  if (curr === cells.length) {
-    return Object.values(state.remaining).every((v) => v === 0);
-  }
+  if (curr === cells.length) return Object.values(state.remaining).every((v) => v === 0);
 
   const { day, period } = cells[curr];
   const candidates = Object.keys(state.remaining)
@@ -793,8 +946,10 @@ function backtrack(
     const isDouble = m.double_periods && state.remaining[subj] >= 2;
 
     if (isDouble) {
-      const nextPeriod = period + 1;
-      if (!cells.some((c) => c.day === day && c.period === nextPeriod)) continue;
+      // A double lesson needs the NEXT teaching period (never straddles a break).
+      const idx = dayPeriods.indexOf(period);
+      const nextPeriod = dayPeriods[idx + 1];
+      if (nextPeriod === undefined || nextPeriod !== period + 1) continue;
       if (teacherBlocked[day]?.[period]?.has(m.teacher_id) || teacherBlocked[day]?.[nextPeriod]?.has(m.teacher_id)) continue;
       if (m.room_id && (roomBlocked[day]?.[period]?.has(m.room_id) || roomBlocked[day]?.[nextPeriod]?.has(m.room_id))) continue;
       if (load + 2 > limit) continue;
@@ -813,7 +968,7 @@ function backtrack(
       const prevLast = state.lastSubjectByDay[day];
       state.lastSubjectByDay[day] = subj;
 
-      if (backtrack(cells, curr + 1, subjectList, meta, teacherBlocked, roomBlocked, teacherLimits, state)) return true;
+      if (backtrack(cells, curr + 1, meta, teacherBlocked, roomBlocked, teacherLimits, state, dayPeriods)) return true;
 
       state.assignments.pop();
       state.assignments.pop();
@@ -840,7 +995,7 @@ function backtrack(
       const prevLast = state.lastSubjectByDay[day];
       state.lastSubjectByDay[day] = subj;
 
-      if (backtrack(cells, curr + 1, subjectList, meta, teacherBlocked, roomBlocked, teacherLimits, state)) return true;
+      if (backtrack(cells, curr + 1, meta, teacherBlocked, roomBlocked, teacherLimits, state, dayPeriods)) return true;
 
       state.assignments.pop();
       state.remaining[subj]++;
@@ -850,6 +1005,5 @@ function backtrack(
       state.lastSubjectByDay[day] = prevLast;
     }
   }
-
   return false;
 }

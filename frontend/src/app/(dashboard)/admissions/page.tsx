@@ -1,383 +1,200 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { Badge, Button, Icon, MailLink, PageHeader, PhoneLink, ProgressBar, Reveal, StatCard, Tabs, useToast } from "@/components/ui";
+import { R, hasRole, useMe } from "@/lib/auth";
+import { Badge, Button, EmptyState, Icon, Input, PageHeader, Reveal, Select, SkeletonRows, StatCard, Tabs, useToast } from "@/components/ui";
+import { TableView } from "@/components/TableView";
+import { ApplicationPanel } from "@/components/admissions/ApplicationPanel";
+import { CreateForms } from "@/components/admissions/CreateForms";
+import { TemplateApprovals, TemplateBuilder } from "@/components/admissions/TemplateBuilder";
+import { Application, PIPELINE, STATUS_TONE, fmtDate, inr, post } from "@/components/admissions/shared";
 
-type Field = {
-  id: string;
-  label: string;
-  fieldType: string;
-  isRequired: boolean;
-  validationRule: string | null;
-  status: string;
-};
+type TabId =
+  | "template" | "create" | "submitted" | "approvals" | "fee-approved"
+  | "payment-received" | "awaiting-payment" | "roll-assigned" | "vp-approved" | "all";
 
-type Application = {
-  id: string;
-  studentName: string | null;
-  parentName: string | null;
-  parentEmail: string | null;
-  parentContact?: string | null;
-  status: string;
-  paymentStatus: string;
-  rollNo: string | null;
-  house: string | null;
-  token?: string | null;
-};
-
-type BadgeTone = "slate" | "emerald" | "amber" | "rose" | "sky" | "violet" | "brand" | "teal";
-
-const STATUS_STYLES: Record<string, BadgeTone> = {
-  "Admission Complete": "emerald",
-  "Links Sent": "slate",
-  "Re-submit": "rose",
-  "Fee Approved": "teal",
-  "Submitted by Parent": "sky",
-  "Document Validated": "sky",
-  "Roll No Assigned": "violet",
-  "VP Approved": "violet",
-  "VP Approved & Fee Paid": "brand",
-};
-
-
+/** Role-driven work queues: each role sees the step it owns, plus the full list. */
+const QUEUES: { id: TabId; label: string; roles: readonly string[]; status?: string; hint?: string }[] = [
+  { id: "template", label: "Form template", roles: R.ADMISSION_SETUP },
+  { id: "create", label: "Create admission forms", roles: R.ADMISSION_SETUP },
+  { id: "submitted", label: "Submitted — validate", roles: R.ADMISSION_SETUP, status: "Submitted by Parent", hint: "Check the form and documents; mark valid or send back for re-submission." },
+  { id: "approvals", label: "Template approvals", roles: R.ADMISSION_OS },
+  { id: "fee-approved", label: "Fee approved — assign roll", roles: R.ADMISSION_OS, status: "Fee Approved", hint: "Generate the roll number ([CLASS]-[YEAR]-[SEQ]) and balanced house." },
+  { id: "payment-received", label: "Payment received — verify", roles: R.ADMISSION_ACCOUNTS, status: "Payment Received", hint: "Verify the payment, enter or generate the receipt number, attach the receipt." },
+  { id: "awaiting-payment", label: "Awaiting payment", roles: R.ADMISSION_ACCOUNTS, status: "Document Validated", hint: "Parents pay online; record counter/cheque payments here with a reference." },
+  { id: "roll-assigned", label: "VP review", roles: R.ADMISSION_VP, status: "Roll No Assigned", hint: "Approve, or send back to the OS with remarks." },
+  { id: "vp-approved", label: "Principal sign-off", roles: R.ADMISSION_PRINCIPAL, status: "VP Approved", hint: "Digitally sign to confirm; the student record is created immediately." },
+  { id: "all", label: "All applications", roles: R.ADMISSION_READ },
+];
 
 export default function AdmissionsPage() {
-  const [tab, setTab] = useState<"AO" | "Workflow">("AO");
-  const [fields, setFields] = useState<Field[]>([]);
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [label, setLabel] = useState("");
+  const { me, loading: meLoading } = useMe();
   const toast = useToast();
-  const [fieldType, setFieldType] = useState("text");
+  const notify = useCallback((msg: string, tone: "success" | "error" = "success") => toast.push(msg, tone), [toast]);
+
+  const tabs = useMemo(() => QUEUES.filter((q) => hasRole(me, q.roles)), [me]);
+  const [tab, setTab] = useState<TabId | null>(null);
+  const [apps, setApps] = useState<Application[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [running, setRunning] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [f, apps] = await Promise.all([
-        apiFetch<Field[]>("/api/admissions/fields"),
-        apiFetch<Application[]>("/api/admissions"),
-      ]);
-      setFields(f ?? []);
-      setApplications(apps ?? []);
+      setApps(await apiFetch<Application[]>("/api/admissions"));
     } catch (e) {
-      console.error(e);
+      notify(e instanceof Error ? e.message : "Failed to load applications", "error");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [notify]);
 
+  useEffect(() => { if (hasRole(me, R.ADMISSION_READ)) void load(); }, [me, load]);
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!tab && tabs.length) {
+      // Start on the first queue that has work in it, else the first tab.
+      const busy = tabs.find((t) => t.status && apps.some((a) => a.status === t.status));
+      setTab((busy ?? tabs[0]).id);
+    }
+  }, [tabs, tab, apps]);
 
-  const addField = async () => {
-    if (!label) return;
-    setLoading(true);
+  if (meLoading) return <div className="card p-6"><SkeletonRows rows={4} cols={3} /></div>;
+  if (!hasRole(me, R.ADMISSION_READ)) {
+    return (
+      <div className="card">
+        <EmptyState icon="lock" title="You don't have access to this page" hint="Admissions are handled by the admission office, OS, accounts and school leadership." />
+      </div>
+    );
+  }
+
+  const current = tabs.find((t) => t.id === tab) ?? tabs[0];
+  const count = (status: string) => apps.filter((a) => a.status === status).length;
+  const complete = count("Admission Complete");
+  const inFlight = apps.filter((a) => !["Admission Complete", "Rejected", "Link Expired"].includes(a.status)).length;
+
+  const rows = apps.filter((a) => {
+    if (current?.status && a.status !== current.status) return false;
+    if (current?.id === "all" && statusFilter && a.status !== statusFilter) return false;
+    if (q) {
+      const hay = `${a.studentName ?? ""} ${a.parentName ?? ""} ${a.parentEmail ?? ""} ${a.loginId ?? ""} ${a.rollNo ?? ""}`.toLowerCase();
+      if (!hay.includes(q.toLowerCase())) return false;
+    }
+    return true;
+  });
+
+  const runReminders = async () => {
+    setRunning(true);
     try {
-      await apiFetch("/api/admissions/fields", {
-        method: "POST",
-        body: JSON.stringify({ label, field_type: fieldType, is_required: true }),
-      });
-      setLabel("");
+      const r = await post<{ checked: number; reminded_day7: number; reminded_day13: number; expired: number }>("/api/admissions/reminders/run");
+      notify(`Checked ${r.checked}: ${r.reminded_day7} day-7 and ${r.reminded_day13} day-13 reminders, ${r.expired} links expired`);
       await load();
     } catch (e) {
-      toast.push(e instanceof Error ? e.message : "Failed", "error");
+      notify(e instanceof Error ? e.message : "Reminder run failed", "error");
     } finally {
-      setLoading(false);
+      setRunning(false);
     }
   };
 
-  const deleteField = async (id: string) => {
-    setLoading(true);
-    try {
-      await apiFetch(`/api/admissions/fields/${id}`, { method: "DELETE" });
-      await load();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const triggerAction = async (url: string, body: object = {}, msg = "Done") => {
-    setLoading(true);
-    try {
-      await apiFetch(url, { method: "POST", body: JSON.stringify(body) });
-      toast.push(msg, "success");
-      await load();
-    } catch (e) {
-      toast.push(e instanceof Error ? e.message : "Action failed", "error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const printLetter = async (id: string) => {
-    try {
-      const d = await apiFetch<{
-        student_name: string | null; dob: string | null; parent_name: string | null;
-        roll_no: string | null; house: string | null; class_applied: string | null; status: string;
-      }>(`/api/admissions/${id}/letter-data`);
-      const w = window.open("", "_blank", "width=720,height=800");
-      if (!w) return;
-      w.document.write(`<!doctype html><html><head><title>Admission Letter — ${d.student_name ?? ""}</title>
-        <style>body{font-family:Georgia,serif;padding:48px;color:#1e293b;max-width:640px;margin:auto}h1{font-size:16px;letter-spacing:2px;color:#0f2a43;text-transform:uppercase}
-        .rule{border-top:2px solid #0f2a43;margin:8px 0 24px}p{line-height:1.7;font-size:14px}
-        table{margin:20px 0;width:100%;font-size:14px}td{padding:4px 12px 4px 0}.sig{margin-top:48px;text-align:right}</style></head><body>
-        <h1>Genesis Lumia School</h1><div class="rule"></div>
-        <p>Admission No. <b>${d.roll_no ?? "—"}</b> &nbsp;·&nbsp; Date: ${new Date().toLocaleDateString()}</p>
-        <p>Dear ${d.parent_name ?? "Parent"},</p>
-        <p>We are pleased to inform you that <b>${d.student_name ?? "the applicant"}</b>${d.dob ? ` (born ${d.dob})` : ""} has been granted admission
-        ${d.class_applied ? `to <b>${d.class_applied}</b>` : ""} for the academic year ${new Date().getFullYear()}-${new Date().getFullYear() + 1}.</p>
-        <table>
-          <tr><td><b>Roll Number</b></td><td>${d.roll_no ?? "—"}</td></tr>
-          <tr><td><b>House</b></td><td>${d.house ?? "—"}</td></tr>
-          <tr><td><b>Application Status</b></td><td>${d.status}</td></tr>
-        </table>
-        <p>Please complete the remaining formalities at the school office. We look forward to welcoming you.</p>
-        <div class="sig"><p><b>Principal</b><br/>Genesis Lumia School</p></div>
-        </body></html>`);
-      w.document.close();
-      w.print();
-    } catch (e) {
-      toast.push(e instanceof Error ? e.message : "Letter requires VP approval", "error");
-    }
-  };
+  const queueTable = (
+    <div className="space-y-3">
+      {current?.hint && <p className="text-[13px] text-ink-3">{current.hint}</p>}
+      <div className="flex flex-wrap items-center gap-2">
+        <Input aria-label="Search applications" placeholder="Search name, email, login ID, roll no…" value={q} onChange={(e) => setQ(e.target.value)} className="field flex-1 min-w-56" />
+        {current?.id === "all" && (
+          <Select aria-label="Filter by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-auto">
+            <option value="">All statuses</option>
+            {[...PIPELINE, "Re-submit", "Link Expired", "Rejected"].map((s) => <option key={s}>{s}</option>)}
+          </Select>
+        )}
+        {hasRole(me, R.ADMISSION_SETUP) && current?.id === "all" && (
+          <Button variant="soft" loading={running} onClick={runReminders}><Icon name="bell" className="h-4 w-4" /> Run reminders now</Button>
+        )}
+        <Button variant="ghost" onClick={() => void load()}><Icon name="refresh" className="h-4 w-4" /> Refresh</Button>
+      </div>
+      <div className="card overflow-x-auto">
+        <TableView id={`queue-${current?.id ?? "all"}`}>
+          <table className="w-full text-sm">
+            <thead className="table-head">
+              <tr>
+                <th className="px-4 py-3">Applicant</th>
+                <th className="px-4 py-3">Parent</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Fee</th>
+                <th className="px-4 py-3">Roll / House</th>
+                <th className="px-4 py-3">Updated</th>
+                <th className="px-4 py-3">Open</th>
+              </tr>
+            </thead>
+            {loading ? <SkeletonRows rows={4} cols={7} /> : (
+              <tbody>
+                {rows.map((a) => (
+                  <tr key={a.id} className="row-hover border-t border-line">
+                    <td className="px-4 py-3">
+                      <span className="block font-semibold">{a.studentName ?? "Not submitted yet"}</span>
+                      <span className="text-[11.5px] text-ink-3">{a.academicYear ?? "—"}{a.class ? ` · ${a.class.name}${a.class.section ? `-${a.class.section}` : ""}` : ""}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="block">{a.parentName ?? "—"}</span>
+                      <span className="font-mono text-[11.5px] text-ink-3">{a.loginId ?? ""}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge tone={STATUS_TONE[a.status] ?? "sky"}>{a.status}</Badge>
+                      {a.status === "Links Sent" && a.linkExpiresAt && (
+                        <span className="mt-0.5 block text-[11px] text-ink-3">expires {fmtDate(a.linkExpiresAt)}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs">{a.paymentStatus} · {inr(a.feeAmount)}</td>
+                    <td className="px-4 py-3 font-mono text-xs">{a.rollNo ?? "—"}{a.house ? ` / ${a.house}` : ""}</td>
+                    <td className="px-4 py-3 text-xs text-ink-3">{fmtDate(a.updatedAt)}</td>
+                    <td className="px-4 py-3">
+                      <Button size="sm" variant={current?.status ? "primary" : "soft"} onClick={() => setOpenId(a.id)}>
+                        {current?.status ? "Review" : "Open"} <Icon name="chevronRight" className="h-3.5 w-3.5" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            )}
+          </table>
+        </TableView>
+        {!loading && rows.length === 0 && (
+          <EmptyState icon="check" title={current?.status ? "Queue is clear" : "No applications"} hint={current?.status ? `Nothing is waiting in “${current.status}”.` : undefined} />
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
       <Reveal>
-        <PageHeader
-          icon="admissions"
-          title="Admissions"
-          subtitle="End-to-end 9-step onboarding workflow (AO → Parent → OS → Accounts → VP → Principal)."
-        />
+        <PageHeader icon="admissions" title="Admissions"
+          subtitle="AO → Parent → AO → Payment → Accounts → OS → VP → Principal. Each role sees the queue it owns." />
       </Reveal>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Reveal delay={40}>
-          <StatCard label="Applications" value={applications.length} tone="brand" icon="admissions" />
-        </Reveal>
-        <Reveal delay={80}>
-          <StatCard label="In Progress" value={applications.filter((a) => a.status !== "Admission Complete").length} tone="amber" icon="spark" />
-        </Reveal>
-        <Reveal delay={120}>
-          <StatCard label="Completed" value={applications.filter((a) => a.status === "Admission Complete").length} tone="emerald" icon="check" />
-        </Reveal>
-        <Reveal delay={160}>
-          <StatCard label="AO Fields" value={fields.length} tone="violet" icon="exams" />
-        </Reveal>
+        <Reveal delay={40}><StatCard label="Applications" value={apps.length} tone="brand" icon="admissions" /></Reveal>
+        <Reveal delay={80}><StatCard label="In progress" value={inFlight} tone="amber" icon="spark" /></Reveal>
+        <Reveal delay={120}><StatCard label="Completed" value={complete} tone="emerald" icon="check" /></Reveal>
+        <Reveal delay={160}><StatCard label="Awaiting payment" value={count("Document Validated")} tone="sky" icon="wallet" /></Reveal>
       </div>
 
       <Reveal delay={60}>
-        <div className="card p-4">
-          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">
-            Pipeline health
-          </p>
-          <ProgressBar
-            value={applications.length
-              ? (applications.filter((a) => a.status === "Admission Complete").length / applications.length) * 100
-              : 0}
-            tone="emerald"
-          />
-          <p className="mt-2 text-xs text-slate-500">
-            {applications.filter((a) => a.status === "Admission Complete").length} of {applications.length} applications fully onboarded
-          </p>
-        </div>
+        <Tabs value={current?.id ?? "all"} onChange={(id) => { setTab(id); setQ(""); }}
+          tabs={tabs.map((t) => ({ id: t.id, label: t.label, ...(t.status ? { count: count(t.status) } : {}) }))} />
       </Reveal>
 
-      <Reveal delay={80}>
-        <Tabs
-          value={tab}
-          onChange={setTab}
-          tabs={[
-            { id: "AO" as const, label: "AO View (Fields)" },
-            { id: "Workflow" as const, label: "Workflow (Applications)" },
-          ]}
-        />
-      </Reveal>
+      <div key={current?.id} style={{ animation: "fade-up 0.45s var(--ease-out-soft) both" }}>
+        {current?.id === "template" && <TemplateBuilder notify={notify} />}
+        {current?.id === "create" && <CreateForms notify={notify} onCreated={() => void load()} />}
+        {current?.id === "approvals" && <TemplateApprovals notify={notify} />}
+        {current && !["template", "create", "approvals"].includes(current.id) && queueTable}
+      </div>
 
-      {tab === "AO" && (
-        <div key="AO" className="space-y-4" style={{ animation: "fade-up 0.45s var(--ease-out-soft) both" }}>
-          <div className="card p-5">
-            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500">
-              <Icon name="spark" className="h-4 w-4 text-brand-600" /> Mandatory Field Builder
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              <input
-                value={label}
-                onChange={(e) => setLabel(e.target.value)}
-                placeholder="Field label e.g. Aadhar Number"
-                className="min-w-56 field flex-1"
-              />
-              <select
-                aria-label="Field type"
-                value={fieldType}
-                onChange={(e) => setFieldType(e.target.value)}
-                className="field w-auto"
-              >
-                {["text", "date", "email", "phone", "number", "document"].map((t) => (
-                  <option key={t}>{t}</option>
-                ))}
-              </select>
-              <Button variant="primary" onClick={addField} loading={loading}>
-                <Icon name="plus" className="h-4 w-4" /> Add Field
-              </Button>
-              <Button variant="accent" onClick={() => triggerAction("/api/admissions/setup-fields", {}, "Sent to OS for approval")} loading={loading}>
-                <Icon name="spark" className="h-4 w-4" /> Send to OS
-              </Button>
-            </div>
-          </div>
-
-          <div className="card overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="table-head">
-                <tr>
-                  <th className="px-4 py-3">Label</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Required</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {fields.map((f) => (
-                  <tr key={f.id} className="row-hover border-t border-slate-100">
-                    <td className="px-4 py-3 font-semibold">{f.label}</td>
-                    <td className="px-4 py-3">
-                      <Badge tone="sky">{f.fieldType}</Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      {f.isRequired ? <Badge tone="rose">Required</Badge> : <Badge tone="slate">Optional</Badge>}
-                    </td>
-                    <td className="px-4 py-3 text-xs">{f.status}</td>
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={() => deleteField(f.id)}
-                        className="btn-danger !px-2.5 !py-1 text-xs"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {fields.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
-                      No fields yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {tab === "Workflow" && (
-        <div key="Workflow" className="space-y-4" style={{ animation: "fade-up 0.45s var(--ease-out-soft) both" }}>
-          <Button
-            variant="primary"
-            loading={loading}
-            onClick={() =>
-              triggerAction(
-                "/api/admissions/trigger-links",
-                { parents: [{ parent_name: "New Parent", parent_email: "parent@example.com", parent_contact: "9800000000" }] },
-                "Links triggered",
-              )
-            }
-          >
-            <Icon name="plus" className="h-4 w-4" /> Trigger Parent Links
-          </Button>
-
-          <div className="card overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="table-head">
-                <tr>
-                  <th className="px-4 py-3">Applicant</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Payment</th>
-                  <th className="px-4 py-3">Roll No</th>
-                  <th className="px-4 py-3">Next Step</th>
-                </tr>
-              </thead>
-              <tbody>
-                {applications.map((a) => {
-                  const step =
-                    a.status === "Links Sent"
-                      ? { label: "Submit Form", url: `/api/admissions/${a.id}/submit`, body: { student_name: a.parentName ?? "Applicant", dob: "2014-01-01" } }
-                      : a.status === "Submitted by Parent"
-                        ? { label: "Validate Docs", url: `/api/admissions/${a.id}/validate`, body: { isValid: true } }
-                        : a.status === "Document Validated"
-                          ? { label: "Pay Fee", url: `/api/admissions/${a.id}/pay`, body: {} }
-                          : a.status === "Fee Approved"
-                            ? { label: "Allocate Roll No", url: `/api/admissions/${a.id}/allocate`, body: {} }
-                            : a.status === "Roll No Assigned"
-                              ? { label: "VP Approve", url: `/api/admissions/${a.id}/vp-approve`, body: {} }
-                              : a.status === "VP Approved"
-                                ? { label: "Principal Approve", url: `/api/admissions/${a.id}/principal-approve`, body: {} }
-                                : null;
-                  return (
-                    <tr key={a.id} className="row-hover border-t border-slate-100">
-                      <td className="px-4 py-3">
-                        <span className="block font-semibold">{a.studentName ?? a.parentName ?? "—"}</span>
-                        {(a.parentName || a.parentEmail) && (
-                          <span className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px]">
-                            {a.parentName && <PhoneLink value={a.parentContact} className="text-slate-400" />}
-                            <MailLink value={a.parentEmail} className="text-slate-400" />
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge tone={STATUS_STYLES[a.status] ?? "sky"}>{a.status}</Badge>
-                      </td>
-                      <td className="px-4 py-3 text-xs">{a.paymentStatus}</td>
-                      <td className="px-4 py-3 font-mono text-xs">{a.rollNo ?? "—"}</td>
-                      <td className="px-4 py-3">
-                        <span className="flex flex-wrap items-center gap-1.5">
-                        {step ? (
-                          <button
-                            onClick={() => triggerAction(step.url, step.body, `${step.label} done`)}
-                            disabled={loading}
-                            className="btn-primary !px-3 !py-1 text-xs"
-                          >
-                            {step.label}
-                          </button>
-                        ) : (
-                          <Badge tone="emerald">Complete</Badge>
-                        )}
-                        {(a.status === "VP Approved" || a.status === "Admission Complete") && (
-                          <button onClick={() => printLetter(a.id)} className="btn-soft !px-3 !py-1 text-xs">
-                            <Icon name="print" className="h-3.5 w-3.5" /> Letter
-                          </button>
-                        )}
-                        {a.status === "Links Sent" && a.token && (
-                          <a
-                            href={`/admission-form?token=${a.token}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="btn-soft !px-3 !py-1 text-xs"
-                          >
-                            Parent Link
-                            <Icon name="spark" className="h-3.5 w-3.5" />
-                          </a>
-                        )}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {applications.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
-                      No applications yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {openId && <ApplicationPanel id={openId} onClose={() => setOpenId(null)} onChanged={() => void load()} notify={notify} />}
     </div>
   );
 }
