@@ -6,6 +6,7 @@ import { apiFetch } from "@/lib/api";
 import { useMe } from "@/lib/auth";
 import { homeFor } from "@/lib/nav";
 import { Button, Card, CardHead, Field, Icon, Input, PageHeader, useToast } from "@/components/ui";
+import { confirmAction } from "@/components/confirm";
 
 /** Same rule as the backend ChangePasswordDto: 8–72 chars, upper + lower + digit. */
 const RULES: { id: string; label: string; test: (p: string) => boolean }[] = [
@@ -30,13 +31,13 @@ function PasswordInput({ label, ...rest }: InputHTMLAttributes<HTMLInputElement>
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
-      <Input {...rest} type={show ? "text" : "password"} className="pr-11" spellCheck={false} autoCapitalize="none" />
+      <Input {...rest} type={show ? "text" : "password"} className="pr-11 max-md:!pr-11" spellCheck={false} autoCapitalize="none" />
       <button
         type="button"
         onClick={() => setShow((v) => !v)}
         aria-label={show ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
         aria-pressed={show}
-        className="absolute inset-y-0 right-0 grid w-10 place-items-center rounded-r-lg text-ink-3 transition-colors hover:text-ink"
+        className="absolute inset-y-0 right-0 grid w-10 max-md:w-11 place-items-center rounded-r-lg text-ink-3 transition-colors hover:text-ink"
       >
         <Icon name={show ? "lock" : "eye"} className="h-4 w-4" />
       </button>
@@ -66,6 +67,7 @@ export default function ChangePasswordPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
+    if (!(await confirmAction({ title: "Change your password?", text: "Your current password stops working. You stay signed in here; use the new password next time you sign in.", confirmText: "Change password", tone: "primary" }))) return;
     setSaving(true);
     setError("");
     try {
@@ -105,7 +107,7 @@ export default function ChangePasswordPage() {
 
       <Card>
         <CardHead icon="key" title="New password" subtitle={me?.email ?? undefined} />
-        <form onSubmit={submit} className="space-y-4 p-5">
+        <form onSubmit={submit} className="space-y-4 p-5 max-md:p-4">
           {error && !WRONG_CURRENT.test(error) && (
             <p className="flex items-start gap-2 rounded-xl bg-danger-soft px-3 py-2.5 text-[12.5px] text-danger" role="alert">
               <Icon name="alert" className="mt-0.5 h-4 w-4 shrink-0" />
@@ -193,11 +195,11 @@ export default function ChangePasswordPage() {
             You stay signed in on this device after the change. Use the new password the next time you sign in.
           </p>
 
-          <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-1 max-md:flex-col-reverse max-md:items-stretch">
             {!forced && (
-              <Button type="button" variant="ghost" onClick={() => router.back()}>Cancel</Button>
+              <Button type="button" variant="ghost" className="max-md:w-full" onClick={() => router.back()}>Cancel</Button>
             )}
-            <Button type="submit" variant="primary" loading={saving} disabled={!canSubmit}>
+            <Button type="submit" variant="primary" className="max-md:w-full" loading={saving} disabled={!canSubmit}>
               <Icon name="check" className="h-4 w-4" />
               Save new password
             </Button>

@@ -23,7 +23,7 @@ import { Icon } from "@/components/ui";
 export type Tone = "navy" | "blue" | "teal" | "sky" | "gold" | "ok" | "warn" | "danger" | "slate";
 
 /** Literal class sets per tone (kept literal so Tailwind can see them). */
-const TONES: Record<Tone, { soft: string; text: string; solid: string; rail: string; stroke: string }> = {
+export const TONES: Record<Tone, { soft: string; text: string; solid: string; rail: string; stroke: string }> = {
   navy: { soft: "bg-brand-50", text: "text-brand-700", solid: "bg-brand-700", rail: "before:bg-brand-700", stroke: "var(--color-chart-1)" },
   blue: { soft: "bg-accent-50", text: "text-accent-700", solid: "bg-accent-500", rail: "before:bg-accent-500", stroke: "var(--color-chart-2)" },
   teal: { soft: "bg-teal-50", text: "text-teal-700", solid: "bg-chart-3", rail: "before:bg-chart-3", stroke: "var(--color-chart-3)" },
@@ -74,7 +74,7 @@ export function CardGrid({ children, min = "18rem", empty }: { children: ReactNo
   const items = Array.isArray(children) ? children.filter(Boolean) : children ? [children] : [];
   if (items.length === 0 && empty) return <>{empty}</>;
   return (
-    <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(${min}, 100%), 1fr))` }}>
+    <div className="grid gap-4 max-md:gap-3" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(${min}, 100%), 1fr))` }}>
       {children}
     </div>
   );
@@ -140,13 +140,13 @@ export function RecordCard({
 
 /** Padded body section of a card. */
 export function CardBody({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`relative flex flex-1 flex-col gap-4 px-5 py-4 ${className}`}>{children}</div>;
+  return <div className={`relative flex flex-1 flex-col gap-4 px-5 py-4 max-md:gap-3 max-md:px-4 ${className}`}>{children}</div>;
 }
 
 /** Footer action row — flat hairline, lets the glow read through. */
 export function CardFooter({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`relative flex flex-wrap items-center justify-end gap-2 border-t border-line/70 px-5 py-3 ${className}`}>
+    <div className={`relative flex flex-wrap items-center justify-end gap-2 border-t border-line/70 px-5 py-3 record-card-footer max-md:px-4 ${className}`}>
       {children}
     </div>
   );
@@ -158,10 +158,10 @@ export function CardTitle({
 }: { lead?: ReactNode; title: ReactNode; subtitle?: ReactNode; aside?: ReactNode }) {
   return (
     <div className="flex items-start gap-3">
-      {lead}
+      {lead && <div className="shrink-0">{lead}</div>}
       <div className="min-w-0 flex-1">
-        <h3 className="truncate text-[15.5px] font-semibold leading-snug tracking-[-0.005em] text-ink">{title}</h3>
-        {subtitle && <p className="mt-1 truncate text-[12.5px] text-ink-3">{subtitle}</p>}
+        <h3 className="truncate text-[15.5px] font-semibold leading-snug tracking-[-0.005em] text-ink max-md:line-clamp-2 max-md:whitespace-normal max-md:text-[16px]">{title}</h3>
+        {subtitle && <p className="mt-1 truncate text-[12.5px] text-ink-3 max-md:whitespace-normal max-md:text-[13px]">{subtitle}</p>}
       </div>
       {aside && <div className="shrink-0 pt-0.5">{aside}</div>}
     </div>

@@ -43,13 +43,16 @@ type Profile = {
 
 type TabId = "overview" | "attendance" | "fees" | "academics" | "documents";
 
+/** 2-up KPI tiles at 360px are ~156px wide: a 30px "₹1,25,000" would overflow. */
+const KPI_M = "max-md:min-w-0 max-md:p-3.5 max-md:[&_.font-display]:text-[22px] max-md:[&_.font-display]:[overflow-wrap:anywhere]";
+
 const rupees = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-line py-2.5 last:border-0">
-      <dt className="text-[12.5px] text-ink-3">{label}</dt>
-      <dd className="text-right text-[13.5px] font-semibold text-ink">{value ?? "—"}</dd>
+    <div className="flex items-start justify-between gap-4 border-b border-line py-2.5 last:border-0 max-md:grid max-md:grid-cols-[7.5rem_minmax(0,1fr)] max-md:items-baseline max-md:gap-3">
+      <dt className="text-[12.5px] text-ink-3 max-md:shrink-0">{label}</dt>
+      <dd className="text-right text-[13.5px] font-semibold text-ink max-md:min-w-0 max-md:text-left max-md:[overflow-wrap:anywhere]">{value ?? "—"}</dd>
     </div>
   );
 }
@@ -136,7 +139,7 @@ export default function StudentProfilePage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-md:space-y-4">
       <PageHeader
         icon="students"
         eyebrow={isPortal(me) ? "Student profile" : "Student Master · read-only"}
@@ -159,25 +162,25 @@ export default function StudentProfilePage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Attendance" value={data.attendance.percentage} suffix="%" decimals={1} icon="attendance" tone="emerald"
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 max-md:gap-3">
+        <StatCard className={KPI_M} label="Attendance" value={data.attendance.percentage} suffix="%" decimals={1} icon="attendance" tone="emerald"
           hint={`${data.attendance.attended ?? data.attendance.present} of ${data.attendance.records_counted} counted days`} />
-        <StatCard label="House" value={null} icon="flag" tone="sky" hint={s.house ?? "Not assigned"} />
+        <StatCard className={KPI_M} label="House" value={null} icon="flag" tone="sky" hint={s.house ?? "Not assigned"} />
         {data.fees
-          ? <StatCard label="Fee balance" value={data.fees.balance} prefix="₹" icon="wallet" tone={data.fees.overdue_count ? "rose" : "brand"}
+          ? <StatCard className={KPI_M} label="Fee balance" value={data.fees.balance} prefix="₹" icon="wallet" tone={data.fees.overdue_count ? "rose" : "brand"}
             hint={data.fees.overdue_count ? `${data.fees.overdue_count} overdue` : "No overdue invoices"} />
-          : <StatCard label="Class" value={null} icon="layers" tone="brand" hint={s.class_label || "—"} />}
-        <StatCard label="Exam entries" value={data.academics.recent_marks.length} icon="exams" tone="teal" />
+          : <StatCard className={KPI_M} label="Class" value={null} icon="layers" tone="brand" hint={s.class_label || "—"} />}
+        <StatCard className={KPI_M} label="Exam entries" value={data.academics.recent_marks.length} icon="exams" tone="teal" />
       </div>
 
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
 
       <div key={tab} style={{ animation: "fade-up 0.45s var(--ease-out-soft) both" }}>
         {tab === "overview" && (
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-2 max-md:gap-3">
             <Card>
               <CardHead title="Student" icon="user" />
-              <dl className="px-5 pb-4">
+              <dl className="px-5 pb-4 max-md:px-4">
                 <Row label="Student ID" value={<span className="font-mono text-[12px]">{s.id}</span>} />
                 <Row label="Admission no" value={s.admission_no} />
                 <Row label="Class" value={s.class?.name} />
@@ -191,11 +194,11 @@ export default function StudentProfilePage() {
                 <Row label="Enrolled" value={s.enrollment_date} />
               </dl>
             </Card>
-            <div className="space-y-4">
+            <div className="space-y-4 max-md:space-y-3">
               <Card>
                 <CardHead title="Parents & contact" icon="phone"
                   subtitle={data.visibility.contacts ? undefined : "Contact details are visible to office and leadership roles."} />
-                <dl className="px-5 pb-4">
+                <dl className="px-5 pb-4 max-md:px-4">
                   <Row label="Father" value={data.parents.father_name} />
                   <Row label="Mother" value={data.parents.mother_name} />
                   {data.visibility.contacts && <Row label="Mobile" value={<PhoneLink value={data.parents.mobile_number} />} />}
@@ -207,7 +210,7 @@ export default function StudentProfilePage() {
               </Card>
               <Card>
                 <CardHead title="Hostel" icon="hostel" />
-                <dl className="px-5 pb-4">
+                <dl className="px-5 pb-4 max-md:px-4">
                   {data.hostel ? (
                     <>
                       <Row label="Hostel" value={data.hostel.hostel} />
@@ -228,7 +231,7 @@ export default function StudentProfilePage() {
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
                 <div className="flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-2">
                   <span className="text-[12px] text-ink-2">Overall</span>
-                  <span className="tnum ml-auto text-[15px] font-bold text-brand-700">{data.attendance.percentage == null ? "—" : `${data.attendance.percentage}%`}</span>
+                  <span className="tnum ml-auto text-[15px] font-bold text-brand-700 max-md:text-[16px]">{data.attendance.percentage == null ? "—" : `${data.attendance.percentage}%`}</span>
                 </div>
                 <CountTile status="Present" value={data.attendance.present} />
                 <CountTile status="Absent" value={data.attendance.absent} />
@@ -248,7 +251,7 @@ export default function StudentProfilePage() {
                   <p className="text-[12px] font-semibold uppercase tracking-wide text-ink-3">Recent days</p>
                   <ul className="flex flex-wrap gap-1.5">
                     {data.attendance.recent.map((r) => (
-                      <li key={r.date} className="flex items-center gap-1 rounded-md bg-surface-2 px-1.5 py-1 text-[11.5px]">
+                      <li key={r.date} className="flex items-center gap-1 rounded-md bg-surface-2 px-1.5 py-1 text-[11.5px] max-md:px-2 max-md:text-[12px]">
                         <span className="tnum text-ink-3">{r.date.slice(5)}</span>
                         <StatusTag status={r.status} title={r.note ? `${r.status}: ${r.note}` : undefined} />
                       </li>
@@ -262,12 +265,12 @@ export default function StudentProfilePage() {
         )}
 
         {tab === "fees" && data.fees && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-              <StatCard label="Invoiced" value={data.fees.invoiced} prefix="₹" icon="receipt" tone="brand" />
-              <StatCard label="Paid" value={data.fees.paid} prefix="₹" icon="check" tone="emerald" />
-              <StatCard label="Balance" value={data.fees.balance} prefix="₹" icon="wallet" tone="amber" />
-              <StatCard label="Overdue" value={data.fees.overdue_amount} prefix="₹" icon="alert" tone="rose" hint={`${data.fees.overdue_count} invoice(s)`} />
+          <div className="space-y-4 max-md:space-y-3">
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 max-md:gap-3">
+              <StatCard className={KPI_M} label="Invoiced" value={data.fees.invoiced} prefix="₹" icon="receipt" tone="brand" />
+              <StatCard className={KPI_M} label="Paid" value={data.fees.paid} prefix="₹" icon="check" tone="emerald" />
+              <StatCard className={KPI_M} label="Balance" value={data.fees.balance} prefix="₹" icon="wallet" tone="amber" />
+              <StatCard className={KPI_M} label="Overdue" value={data.fees.overdue_amount} prefix="₹" icon="alert" tone="rose" hint={`${data.fees.overdue_count} invoice(s)`} />
             </div>
             <Card>
               <CardHead title="Invoices" icon="receipt" />
@@ -353,12 +356,12 @@ export default function StudentProfilePage() {
           <Card>
             <CardHead title="Documents" icon="file" subtitle="Archived from the admission application into the student's document store." />
             {data.documents.length === 0 ? <EmptyState icon="file" title="No archived documents" /> : (
-              <ul className="divide-y divide-line px-5 pb-3">
+              <ul className="divide-y divide-line px-5 pb-3 max-md:px-4">
                 {data.documents.map((d) => (
-                  <li key={d.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                  <li key={d.id} className="flex flex-wrap items-center justify-between gap-3 py-3 max-md:flex-nowrap">
                     <div className="min-w-0">
                       <p className="text-[13.5px] font-semibold capitalize text-ink">{d.doc_type.replace(/_/g, " ")}</p>
-                      <p className="text-[12px] text-ink-3">{d.file_name} · {(d.size_bytes / 1024).toFixed(1)} KB · {d.created_at.slice(0, 10)}</p>
+                      <p className="text-[12px] text-ink-3 max-md:break-all">{d.file_name} · {(d.size_bytes / 1024).toFixed(1)} KB · {d.created_at.slice(0, 10)}</p>
                     </div>
                     <Button size="sm" loading={busy === `doc-${d.id}`} onClick={() => openDocument(d.id, d.file_name)}>
                       <Icon name="download" className="h-3.5 w-3.5" /> Download

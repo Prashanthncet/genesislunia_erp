@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { apiDownload, apiFetch } from "@/lib/api";
 import { Button, Icon, useToast } from "@/components/ui";
-import { confirmAction } from "@/components/notices/types";
+import { confirmAction } from "@/components/confirm";
 
 export const LESSON_PDF_MAX = 10 * 1024 * 1024;
 
@@ -57,17 +57,18 @@ export function LessonPlanPdfActions({ plan, editable, onChanged }: { plan: Plan
     } finally { setBusy(""); }
   };
 
-  const onPick = (file: File | undefined) => {
+  const onPick = async (file: File | undefined) => {
     if (input.current) input.current.value = "";
     if (!file) return;
     const err = checkLessonPdf(file);
     if (err) return toast.push(err, "error");
-    void run("up", async () => { await uploadLessonPdf(plan.id, file); onChanged(); }, plan.attachmentName ? "PDF replaced" : "PDF attached");
+    if (plan.attachmentName && !(await confirmAction({ title: `Replace ${plan.attachmentName}?`, text: `"${file.name}" will overwrite the PDF attached to ${plan.topic}.`, confirmText: "Replace PDF", tone: "danger" }))) return;
+    void run("up", async () => { await uploadLessonPdf(plan.id, file); onChanged(); }, plan.attachmentName ? `PDF replaced with ${file.name}` : `${file.name} attached`);
   };
 
   const remove = async () => {
-    if (!(await confirmAction({ title: "Remove this PDF?", text: `"${plan.attachmentName}" will be deleted from the lesson plan.`, confirm: "Remove PDF", danger: true }))) return;
-    void run("rm", async () => { await apiFetch(`/api/academics/lesson-plans/${plan.id}/attachment`, { method: "DELETE" }); onChanged(); }, "PDF removed");
+    if (!(await confirmAction({ title: `Remove ${plan.attachmentName}?`, text: `The PDF will be deleted from the lesson plan "${plan.topic}". This cannot be undone.`, confirmText: "Remove PDF", tone: "danger" }))) return;
+    void run("rm", async () => { await apiFetch(`/api/academics/lesson-plans/${plan.id}/attachment`, { method: "DELETE" }); onChanged(); }, `${plan.attachmentName} removed`);
   };
 
   return (
@@ -76,13 +77,13 @@ export function LessonPlanPdfActions({ plan, editable, onChanged }: { plan: Plan
         <Button type="button" size="sm" variant="soft" loading={busy === "get"} onClick={() => run("get", () => openLessonPdf(plan.id))}
           title={`${plan.attachmentName} · ${fmtSize(plan.attachmentSize)}`} aria-label={`Download PDF ${plan.attachmentName}`}>
           <Icon name="download" className="h-3.5 w-3.5" />
-          <span className="max-w-[9rem] truncate">{plan.attachmentName}</span>
+          <span className="max-w-[9rem] truncate max-md:max-w-[7.5rem]">{plan.attachmentName}</span>
           <span className="tnum text-[11px] text-ink-3">{fmtSize(plan.attachmentSize)}</span>
         </Button>
       ) : null}
       {editable && (
         <>
-          <input ref={input} type="file" accept="application/pdf,.pdf" className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => onPick(e.target.files?.[0])} />
+          <input ref={input} type="file" accept="application/pdf,.pdf" className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => void onPick(e.target.files?.[0])} />
           <Button type="button" size="sm" variant="ghost" loading={busy === "up"} onClick={() => input.current?.click()} aria-label={`${plan.attachmentName ? "Replace" : "Attach"} PDF for ${plan.topic}`}>
             <Icon name="upload" className="h-3.5 w-3.5" /> {plan.attachmentName ? "Replace PDF" : "Attach PDF"}
           </Button>

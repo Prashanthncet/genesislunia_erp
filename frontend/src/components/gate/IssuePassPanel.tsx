@@ -116,7 +116,7 @@ export function IssuePassPanel({ me, onIssued }: { me: Me; onIssued?: () => void
   };
 
   return (
-    <div className="grid items-start gap-4 lg:grid-cols-5">
+    <div className="grid items-start gap-4 max-lg:grid-cols-1 lg:grid-cols-5">
       <Card className="lg:col-span-3">
         <CardHead
           icon="door"
@@ -139,7 +139,7 @@ export function IssuePassPanel({ me, onIssued }: { me: Me; onIssued?: () => void
               <div className="flex flex-wrap items-center gap-3 rounded-xl border border-brand-100 bg-brand-50/60 px-3.5 py-2.5">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13.5px] font-semibold text-ink">{student.fullName}</p>
-                  <p className="text-[12px] text-ink-3">
+                  <p className="text-[12px] text-ink-3 max-md:break-words">
                     <span className="font-mono">{student.admissionNo}</span>
                     {classLabel(student.class) && ` · ${classLabel(student.class)}`}
                     {student.hostel && ` · ${student.hostel.name}, room ${student.hostel.room}`}
@@ -177,7 +177,7 @@ export function IssuePassPanel({ me, onIssued }: { me: Me; onIssued?: () => void
                             <span className="font-mono">{s.admissionNo}</span>{classLabel(s.class) && ` · ${classLabel(s.class)}`}
                           </span>
                         </span>
-                        {s.hostel ? <Badge tone="sky">{s.hostel.name} · {s.hostel.room}</Badge> : <Badge tone="slate">Day scholar</Badge>}
+                        {s.hostel ? <Badge tone="sky" className="max-md:min-w-0 max-md:max-w-[45%]"><span className="max-md:truncate">{s.hostel.name} · {s.hostel.room}</span></Badge> : <Badge tone="slate">Day scholar</Badge>}
                       </button>
                     </li>
                   ))}
@@ -206,7 +206,7 @@ export function IssuePassPanel({ me, onIssued }: { me: Me; onIssued?: () => void
           </Field>
 
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
-            <Button type="submit" variant="primary" loading={busy} disabled={!canSubmit}>
+            <Button type="submit" variant="primary" loading={busy} disabled={!canSubmit} className="max-md:w-full">
               <Icon name="check" className="h-4 w-4" />
               {direct ? "Issue pass" : "File pass"}
             </Button>
@@ -218,7 +218,7 @@ export function IssuePassPanel({ me, onIssued }: { me: Me; onIssued?: () => void
         <CardHead icon="info" title={issued ? "Pass created" : "What happens next"} subtitle={issued ? `${issued.student.fullName} · ${issued.type}` : "The approval chain every pass follows."} />
         <div className="space-y-4 p-4 sm:p-5">
           {issued && (
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl border border-line bg-surface-2/60 p-3.5 text-[12.5px]">
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 max-md:[&>div]:min-w-0 rounded-xl border border-line bg-surface-2/60 p-3.5 text-[12.5px]">
               <div><dt className="text-ink-3">Status</dt><dd><Badge tone={issued.status === "Warden Approved" ? "sky" : "amber"}>{issued.status}</Badge></dd></div>
               <div><dt className="text-ink-3">Admission no</dt><dd className="font-mono font-medium">{issued.student.admissionNo}</dd></div>
               <div><dt className="text-ink-3">Out</dt><dd className="tnum font-medium">{fmtTime(issued.out)}</dd></div>

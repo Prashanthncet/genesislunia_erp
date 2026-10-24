@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiDownload, apiFetch } from "@/lib/api";
+import { confirmAction } from "@/components/confirm";
 import { Badge, Button, Icon, PageHeader, Reveal, StatCard, Tabs, useToast } from "@/components/ui";
 import { DayView } from "@/components/timetable/DayView";
 
 import { TableView } from "@/components/TableView";
+import { MobileFilters } from "@/components/mobile/MobileFilters";
 import { WeekGrid, orderPeriods } from "@/components/WeekGrid";
 import { R, ROLE, hasRole, isPortal, useMe } from "@/lib/auth";
 import { MyDayView } from "@/components/timetable/MyDayView";
@@ -132,6 +134,13 @@ export default function TimetablePage() {
   useEffect(() => setPreview(null), [selectedClass]);
 
   const markAbsent = async (teacherId: string) => {
+    const name = teachers.find((t) => t.id === teacherId)?.name ?? "this teacher";
+    if (!(await confirmAction({
+      title: `Mark ${name} absent on ${date}?`,
+      text: "Substitutes are auto-assigned for all of their lessons that day.",
+      confirmText: "Mark absent",
+      tone: "primary",
+    }))) return;
     setSaving(true);
     try {
       const res = await apiFetch<{ substitutions: unknown[] }>(`/api/timetable/teachers/${teacherId}/absent`, {
@@ -149,6 +158,12 @@ export default function TimetablePage() {
 
   const generate = async () => {
     if (!selectedClass) return;
+    if (!(await confirmAction({
+      title: `Generate a new timetable for ${selectedClassLabel || "this class"}?`,
+      text: "This replaces the class's entire current weekly timetable. This cannot be undone.",
+      confirmText: "Replace timetable",
+      tone: "danger",
+    }))) return;
     setSaving(true);
     setMessage("");
     try {
@@ -273,7 +288,7 @@ export default function TimetablePage() {
       </div>
 
       <div className="relative z-10 border-b border-line bg-white/80 backdrop-blur-xl">
-        <div className="flex items-center justify-between px-6 py-4">
+        <div className="flex items-center justify-between px-6 py-4 max-md:flex-col max-md:items-start max-md:gap-3 max-md:px-4 max-md:py-3">
           <PageHeader
             icon="timetable"
             title="Timetable & Scheduling"
@@ -284,12 +299,12 @@ export default function TimetablePage() {
           </Button>
         </div>
 
-        <div className="flex items-center gap-2 px-6 overflow-x-auto">
+        <div className="flex items-center gap-2 px-6 overflow-x-auto max-md:gap-1 max-md:px-4 m-scroll-x">
           {TABS.map((t, idx) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 whitespace-nowrap ${tab === t ? "bg-brand-50 font-semibold text-brand-700 ring-1 ring-brand-100" : "text-ink-2 hover:bg-slate-100"}`}
+              className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 whitespace-nowrap max-md:min-h-11 max-md:shrink-0 max-md:gap-2 max-md:px-3 max-md:py-2.5 max-md:snap-start ${tab === t ? "bg-brand-50 font-semibold text-brand-700 ring-1 ring-brand-100" : "text-ink-2 hover:bg-slate-100"}`}
               style={{ animationDelay: `${idx * 50}ms` }}
             >
               <Icon name={TAB_ICON[t]} className="h-4 w-4" />
@@ -299,46 +314,46 @@ export default function TimetablePage() {
         </div>
       </div>
 
-      <div className="relative z-10 p-6 space-y-6">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
+      <div className="relative z-10 p-6 space-y-6 max-md:space-y-4 max-md:px-0 max-md:py-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5 max-md:grid-cols-2 max-md:gap-3">
           <Reveal delay={0}>
-            <div className="rounded-xl bg-brand-900 p-5 text-white shadow-xl">
+            <div className="rounded-xl bg-brand-900 p-5 text-white shadow-xl max-md:p-4">
               <div className="flex items-center gap-3 mb-3">
                 <Icon name="students" className="h-5 w-5 text-ink-2" />
                 <span className="text-xs font-medium text-ink-3 uppercase tracking-wide">Teachers</span>
               </div>
-              <p className="text-3xl font-bold">{teachers.length}</p>
+              <p className="text-3xl font-bold max-md:text-2xl">{teachers.length}</p>
             </div>
           </Reveal>
           <Reveal delay={100}>
-            <div className="rounded-xl bg-brand-50 border border-brand-200 p-5">
+            <div className="rounded-xl bg-brand-50 border border-brand-200 p-5 max-md:p-4">
               <div className="flex items-center gap-3 mb-3">
                 <Icon name="mapPin" className="h-5 w-5 text-accent-600" />
                 <span className="text-xs font-medium text-accent-600 uppercase tracking-wide">Rooms</span>
               </div>
-              <p className="text-3xl font-bold text-brand-700">{rooms.length}</p>
+              <p className="text-3xl font-bold max-md:text-2xl text-brand-700">{rooms.length}</p>
             </div>
           </Reveal>
           <Reveal delay={200}>
-            <div className="rounded-xl bg-accent-50 border border-accent-200 p-5">
+            <div className="rounded-xl bg-accent-50 border border-accent-200 p-5 max-md:p-4">
               <div className="flex items-center gap-3 mb-3">
                 <Icon name="clock" className="h-5 w-5 text-accent-700" />
                 <span className="text-xs font-medium text-accent-700 uppercase tracking-wide">Periods Today</span>
               </div>
-              <p className="text-3xl font-bold text-accent-700">{schedule.length}</p>
+              <p className="text-3xl font-bold max-md:text-2xl text-accent-700">{schedule.length}</p>
             </div>
           </Reveal>
           <Reveal delay={300}>
-            <div className="rounded-xl bg-warn-soft border border-warn-line p-5">
+            <div className="rounded-xl bg-warn-soft border border-warn-line p-5 max-md:p-4">
               <div className="flex items-center gap-3 mb-3">
                 <Icon name="alert" className="h-5 w-5 text-warn" />
                 <span className="text-xs font-medium text-warn uppercase tracking-wide">Substitutions</span>
               </div>
-              <p className="text-3xl font-bold text-warn-ink">{subs.length}</p>
+              <p className="text-3xl font-bold max-md:text-2xl text-warn-ink">{subs.length}</p>
             </div>
           </Reveal>
           <Reveal delay={400}>
-            <div className="rounded-xl bg-surface-2 border border-line p-5">
+            <div className="rounded-xl bg-surface-2 border border-line p-5 max-md:p-4">
               <div className="flex items-center gap-3 mb-3">
                 <Icon name="calendar" className="h-5 w-5 text-ink-2" />
                 <span className="text-xs font-medium text-ink-2 uppercase tracking-wide">{dayName}</span>
@@ -349,21 +364,29 @@ export default function TimetablePage() {
         </div>
 
         <Reveal delay={100}>
-          <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl bg-white border border-line shadow-sm">
-            <div className="relative flex-1 min-w-[200px]">
+          <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl bg-white border border-line shadow-sm max-md:gap-3">
+            {/* Phones: class + date move into a sheet; the button names the class being shown. */}
+            <div className="contents max-md:flex max-md:min-w-0 max-md:flex-1">
+            <MobileFilters
+              label={selectedClassLabel || "Class & date"}
+              active={(classes.length > 0 && selectedClass !== classes[0].id ? 1 : 0) + (date !== new Date().toISOString().split("T")[0] ? 1 : 0)}
+            >
+            <div className="relative flex-1 min-w-[200px] max-md:min-w-full">
               <select
                 aria-label="Class"
                 value={selectedClass}
                 onChange={(e) => setSelectedClass(e.target.value)}
-                className="w-full appearance-none rounded-lg border border-line-strong bg-surface-2 pl-4 pr-10 py-2.5 text-sm text-ink-2 focus:border-brand-700 focus:ring-2 focus:ring-accent-500/20"
+                className="w-full appearance-none rounded-lg border border-line-strong bg-surface-2 pl-4 pr-10 py-2.5 text-sm text-ink-2 focus:border-brand-700 focus:ring-2 focus:ring-accent-500/20 max-md:min-h-11"
               >
                 {classes.map((c) => (
                   <option key={c.id} value={c.id}>{c.name} {c.section ?? ""}</option>
                 ))}
               </select>
             </div>
-            <div className="relative">
-              <input type="date" aria-label="Date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} className="appearance-none rounded-lg border border-line-strong bg-surface-2 px-4 py-2.5 pr-10 text-sm text-ink-2 focus:border-brand-700 focus:ring-2 focus:ring-accent-500/20" />
+            <div className="relative max-md:min-w-0 max-md:flex-1">
+              <input type="date" aria-label="Date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} className="appearance-none rounded-lg border border-line-strong bg-surface-2 px-4 py-2.5 pr-10 text-sm text-ink-2 focus:border-brand-700 focus:ring-2 focus:ring-accent-500/20 max-md:min-h-11 max-md:w-full max-md:pr-4" />
+            </div>
+            </MobileFilters>
             </div>
             <Button variant="primary" onClick={loadTabData} loading={loading} className="shadow-lg shadow-brand-700/20">
               <Icon name="refresh" className="h-4 w-4" /> Refresh
@@ -387,7 +410,7 @@ export default function TimetablePage() {
 
           {tab === "Live Schedule" && (
             <div className="rounded-xl border border-line bg-white shadow-sm overflow-hidden">
-              <div className="grid grid-cols-[60px_80px_1.5fr_1.5fr_1fr_1fr] gap-4 px-6 py-4 bg-surface-2/50 border-b border-line">
+              <div className="grid grid-cols-[60px_80px_1.5fr_1.5fr_1fr_1fr] gap-4 px-6 py-4 bg-surface-2/50 border-b border-line max-md:hidden">
                 <div className="text-xs font-semibold text-ink-2 uppercase tracking-wider">Period</div>
                 <div className="text-xs font-semibold text-ink-2 uppercase tracking-wider">Time</div>
                 <div className="text-xs font-semibold text-ink-2 uppercase tracking-wider">Subject</div>
@@ -400,28 +423,28 @@ export default function TimetablePage() {
                   const period = periodLabel(n);
                   if (!slot) {
                     return (
-                      <div key={`b${n}`} className="bg-surface-2 px-6 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3">
+                      <div key={`b${n}`} className="bg-surface-2 px-6 py-2 max-md:px-4 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3">
                         {period?.breakName ?? "Break"} · {period?.startTime}–{period?.endTime}
                       </div>
                     );
                   }
                   const hasSub = slot.substitution !== null;
                   return (
-                    <div key={idx} className="grid grid-cols-[60px_80px_1.5fr_1.5fr_1fr_1fr] gap-4 px-6 py-4 items-center transition-all duration-200 hover:bg-surface-2 group" style={{ animation: `fade-in 0.3s ease-out ${idx * 50}ms both`, animationName: "fade-in" }}>
-                      <div className="flex flex-col items-center">
+                    <div key={idx} className="grid grid-cols-[60px_80px_1.5fr_1.5fr_1fr_1fr] gap-4 px-6 py-4 items-center transition-all duration-200 hover:bg-surface-2 group max-md:grid-cols-[2.75rem_minmax(0,1fr)_auto] max-md:gap-x-3 max-md:gap-y-1 max-md:px-4 max-md:py-3" style={{ animation: `fade-in 0.3s ease-out ${idx * 50}ms both`, animationName: "fade-in" }}>
+                      <div className="flex flex-col items-center max-md:col-start-1 max-md:row-span-3 max-md:row-start-1 max-md:self-start">
                         <span className="font-bold text-ink">{slot.period_number}</span>
-                        <span className="text-[10px] text-ink-3">{period?.isBreak ? "Break" : "Period"}</span>
+                        <span className="text-[10px] text-ink-3 max-md:text-[11px]">{period?.isBreak ? "Break" : "Period"}</span>
                       </div>
-                      <div className="text-sm text-ink-2 font-mono">{period ? `${period.startTime} - ${period.endTime}` : "--:--"}</div>
-                      <div className="font-semibold text-ink">{slot.subject}</div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-600 to-brand-900 text-white text-xs font-bold flex items-center justify-center">
+                      <div className="text-sm text-ink-2 font-mono max-md:col-start-2 max-md:row-start-2 max-md:text-[12px]">{period ? `${period.startTime} - ${period.endTime}` : "--:--"}</div>
+                      <div className="font-semibold text-ink max-md:col-start-2 max-md:row-start-1 max-md:min-w-0 max-md:truncate">{slot.subject}</div>
+                      <div className="flex items-center gap-2 max-md:col-span-2 max-md:col-start-2 max-md:row-start-3 max-md:min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-600 to-brand-900 text-white text-xs font-bold flex items-center justify-center max-md:h-6 max-md:w-6 max-md:shrink-0 max-md:text-[11px]">
                           {slot.teacher_name.charAt(0)}
                         </div>
-                        <span className="text-sm text-ink-2">{slot.teacher_name}</span>
+                        <span className="text-sm text-ink-2 max-md:truncate">{slot.teacher_name}</span>
                       </div>
-                      <div className="text-sm text-ink-2">{slot.room_name || "--"}</div>
-                      <div className="flex justify-center">
+                      <div className="text-sm text-ink-2 max-md:col-start-3 max-md:row-start-2 max-md:text-right max-md:text-[12px]">{slot.room_name || "--"}</div>
+                      <div className="flex justify-center max-md:col-start-3 max-md:row-start-1 max-md:justify-end">
                         {slot.cover_requested ? (
                           <Badge tone="amber" className="px-3 py-1.5">Cover requested</Badge>
                         ) : hasSub ? (
@@ -518,7 +541,7 @@ export default function TimetablePage() {
           )}
 
           {tab === "Auto-Generator" && (
-            <div className="rounded-xl border border-line bg-white shadow-sm p-6 space-y-6">
+            <div className="rounded-xl border border-line bg-white shadow-sm p-6 space-y-6 max-md:space-y-5 max-md:p-4">
               <h3 className="font-semibold text-ink text-lg">Timetable Auto-Generator</h3>
               
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -537,7 +560,7 @@ export default function TimetablePage() {
                       <button
                         key={d}
                         onClick={() => setWorkingDays(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d])}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${workingDays.includes(d) ? "bg-brand-700 text-white shadow-md" : "bg-slate-100 text-ink-2 hover:bg-line"}`}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 max-md:min-h-11 max-md:min-w-12 max-md:px-3 ${workingDays.includes(d) ? "bg-brand-700 text-white shadow-md" : "bg-slate-100 text-ink-2 hover:bg-line"}`}
                       >
                         {d}
                       </button>
@@ -555,12 +578,12 @@ export default function TimetablePage() {
                         value={subj.name}
                         onChange={(e) => setGenSubjects(prev => prev.map((s, i) => i === idx ? { ...s, name: e.target.value } : s))}
                         placeholder="Subject"
-                        className="flex-1 min-w-[150px] rounded-lg border border-line-strong bg-white px-3 py-2 text-sm text-ink-2 focus:border-brand-700 focus:ring-2 focus:ring-accent-500/20"
+                        className="flex-1 min-w-[150px] rounded-lg border border-line-strong bg-white px-3 py-2 text-sm text-ink-2 focus:border-brand-700 focus:ring-2 focus:ring-accent-500/20 max-md:min-h-11 max-md:min-w-full"
                       />
                       <select
                         value={subj.teacher_id}
                         onChange={(e) => setGenSubjects(prev => prev.map((s, i) => i === idx ? { ...s, teacher_id: e.target.value } : s))}
-                        className="flex-1 min-w-[150px] rounded-lg border border-line-strong bg-white px-3 py-2 text-sm text-ink-2 focus:border-brand-700 focus:ring-2 focus:ring-accent-500/20"
+                        className="flex-1 min-w-[150px] rounded-lg border border-line-strong bg-white px-3 py-2 text-sm text-ink-2 focus:border-brand-700 focus:ring-2 focus:ring-accent-500/20 max-md:min-h-11 max-md:min-w-full"
                       >
                         <option value="">Select Teacher</option>
                         {teachers.map((t) => (
@@ -571,12 +594,12 @@ export default function TimetablePage() {
                         type="number" min={0} max={20}
                         value={subj.periods_per_week}
                         onChange={(e) => setGenSubjects(prev => prev.map((s, i) => i === idx ? { ...s, periods_per_week: Number(e.target.value) } : s))}
-                        className="w-20 rounded-lg border border-line-strong bg-white px-3 py-2 text-sm text-ink-2 text-center focus:border-brand-700 focus:ring-2 focus:ring-accent-500/20"
+                        className="w-20 rounded-lg border border-line-strong bg-white px-3 py-2 text-sm text-ink-2 text-center focus:border-brand-700 focus:ring-2 focus:ring-accent-500/20 max-md:min-h-11"
                       />
                       <span className="text-xs text-ink-2">periods/week</span>
                       <button
                         onClick={() => setGenSubjects(prev => prev.filter((_, i) => i !== idx))}
-                        className="p-2 rounded-lg text-danger hover:bg-danger-soft transition-colors"
+                        className="p-2 rounded-lg text-danger hover:bg-danger-soft transition-colors max-md:ml-auto max-md:grid max-md:h-11 max-md:w-11 max-md:place-items-center"
                       >
                         <Icon name="trash" className="h-4 w-4" />
                       </button>
@@ -589,7 +612,7 @@ export default function TimetablePage() {
               </div>
 
               <div className="p-4 rounded-xl bg-surface-2 border border-line">
-                <div className="flex items-center justify-between text-sm mb-2">
+                <div className="flex items-center justify-between text-sm mb-2 max-md:flex-wrap max-md:gap-x-3">
                   <span className="font-medium text-ink-2">Summary</span>
                   <span className="text-ink-2">Required: {genSubjects.reduce((a, s) => a + s.periods_per_week, 0)} periods</span>
                 </div>

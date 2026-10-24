@@ -10,6 +10,7 @@ import { PanelState, fmtDay } from "@/components/portal/bits";
 import { TableView } from "@/components/TableView";
 import { CardBody, CardEmpty, CardFooter, CardGrid, CardTitle, Meter, Metric, RecordCard, StatusPill, statusTone } from "@/components/RecordCard";
 import { payWithRazorpay, type GatewayOrder } from "@/lib/razorpay";
+import { confirmAction } from "@/components/confirm";
 
 type Payment = { id: string; amount: number; mode: string; date: string; receipt_no: string | null; reference_no?: string | null; receipt_url: string };
 type Invoice = {
@@ -43,7 +44,13 @@ function FeesBody({ child }: { child: PortalChild }) {
   // One busy key per download, so a slow PDF never blocks another button.
   const [busy, setBusy] = useState<Set<string>>(new Set());
 
-  const pay = async (invoiceId: string, label: string) => {
+  const pay = async (invoiceId: string, label: string, amount: number, term: string) => {
+    if (!(await confirmAction({
+      title: `Pay ${inr(amount)} for ${term}?`,
+      text: `You'll be taken to the payment page for ${label}. The receipt appears here once the payment goes through.`,
+      confirmText: "Continue to pay",
+      tone: "primary",
+    }))) return;
     setPaying(invoiceId);
     try {
       const o = await apiFetch<Order>("/api/payments/orders", {
@@ -79,7 +86,7 @@ function FeesBody({ child }: { child: PortalChild }) {
     setCompleting(true);
     try {
       await apiFetch(`/api/payments/mock/${encodeURIComponent(order.order_id)}/complete`, { method: "POST" });
-      toast.push(`Payment of ${inr(order.amount)} recorded`);
+      toast.push(`Payment of ${inr(order.amount)} recorded for ${order.invoice}`, "success");
       setOrder(null);
       reload();
       void reloadOverview();
@@ -109,8 +116,8 @@ function FeesBody({ child }: { child: PortalChild }) {
     .flatMap((inv) => inv.payments.map((p) => ({ ...p, invoice_no: inv.invoice_no, term: inv.term })))
     .sort((a, b) => b.date.localeCompare(a.date));
 
-  const payButton = (inv: Invoice) => inv.balance > 0 ? (
-    <Button type="button" size="sm" variant="primary" loading={paying === inv.id} onClick={() => pay(inv.id, `${inv.term} (${inv.invoice_no ?? "invoice"})`)}>
+  const payButton = (inv: Invoice, className = "") => inv.balance > 0 ? (
+    <Button type="button" size="sm" variant="primary" className={className} loading={paying === inv.id} onClick={() => pay(inv.id, `${inv.term} (${inv.invoice_no ?? "invoice"})`, inv.balance, inv.term)}>
       <Icon name="wallet" className="h-3.5 w-3.5" /> Pay {inr(inv.balance)}
     </Button>
   ) : null;
@@ -129,7 +136,7 @@ function FeesBody({ child }: { child: PortalChild }) {
                 subtitle={<span className="font-mono">{inv.invoice_no ?? "Invoice"} · due {fmtDay(inv.due_date)}</span>}
                 aside={<StatusPill status={st} />}
               />
-              <div className="grid grid-cols-3 gap-3 rounded-lg bg-surface-2 px-3.5 py-3">
+              <div className="grid grid-cols-3 gap-3 rounded-lg bg-surface-2 px-3.5 py-3 max-md:gap-2 max-md:px-3">
                 <Metric label="Amount" value={inr(inv.total_amount)} />
                 <Metric label="Paid" value={inr(inv.paid_amount)} tone="ok" />
                 <Metric label="Balance" value={inr(inv.balance)} tone={inv.balance > 0 ? "danger" : "ok"} align="right" />
@@ -138,7 +145,7 @@ function FeesBody({ child }: { child: PortalChild }) {
             </CardBody>
             <CardFooter>
               {/* z-[2]: above the card's hover glow/border layers (z-index 1). */}
-              <div className="relative z-[2] flex w-full flex-wrap items-center justify-end gap-1.5">
+              <div className="relative z-[2] flex w-full flex-wrap items-center justify-end gap-1.5 max-md:gap-2 max-md:[&>button]:flex-1">
                 <Button type="button" size="sm" variant="ghost" loading={busy.has(`inv-${inv.id}`)} onClick={() => invoicePdf(inv)} aria-label={`Download invoice ${inv.invoice_no ?? ""} PDF`}>
                   <Icon name="download" className="h-3.5 w-3.5" /> Invoice PDF
                 </Button>
@@ -147,7 +154,7 @@ function FeesBody({ child }: { child: PortalChild }) {
                     <Icon name="receipt" className="h-3.5 w-3.5" /> Receipt {fmtDay(p.date)}
                   </Button>
                 ))}
-                {payButton(inv)}
+                {payButton(inv, "max-md:order-first max-md:!basis-full max-md:!h-11 max-md:!text-[14px]")}
               </div>
             </CardFooter>
           </RecordCard>
@@ -158,10 +165,10 @@ function FeesBody({ child }: { child: PortalChild }) {
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard label="Total billed" value={data?.total ?? null} prefix="₹" icon="receipt" />
-        <StatCard label="Paid" value={data?.paid ?? null} prefix="₹" icon="check" tone="emerald" />
-        <StatCard label="Balance due" value={data?.balance ?? null} prefix="₹" icon="wallet" tone={data?.balance ? "amber" : "emerald"} />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 max-md:grid-cols-2">
+        <StatCard label="Total billed" value={data?.total ?? null} prefix="₹" icon="receipt" className="max-md:min-w-0 max-md:[&_p.font-display]:text-[22px]" />
+        <StatCard label="Paid" value={data?.paid ?? null} prefix="₹" icon="check" tone="emerald" className="max-md:min-w-0 max-md:[&_p.font-display]:text-[22px]" />
+        <StatCard label="Balance due" value={data?.balance ?? null} prefix="₹" icon="wallet" tone={data?.balance ? "amber" : "emerald"} className="max-md:order-first max-md:col-span-2" />
       </div>
 
       <Card>

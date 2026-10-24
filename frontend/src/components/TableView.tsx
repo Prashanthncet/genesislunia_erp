@@ -18,7 +18,7 @@
  *   wide    — full-width field for long text (contact, description, message…)
  *   actions — footer row ("Actions" column, or an unlabelled trailing column)
  *   meta    — everything else, in a two-column label-over-value grid
- *   hidden  — dropped from the card (`hide`)
+ *   hidden  — dropped from the card (`hide`); `mobileHide` drops a field from phone cards only
  *
  * The choice is remembered per table (`id`) and page. Phones default to cards.
  *
@@ -34,7 +34,7 @@ import { Icon } from "@/components/ui";
 
 type Mode = "table" | "cards";
 
-type Hints = { title?: string; badge?: string | false; wide?: string[]; hide?: string[] };
+type Hints = { title?: string; badge?: string | false; wide?: string[]; hide?: string[]; mobileHide?: string[] };
 
 const WIDE_DEFAULT = /contact|description|message|recipient|e-?mail|question|remarks|reason|address|details|notes/i;
 const same = (a: string, b?: string) => !!b && a.toLowerCase() === b.toLowerCase();
@@ -85,6 +85,8 @@ function labelCells(root: HTMLElement, hints: Hints): number {
           // control (select, Present/Absent buttons) needs a full-width field.
           if (role === "badge" && cell.querySelector("select, input, button")) role = "wide";
           cell.setAttribute("data-role", role);
+          if (hints.mobileHide?.some((h) => same(label, h))) cell.setAttribute("data-mhide", "");
+          else cell.removeAttribute("data-mhide");
         }
         col += span;
       });
@@ -97,15 +99,15 @@ function labelCells(root: HTMLElement, hints: Hints): number {
 }
 
 export function TableView({
-  id = "main", title, badge, wide, hide, cards, children,
-}: Hints & { id?: string; cards?: ReactNode; children: ReactNode }) {
+  id = "main", title, badge, wide, hide, mobileHide, cards, mobileCards, children,
+}: Hints & { id?: string; cards?: ReactNode; mobileCards?: ReactNode; children: ReactNode }) {
   const pathname = usePathname();
   const storageKey = `table_view:${pathname}:${id}`;
   const [mode, setMode] = useState<Mode>("table");
   const [records, setRecords] = useState<number | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const hintsRef = useRef<Hints>({});
-  hintsRef.current = { title, badge, wide, hide };
+  hintsRef.current = { title, badge, wide, hide, mobileHide };
 
   // Restore the saved choice; with none saved, phones start in card view.
   useEffect(() => {
@@ -138,7 +140,7 @@ export function TableView({
 
   return (
     <div className="table-view">
-      <div className="flex items-center justify-between gap-3 border-b border-line bg-surface/50 px-5 py-2.5 backdrop-blur-xs">
+      <div className="flex items-center justify-between gap-3 border-b border-line bg-surface/50 px-5 py-2.5 max-md:px-4 max-md:py-2 backdrop-blur-xs">
         <div className="flex items-center gap-2">
           <span className="inline-flex h-2 w-2 rounded-full bg-accent-500 animate-pulse" />
           <span className="text-[12px] font-medium tracking-wide text-ink-3">
@@ -154,7 +156,7 @@ export function TableView({
                 type="button"
                 aria-pressed={active}
                 onClick={() => choose(value)}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-all duration-200 ${
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] max-md:min-h-10 max-md:px-3.5 max-md:text-[13px] font-semibold transition-all duration-200 ${
                   active ? "bg-white text-brand-700 shadow-xs ring-1 ring-line" : "text-ink-3 hover:text-ink hover:bg-white/40"
                 }`}
               >
@@ -165,11 +167,17 @@ export function TableView({
           })}
         </div>
       </div>
+      {/* Phones: a purpose-built card design for this list (desktop card mode is untouched). */}
+      {mode === "cards" && mobileCards !== undefined && (
+        // No padding of its own: the page column already sets the gutter, so the
+        // cards sit exactly like the design (the enclosing card is `max-md:contents`).
+        <div className="space-y-3 md:hidden">{mobileCards}</div>
+      )}
       {mode === "cards" && cards !== undefined && (
         <AnimatePresence initial={false}>
           <motion.div
             key="cards"
-            className="bg-page p-4"
+            className={`bg-page p-4 ${mobileCards !== undefined ? "max-md:hidden" : ""}`}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
@@ -181,7 +189,7 @@ export function TableView({
       )}
       <div
         ref={ref}
-        className={mode === "cards" ? (cards !== undefined ? "hidden" : "as-cards") : undefined}
+        className={mode === "cards" ? (cards !== undefined ? "hidden" : `as-cards ${mobileCards !== undefined ? "max-md:hidden" : ""}`) : undefined}
       >
         {children}
       </div>

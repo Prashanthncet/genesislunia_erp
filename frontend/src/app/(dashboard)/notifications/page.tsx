@@ -11,6 +11,8 @@ import {
   Input, Modal, PageHeader, Select, SkeletonRows, StatCard, Tabs, Textarea, useToast,
 } from "@/components/ui";
 import { NoticeHistory } from "@/components/notices/NoticeHistory";
+import { confirmAction } from "@/components/confirm";
+import { MobileFilters } from "@/components/mobile/MobileFilters";
 
 /** A row of `notification_logs` — an outbound delivery attempt, not an inbox item. */
 type NotificationLog = {
@@ -151,6 +153,18 @@ export default function NotificationsPage() {
     if (draft.audience === "custom" && !draft.customRecipients.trim()) {
       return setMessage("Enter at least one recipient");
     }
+    const cls = classes.find((c) => c.id === draft.classId);
+    const customCount = draft.customRecipients.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean).length;
+    const who = draft.audience === "all_students" ? "all students"
+      : draft.audience === "all_staff" ? "all staff"
+      : draft.audience === "class" ? `class ${cls ? `${cls.name}${cls.section ? ` ${cls.section}` : ""}` : "selected"}`
+      : `${customCount} custom recipient${customCount === 1 ? "" : "s"}`;
+    if (!(await confirmAction({
+      title: `Send this ${draft.channel === "sms" ? "SMS" : draft.channel === "whatsapp" ? "WhatsApp message" : "email"} to ${who}?`,
+      text: "The broadcast goes out to every recipient straight away and cannot be recalled.",
+      confirmText: "Send broadcast",
+      tone: "primary",
+    }))) return;
 
     setSending(true);
     try {
@@ -305,7 +319,7 @@ export default function NotificationsPage() {
 
       {view === "notices" && canNotice ? <NoticeHistory /> : (<>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 max-md:grid-cols-2 max-md:gap-3">
         <StatCard label="Total logged" value={logs.length} icon="list" tone="brand" delay={0} />
         <StatCard label="Delivered" value={counts.sent} icon="check" tone="emerald" delay={40} hint="Confirmed by the gateway" />
         <StatCard label="Failed" value={counts.failed} icon="alert" tone="rose" delay={80} hint="Gateway rejected the send" />
@@ -326,7 +340,7 @@ export default function NotificationsPage() {
           icon="filter"
           actions={
             <>
-              <div className="relative">
+              <div className="relative max-md:w-full">
                 <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
                 <Input
                   value={search}
@@ -336,31 +350,33 @@ export default function NotificationsPage() {
                   className="w-full pl-9 sm:w-72"
                 />
               </div>
+              <MobileFilters active={[refType, refId, recipientQ, channel, status].filter((v) => v.trim()).length}>
               {!portal && (
                 <>
-                  <Select value={refType} onChange={(e) => { setRefType(e.target.value); if (!e.target.value) setRefId(""); }} className="w-auto" aria-label="Filter by source">
+                  <Select value={refType} onChange={(e) => { setRefType(e.target.value); if (!e.target.value) setRefId(""); }} className="w-auto max-md:min-w-[9rem] max-md:flex-1" aria-label="Filter by source">
                     <option value="">All sources</option>
                     {Object.entries(REF_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </Select>
-                  <Input value={refId} onChange={(e) => setRefId(e.target.value)} placeholder="Record / applicant id" aria-label="Record id" className="w-auto sm:w-48" />
-                  <Input value={recipientQ} onChange={(e) => setRecipientQ(e.target.value)} placeholder="Recipient email / phone" aria-label="Recipient search" className="w-auto sm:w-52" />
+                  <Input value={refId} onChange={(e) => setRefId(e.target.value)} placeholder="Record / applicant id" aria-label="Record id" className="w-auto max-md:min-w-[9rem] max-md:flex-1 sm:w-48" />
+                  <Input value={recipientQ} onChange={(e) => setRecipientQ(e.target.value)} placeholder="Recipient email / phone" aria-label="Recipient search" className="w-auto max-md:min-w-[9rem] max-md:flex-1 sm:w-52" />
                   {(refType || refId || recipientQ) && (
                     <Button size="sm" variant="ghost" onClick={() => { setRefType(""); setRefId(""); setRecipientQ(""); }}>Clear</Button>
                   )}
                 </>
               )}
-              <Select value={channel} onChange={(e) => setChannel(e.target.value)} className="w-auto" aria-label="Filter by channel">
+              <Select value={channel} onChange={(e) => setChannel(e.target.value)} className="w-auto max-md:min-w-[9rem] max-md:flex-1" aria-label="Filter by channel">
                 <option value="">All channels</option>
                 <option value="email">Email</option>
                 <option value="sms">SMS</option>
                 <option value="whatsapp">WhatsApp</option>
               </Select>
-              <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-auto" aria-label="Filter by status">
+              <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-auto max-md:min-w-[9rem] max-md:flex-1" aria-label="Filter by status">
                 <option value="">All statuses</option>
                 <option value="sent">Delivered</option>
                 <option value="failed">Failed</option>
                 <option value="mocked">Not sent</option>
               </Select>
+              </MobileFilters>
               <IconButton name="refresh" label="Reload log" onClick={loadAll} variant="soft" />
             </>
           }

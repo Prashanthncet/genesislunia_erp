@@ -89,15 +89,15 @@ export function MonthlyRegister({
     <div className="space-y-4">
       <div className="card flex flex-wrap items-end gap-3 p-4">
         <ClassSectionSelect classes={classes} value={sel} onChange={setSel} />
-        <label className="flex flex-col gap-1">
+        <label className="flex flex-col gap-1 max-md:w-full">
           <span className="text-[11.5px] font-semibold text-ink-3">Month</span>
-          <span className="flex items-center gap-1.5">
+          <span className="flex items-center gap-1.5 max-md:w-full">
             <IconButton name="chevronLeft" label="Previous month" onClick={() => setMonth((v) => shiftMonth(v, -1))} />
-            <Input type="month" aria-label="Register month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} className="w-auto" />
+            <Input type="month" aria-label="Register month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} className="w-auto max-md:min-w-0 max-md:flex-1" />
             <IconButton name="chevronRight" label="Next month" onClick={() => setMonth((v) => shiftMonth(v, 1))} disabled={month >= thisMonthLocal()} />
           </span>
         </label>
-        <p className="ml-auto text-[12.5px] text-ink-3">
+        <p className="ml-auto text-[12.5px] text-ink-3 max-md:ml-0">
           {reg ? `${students.length} students · ${reg.dates.length} days marked · ${monthLabel}` : loading ? "Loading…" : ""}
         </p>
       </div>
@@ -129,7 +129,7 @@ export function MonthlyRegister({
               <table className="w-max min-w-full border-separate border-spacing-0 text-[12.5px]" aria-label={`Attendance register ${monthLabel}`}>
                 <thead>
                   <tr>
-                    <th scope="col" className="sticky left-0 top-0 z-30 min-w-[13rem] border-b border-r border-line bg-surface-2 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">
+                    <th scope="col" className="sticky left-0 top-0 z-30 min-w-[13rem] max-md:min-w-[9.5rem] border-b border-r border-line bg-surface-2 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">
                       Student
                     </th>
                     {allDays.map((d) => {
@@ -144,7 +144,7 @@ export function MonthlyRegister({
                     {(["P", "A", "L", "OD", "Lv"] as const).map((h, i) => (
                       <th key={h} scope="col" className={`sticky top-0 z-20 w-10 border-b border-line bg-surface-2 px-1.5 py-2 text-right text-[11px] font-semibold uppercase text-ink-3 ${i === 0 ? "border-l" : ""}`}>{h}</th>
                     ))}
-                    <th scope="col" className="sticky right-0 top-0 z-30 min-w-[7.5rem] border-b border-l border-line bg-surface-2 px-3 py-2 text-right text-[11px] font-semibold uppercase text-ink-3">
+                    <th scope="col" className="sticky right-0 top-0 z-30 min-w-[7.5rem] max-md:static border-b border-l border-line bg-surface-2 px-3 py-2 text-right text-[11px] font-semibold uppercase text-ink-3">
                       Attendance
                     </th>
                   </tr>
@@ -152,9 +152,9 @@ export function MonthlyRegister({
                 <tbody>
                   {students.map((s) => (
                     <tr key={s.id} className="group">
-                      <th scope="row" className="sticky left-0 z-10 border-b border-r border-line bg-surface px-3 py-1.5 text-left font-medium group-hover:bg-brand-50">
-                        <span className="tnum mr-2 inline-block w-6 text-right text-ink-3">{s.rollNo ?? "—"}</span>
-                        <button type="button" onClick={() => onOpenStudent({ id: s.id, name: s.fullName })} className="max-w-[10rem] truncate align-middle text-ink hover:text-brand-700 hover:underline" title="Open attendance calendar">
+                      <th scope="row" className="sticky left-0 z-10 border-b border-r border-line bg-surface px-3 py-1.5 max-md:px-2.5 text-left font-medium group-hover:bg-brand-50">
+                        <span className="tnum mr-2 inline-block w-6 text-right text-ink-3 max-md:mr-0 max-md:block max-md:w-auto max-md:min-w-6 max-md:text-left max-md:text-[11px] max-md:leading-tight">{s.rollNo ?? "—"}</span>
+                        <button type="button" onClick={() => onOpenStudent({ id: s.id, name: s.fullName })} className="max-w-[10rem] truncate align-middle max-md:block max-md:max-w-[7.5rem] max-md:min-h-10 max-md:leading-10 text-ink hover:text-brand-700 hover:underline" title="Open attendance calendar">
                           {s.fullName}
                         </button>
                       </th>
@@ -180,7 +180,7 @@ export function MonthlyRegister({
                       {([[s.present, "text-ok-ink"], [s.absent, "text-danger-ink"], [s.late, "text-warn-ink"], [s.od, "text-info-ink"], [s.leave, "text-ink-2"]] as const).map(([v, c], i) => (
                         <td key={i} className={`tnum border-b border-line bg-surface px-1.5 text-right font-semibold ${v ? c : "text-ink-3/60"} ${i === 0 ? "border-l" : ""}`}>{v}</td>
                       ))}
-                      <td className="sticky right-0 z-10 border-b border-l border-line bg-surface px-3 py-1.5 group-hover:bg-brand-50">
+                      <td className="sticky right-0 z-10 border-b border-l border-line bg-surface px-3 py-1.5 group-hover:bg-brand-50 max-md:static">
                         <div className="flex items-center justify-end gap-2">
                           <span className="h-1.5 w-12 overflow-hidden rounded-full bg-line" aria-hidden>
                             <span className={`block h-full rounded-full ${BAR[pctTone(s.percentage)]}`} style={{ width: `${s.percentage ?? 0}%` }} />

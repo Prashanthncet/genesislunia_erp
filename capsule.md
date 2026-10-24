@@ -1,113 +1,143 @@
-# Capsule — Genesis ERP handoff (2026-10-24)
+# Capsule — Genesis ERP mobile-UI handoff (2026-10-24, round 4)
 
-Hand this file to the next AI. It is self-contained: what the project is, where it stands, what is
-half-done, how to verify, and the rules the owner (Jayanth) insists on. Deeper history: `PROJECT_MEMORY.md`
-(§9–§11), `MODULE_ASSESSMENT.md`, `docs/OPERATIONS.md`.
+Hand this file to the next AI. It is self-contained. Full history: `PROJECT_MEMORY.md` §12 (round 4 log, every
+change listed), §11 (round 3). Earlier capsule content (stack, roles, logins) is summarised in §1–§4 below.
 
-## 1. The project in one paragraph
-School ERP (Sainik School demo + a second school "greenfield02" for isolation tests). Delivered against
-`School_ERP_Full_Delivery_Plan (3).pdf` (Phases 0–11). Stack: **Next.js 15 + Tailwind v4** (`frontend/`, port
-5173, `/api/*` rewritten to the backend — `BACKEND_URL` is baked in at BUILD time) and **NestJS 11 + Prisma 6**
-(`backend/`, port 3001, prefix `/api`). Database: **SQLite by default, PostgreSQL supported** (generated schema
-`prisma/postgres/schema.prisma`, own migrations). Windows machine, Git Bash; memory is tight (~1.5 GB free).
+## 1. Project
+School ERP (Sainik School demo). **Next.js 15 + Tailwind v4** (`frontend/`, CSS-first tokens in
+`frontend/src/app/globals.css @theme`) + **NestJS 11 + Prisma 6** (`backend/`, `/api`). SQLite by default.
+Windows, Git Bash + PowerShell. Owner: **Jayanth**.
 
 ## 2. Owner's rules (non-negotiable)
-1. **Never add a watermark/attribution** anywhere: no "Generated with…", no "Co-Authored-By" in commits, files, docs.
-2. **Always check upstream before building** (`git fetch`); if someone else changed/removed something we touched, say so up front.
-3. **Log every change in `PROJECT_MEMORY.md`**, even tiny ones.
-4. Verify by running things, report failures honestly, never weaken tests to go green, never say "done" unverified.
-5. Don't commit/push unless asked. Be candid and human.
+1. **No watermark/attribution anywhere** — no "Generated with…", no "Co-Authored-By" in commits/PRs/files/docs.
+2. `git fetch` before building; report others' upstream changes up front.
+3. **Log every change in `PROJECT_MEMORY.md`** (§12), even tiny ones.
+4. Verify by running things; report failures honestly; never say "done" unverified.
+5. **Don't commit/push unless asked.** Be candid and human.
+6. Round 4 specific: **MOBILE ONLY — desktop (≥768px for page UI, ≥1024px for the shell) must look exactly as
+   before; don't change functionality** (handlers, API calls, validation, data). Exceptions the owner explicitly
+   asked for (apply on all sizes): SweetAlert confirmations before every update/delete, toasts, the download tray
+   and the new PDF design.
+7. Latest instruction: **"just design the UI, I will test, you don't do any testing."** Build + restart the server
+   for him; don't run Playwright audits unless he asks. He tests on his Android phone (360px CSS width).
 
 ## 3. Repo / branch state
-- `origin/main` = merge of PR #2 (phase 0–11 completion). Someone removed `.github/workflows/ci.yml` (commit
-  b02823a) because the gh token lacks the `workflow` scope → **CI does not run on GitHub**. Restore it only after
-  `gh auth refresh -h github.com -s workflow`.
-- **Current work branch: `jayanth/feedback-round-1`** (from main). ALL round-3 work below is **uncommitted** on it.
-- `backend/prisma/dev.db` (local demo DB) is still on the OLD seed (4 logins, principal@ = branch_admin).
-  Reseed before demoing (back it up first): `cd backend && npx prisma migrate deploy && npx prisma db seed`.
+- Branch **`jayanth/mobile-responsive`** (from main @ 95343ac = PR #3 merge). `origin/main` unchanged as of last fetch.
+- **Everything below is UNCOMMITTED** (~80 frontend files + 2 backend files). Nothing pushed.
+- Untracked junk to delete before commit: `backend/prisma/mobile-baseline.db-shm`, `-wal` (test DB copy files).
+  `backend/prisma/mobile-baseline.db` = frozen copy of dev.db used by the test backend (git-ignored *.db).
+- Secrets: Razorpay TEST keys live only in git-ignored `backend/.env` / `frontend/.env.local`. Never print/commit.
 
-## 4. Roles & demo logins (from `backend/prisma/seed.ts` → `DEMO_LOGINS`)
-16 roles in `backend/src/auth/roles.ts` (groups `R.*`), mirrored in `frontend/src/lib/auth.tsx`.
-| login | password | role |
-|---|---|---|
-| admin@sainik01.edu | Admin@123 | super_admin |
-| schooladmin@sainik01.edu | Demo@Admin1 | branch_admin |
-| principal@ / vp@ / os@ / ao@ / accounts@ / hr@ / hod@ / teacher@ / warden@ / security@ / discipline@ (all @sainik01.edu) | Demo@Principal1 / Demo@Vp1 / Demo@Os1 / Demo@Ao1 / Demo@Accounts1 / Demo@Hr1 / Demo@Hod1 / Demo@Teacher1 / Demo@Warden1 / Demo@Security1 / Demo@Discipline1 | matching role |
-| parent@sainik01.edu | Demo@Parent1 | parent of stu_001 + stu_004 |
-| student@sainik01.edu | Demo@Student1 | student stu_001 |
-| admin@greenfield02.edu | Demo@Green1 | branch_admin, second school |
+## 4. Running servers (for Jayanth's phone testing)
+- Frontend: `cd frontend && npx next build && npx next start --port 5174` → phone URL **http://192.168.31.75:5174**
+  (laptop Wi-Fi IP; Windows firewall already allows node on Public profile).
+- Backend (test, frozen DB, Razorpay blanked so Pay uses the mock gateway):
+  ```
+  cd backend && DATABASE_URL="file:./mobile-baseline.db" PORT=3001 NODE_ENV=development LOGIN_RATE_LIMIT=1000 \
+  GLOBAL_RATE_LIMIT=1000000 RAZORPAY_KEY_ID= RAZORPAY_KEY_SECRET= RAZORPAY_SECRET= node dist/src/main
+  ```
+  (rebuild backend with `npx nest build` after backend edits). To restart: kill the process listening on the port
+  (PowerShell `Get-NetTCPConnection -LocalPort 5174 -State Listen` → `Stop-Process`), then start again.
+- A baseline server of untouched HEAD may still be running on :5175 (worktree in the session scratchpad) — only used
+  for the desktop pixel-diff; safe to kill.
+- Demo logins: `schooladmin@sainik01.edu / Demo@Admin1`, `teacher@… / Demo@Teacher1`, `warden@… / Demo@Warden1`,
+  `security@… / Demo@Security1`, `parent@… / Demo@Parent1`, `student@… / Demo@Student1` (login page has tap-to-fill chips).
 
-## 5. Round 3 — client feedback (what was asked → status)
-School decisions (2026-10-24): Teacher and Warden stay **separate logins**; **Warden = hostel + gate desk + pass
-records + student list**; **Security = gate desk + visitors only** (both keep self-service: own leave, own payslips,
-report an incident); **OD = On Duty, counts as present, mandatory reason, no absence SMS**; "Jayantha attendance":
-nobody by that name in our data → attendance maths audited.
+## 5. How mobile-only changes are made (the rules that keep desktop identical)
+- Only ADD Tailwind `max-md:` (<768px) / `max-lg:` (<1024px) classes, `md:hidden` / `lg:hidden` mobile-only elements,
+  `contents` wrappers (no box on desktop), or CSS inside `@media (max-width: 767.98px)` / `(1023.98px)` in globals.css.
+- **Gotcha 1:** Tailwind v4 emits `max-*` rules BEFORE `sm:`/`md:` → when an element also has `sm:x`, use `max-md:!x`.
+- **Gotcha 2:** unlayered component classes in globals.css (`.btn-*`, `.field`, `.card`, `.badge` (display:inline-flex),
+  `.label`, `.card-head`) beat Tailwind utilities. `btn-soft md:hidden` does NOT hide → use `md:!hidden`; or wrap in
+  `<span className="contents max-md:hidden">`.
+- **Gotcha 3:** a `position:fixed` overlay inside an ancestor with `transform`/`filter`/`backdrop-filter` gets trapped
+  in that ancestor → render overlays through `Portal` (components/ui.tsx).
+- **Gotcha 4:** with mobile emulation the layout viewport silently widens to fit too-wide content; audit against the
+  device width (360), not `innerWidth`.
 
-| Feedback item | Status |
-|---|---|
-| Warden: Gate Desk → pass issue, all pass records | ✅ new `/gate` page: Issue pass (`POST /gate-passes {issue:true}` = created + warden-approved), Approvals, Verify & exit/return, Pass records (filters + CSV), Visitors |
-| Warden/Security scope; remove Student/Class/Academic/Hostel for Security | ✅ `R.ACADEMIC_STAFF` (staff minus warden/security) on classes/timetable/academics/exams; nav + route guard + backend roles |
-| Students card/table UI | ✅ own card design + table cleanup (warden read-only) |
-| Attendance: section filter, absent filter, monthly UI, mark UI, analytics filter, Present/Absent UI | ✅ `components/attendance/*` |
-| OD-based attendance | ✅ status `OD`, reason in `AttendanceRecord.note`, counts present, no SMS |
-| "Jayantha attendance" | ✅ root cause found: the same student showed up to 4 different % across screens; ONE rule now (`attendance-math.ts`), 13 endpoints agree (tested) |
-| Timetable: lunch break, download, day view | ✅ lunch row in bell schedule (period 7, 13:00–14:00), class/teacher week PDFs, Day View |
-| Logout SweetAlert | ✅ `confirmLogout()` (sweetalert2) in user menu, mobile drawer, Settings |
-| Hostel roll call table UI | ✅ rebuilt; "Last marked" shows time + marker name |
-| Staff & Payroll table UI | ✅ |
-| Student notifications | ✅ `backend/src/notices` (Notice/NoticeRead), staff compose (/notifications tab; "Notify class" for teachers in Academics), portal "Notices & messages" + unread badge |
-| Report Analysis alignment | ✅ |
-| Fees card → Download PDF | ✅ root cause: card view had NO receipt download; added invoice + receipt buttons; apiDownload keeps blob 60 s (1 s broke iOS/Firefox) |
-| Academics lesson plan PDF upload | ✅ attach/replace/remove/download + plan PDF export |
-| Student attendance / fees table UI | ✅ portal attendance + `/portal/fees` rebuilt |
-| Teacher profile UI, change password flow | ✅ `/account`, `/account/password` |
+## 6. What exists now (round 4, all uncommitted)
+Shell & shared (owned by "lead"; agents must not edit):
+- `components/DashboardShell.tsx`: 56px mobile app bar (back arrow on detail pages, icon search), bottom nav, drawer
+  (now with profile summary → /account, logout separated), safe areas, main bottom padding `max-lg:!pb-…`.
+- `components/mobile/MobileBottomNav.tsx` (4 role-priority destinations + More).
+- `components/mobile/MobileFilters.tsx`: phones = "Filters (n)" button → bottom sheet (portalled; proxy `<form>`
+  forwards submit/Apply to the page's form via `requestSubmit`); desktop = `contents` wrapper, identical inline.
+- `components/mobile/useMobileBack.ts`: phone Back button closes full-screen add/edit/view screens (pushState copy of
+  Next's history.state).
+- `components/ui.tsx` `Modal`: on phones = FULL-SCREEN PAGE (100dvh, app bar with back arrow, scrolling body, pinned
+  footer, slide-in `.m-page`); desktop unchanged (X kept via `contents max-md:hidden`). Students Add/Edit form and
+  discipline `IncidentDrawer` converted the same way. (Owner asked: "every add/edit/view = separate page on mobile,
+  no big popups" — implemented as full-screen pages, not new routes, to avoid functional change.)
+- `components/confirm.ts`: `confirmAction({title,text,confirmText,tone})`, `confirmWithReason(...)` — branded SweetAlert.
+  68 call sites across all modules; all `window.confirm/prompt` removed. First-time creates intentionally not confirmed.
+- `components/TableView.tsx`: phones default to Cards; `mobileHide` hint hides columns on PHONE cards only.
+- `components/RecordCard.tsx`: phone header (badge top-right, name wraps 2 lines), footer `.record-card-footer`
+  (CSS grid: captions full row, button groups 2-col, odd last spans).
+- `app/globals.css` MOBILE LAYER (end of file): generic table→card design on phones (title+status, label-left/
+  value-right rows with hairlines, full-width controls, action footer), table mode scrolls inside its box, compact
+  fields **14px/42px** (iOS-only 16px via `@supports (-webkit-touch-callout:none)`), toasts, `.m-page` animation,
+  download-tray styles.
+- `lib/api.ts apiDownload` emits `erp:download` events (start/progress/done/error, streamed bytes) +
+  NEW `components/DownloadTray.tsx` (mounted in `app/layout.tsx`): polished download card on all sizes.
+- Backend: `backend/src/common/pdf.ts buildPdf` redesigned (navy band + logo `common/pdf-logo.ts` base64, accent
+  title/headings, field cards, navy table headers repeated per page, zebra, right-aligned numbers, page X of Y).
+  Same PdfSpec API; every PDF uses it. Backend rebuilt (dist) and restarted.
+Per-module mobile work (7–8 agents × 3 rounds): filters → MobileFilters, card hierarchy (mobileHide), 44px targets,
+2-up KPIs, stacked headers, sticky save bars (attendance, roll call, marks), visitor-log phone card, gate-pass phone
+rows, CBT take screen, login, dashboards reordered with `max-md:order-*`, profile page sections, etc. Details per
+file in PROJECT_MEMORY.md §12.
 
-Tests at last full run (before the Razorpay work): **e2e 406/406 (16 suites), unit 51/51, both apps tsc 0** —
-must be re-run after the items in §6.
+## 7. DONE (round 4g) — mockup cards
+Owner sent 5 mockups (student card, gate "Pass records" card, hostel roll-call card, staff payslip card, staff
+directory card) and said "do these kind of design for particular cards". All are built:
+- `TableView` `mobileCards` prop + `components/mobile/MobileCard.tsx` kit (MCard/MAvatar/MChip/MLabel/MPanel/
+  MCopyRow/MStat). Users: students, gate PassRecordsPanel, staff PayrollPanel, staff DirectoryPanel, hostel
+  RollCallPanel. Desktop card/table views are untouched.
+- Phone app bar (from the same mockups): 66px, 40px icon tile, 19px `<h1>` + tagline (`routeTagline()` in
+  RouteMeta → TAGLINES map); `PageHeader` text block is `max-md:hidden` on phones (actions stay).
+Original plan (kept for reference):
+1. **TableView `mobileCards` prop (lead, not yet written):** in card mode, `<div className="md:hidden">{mobileCards}</div>`
+   and keep the generic/`cards` rendering for desktop (`max-md:hidden`), so desktop card mode is unchanged. Was reading
+   `components/TableView.tsx` lines ~101–200 to add it.
+2. Build 4 phone-only card designs (pass via `mobileCards`, or `md:hidden` blocks), data from existing state only:
+   - **Students** (`app/(dashboard)/students/page.tsx`): 64px gradient avatar circle with status dot; name 18px bold;
+     "S2026-1003 · Male"; Active pill; chip row: Class (blue, layers icon) · Roll (# icon, grey) · House (tinted, home
+     icon); contact panel (rounded, bordered): phone row + email row, each with icon tile, value, copy button; actions:
+     Profile (primary filled blue), Edit (outline), Mark left (outline), Delete (danger tint) — at 328px use a 2×2 grid
+     (4-across doesn't fit). Subtle tinted swoosh in the top-right corner. (Kebab "⋮" in mockup: optional/skip.)
+   - **Gate pass records** (`components/gate/PassRecordsPanel.tsx`, TableView): rounded-square initials tile, name,
+     "ID · Class", status pill top-right; chips: type (person icon), "House · Room" (home icon, tinted); reason line;
+     times panel 2×2: OUT (PLANNED) with calendar icon, EXPECTED IN, ACTUAL OUT, ACTUAL IN with clock icons, "—" when empty,
+     uppercase small labels, dividers.
+   - **Hostel roll call** (`components/hostel/RollCallPanel.tsx`): per-boarder card: header band "S-101" + bed chip "B1"
+     (bed icon); "Student" label; avatar + name + "ID · Class"; divider; "Status" label; 3 segmented buttons Present
+     (green filled + check icon when selected), Absent (outline, minus icon), On Leave (amber tint, clock icon) — same
+     radio handlers; "Last marked / Not marked" info box (green tint, clock icon). Sticky bottom bar (`m-above-nav`):
+     hostel icon + name + "date • session", count tiles Present/Absent/On leave (green/red/amber tints), "Not saved yet"
+     dot, full-width Save roll call.
+   - **Staff payslips** (`components/staff/PayrollPanel.tsx`): avatar circle, name, "Role · Dept", status pill; NET PAY big
+     blue number + GROSS right in a tinted panel; deductions panel 3 cols TDS / PT / EPF; "Payslip period" row with
+     calendar icon tile; actions Mark paid (primary navy) + PDF (outline) — same handlers, keep confirms.
+   Check each file's available fields first; never invent data ("—" when missing).
+3. Rebuild + restart frontend for Jayanth (see §4). Log in PROJECT_MEMORY.md §12. — DONE round 4g: tsc clean,
+   build clean, :5174 restarted (backend already on :3001). Still not browser-tested at his request.
 
-## 6. Unfinished — do these next, in order
-1. **Fix the TypeScript error** in `frontend/src/app/(dashboard)/portal/fees/page.tsx` (~line 60):
-   `prefill: { name: child.fullName }` → `prefill: { name: child.full_name }`. Then `cd frontend && npx tsc --noEmit`
-   and check `frontend/src/app/admission-form/page.tsx` has no leftover `loadRazorpay`/`window.Razorpay` references.
-2. **Razorpay test mode** (the owner's latest request: "on click of Pay it should call Razorpay"):
-   - Keys are ALREADY in git-ignored files: `backend/.env` (`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`) and
-     `frontend/.env.local` (`NEXT_PUBLIC_RAZORPAY_KEY_ID`). Never print, commit or copy the secret anywhere.
-   - Backend: `payments.service.ts` creates real orders via `https://api.razorpay.com/v1/orders` when keys are set;
-     `razorpayKeySecret()` also accepts `RAZORPAY_SECRET`. Verify endpoint: `POST /api/payments/razorpay/verify`
-     (HMAC of `order_id|payment_id` with the key secret). Webhook (`/payments/webhook/razorpay`) needs
-     `RAZORPAY_WEBHOOK_SECRET` — not provided, so client-side verify is the confirmation path.
-   - Frontend: `frontend/src/lib/razorpay.ts` → `payWithRazorpay(order, {name, description, prefill})` opens
-     Checkout and verifies; used by `/portal/fees` (parent Pay) and `/admission-form` (admission fee).
-   - `backend/test/e2e-env.ts` blanks RAZORPAY_* so tests use the mock gateway — keep it that way.
-   - TO DO: start backend (it loads `.env`), log in as parent, Pay an invoice in the browser → Checkout should open
-     in test mode (card 4111 1111 1111 1111, any future expiry/CVV, or UPI `success@razorpay`) → after success the
-     invoice shows Paid with an Online receipt. Also the admission form payment step.
-3. **Server-side forced password change** (currently frontend-only): in `backend/src/auth/auth.guard.ts`, when the
-   user has `mustChangePassword`, allow only `GET /auth/me` and `POST /auth/change-password` (403 otherwise). Update
-   tests that log in freshly generated parents (`test/school-year.e2e-spec.ts`, `test/admissions.e2e-spec.ts`) to
-   change the password first.
-4. **Full verification**: `cd backend && npx jest` (unit) and `npx jest --config test/jest-e2e.json --runInBand`
-   (e2e; each test file gets its own fresh DB). Postgres: portable server in the session scratchpad
-   (`infra/pg/start-pg.js`, port 55432, user erp) then
-   `E2E_PG_ADMIN_URL=postgresql://erp:erp_local_only@localhost:55432/postgres node scripts/test-postgres.js`
-   (run in two halves by passing test file names if memory is tight). Then `node scripts/make-postgres-schema.js --check`.
-5. Reseed `dev.db` (backup first), `npx next build` with `NODE_OPTIONS=--max-old-space-size=1536`, browser pass of
-   every round-3 item per role (Playwright `browser_run_code_unsafe` sweep pattern is in PROJECT_MEMORY §10).
-6. Update `MODULE_ASSESSMENT.md` / `docs/OPERATIONS.md` (Razorpay env names + alias, notices, attendance rule),
-   log in `PROJECT_MEMORY.md`, then — only if the owner asks — commit (no watermark) and push
-   `jayanth/feedback-round-1`.
+## 8. Before any commit (owner hasn't asked yet)
+- `cd frontend && npx tsc --noEmit -p .` and `npx next build` (last state: both clean).
+- Desktop must be unchanged: pixel-diff script `.playwright-mcp/desktop-diff.js` (needs HEAD baseline on :5175 —
+  `git worktree add --detach <dir> HEAD`, junction node_modules, build, `next start --port 5175`). Last run on an
+  earlier round: all diffs anti-aliasing/timing except the known pre-existing admin-home@1024 flip on main. NOT re-run
+  since rounds 3–4f (MobileFilters `md:!hidden` fix, full-screen modals, cards, tray, field sizes).
+- Mobile audit `.playwright-mcp/mobile-audit-v3.js` (360px, tabs + table/cards), click-through
+  `.playwright-mcp/clickthrough2.js` (last: 156 taps, 0 writes without confirm).
+- Delete `backend/prisma/mobile-baseline.db-shm/-wal`. Commit message: no attribution lines.
 
-## 7. Gotchas that cost time before
-- `prisma migrate diff --shadow-database-url file:./x.db` leaves `backend/shadow*.db`; delete them or the next diff fails.
-- Every schema change needs BOTH migrations: SQLite (`prisma/migrations`) and Postgres (diff the previous
-  `prisma/postgres/schema.prisma` → new, into `prisma/postgres/migrations`), then `node scripts/make-postgres-schema.js`.
-- SQLite runs with WAL + one connection + queued transactions (`prisma.service.ts`); never call `this.prisma.*`
-  inside an interactive transaction callback (use `tx`) or it waits forever.
-- Tenant layer: `common/request-context.ts` + `prisma/tenant-extension.ts` scope every top-level query to the
-  caller's school; still call `assertInBranch` for body ids.
-- Stopping a background shell on Windows does NOT kill its `next start` / `node dist/src/main` child — kill by port.
-- `table.data-table thead th { text-align:left }` is unlayered CSS; use `th-end` for right-aligned headers.
-- Frontend component classes (`.btn`, `.field`, `.card`) are unlayered and beat Tailwind utilities.
-- Running `next build` while `next dev` is up corrupts `.next`. Low memory: background servers get killed when idle.
-- `backend/.gitignore` storage rule must stay `/storage/` (a bare `storage/` once hid `src/storage/` from git).
-- PostgreSQL databases must be UTF-8.
+## 9. Known pre-existing bugs (reported, NOT fixed — ask owner before touching)
+MarkAttendance/RollCall load race (fast date switch saves wrong date's data); razorpay.ts script-load retry hangs;
+toast colour chosen by regex on message text (timetable/fees/notifications); RoomsPanel `run()` swallows errors
+(follow-ups run on failure, double toast); IncidentDrawer archive closes on failure; PayrollPanel double toast;
+timetable "Today" uses UTC date; desktop CBT top bar hides under header; `.field.w-auto` can't shrink on desktop;
+notifications search icon overlaps placeholder on desktop; MonthlyRegister `w-6` roll box overlaps name on desktop;
+command palette ranks description matches above titles; login world-clock times hard-coded; login eye icon same
+in both states; notifications card view lacks "History" action; admissions queue last column titled "Open" (cards
+show it as a field); several lists show empty state while loading; some raw ISO dates (exams, profile, timetable).

@@ -3,9 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { R, ROLE_LABEL, hasRole, useMe } from "@/lib/auth";
-import { Badge, Button, Card, CardHead, EmptyState, Field, Input, MailLink, Modal, PhoneLink, Select, SkeletonRows, useToast } from "@/components/ui";
+import { Badge, Button, Card, CardHead, EmptyState, Field, Icon, Input, MailLink, Modal, PhoneLink, Select, SkeletonRows, useToast } from "@/components/ui";
 import { CardBody, CardEmpty, CardFooter, CardGrid, CardTitle, Chip, Monogram, RecordCard, StatusPill, initials, toneFor } from "@/components/RecordCard";
 import { TableView } from "@/components/TableView";
+import { confirmAction } from "@/components/confirm";
+import { MobileFilters } from "@/components/mobile/MobileFilters";
+import { MAvatar, MCard, MChip, MCopyRow, MPanel } from "@/components/mobile/MobileCard";
 import { errMsg, inr, slipTone, type Payslip, type StaffRow } from "./types";
 
 type Profile = StaffRow & {
@@ -59,12 +62,13 @@ export function DirectoryPanel() {
   };
 
   const save = async () => {
+    if (form.id && !(await confirmAction({ title: `Save changes to ${form.name || "this staff member"}?`, text: "Their staff profile will be updated.", confirmText: "Save changes", tone: "primary" }))) return;
     setBusy(true);
     try {
       const body = { name: form.name, email: form.email, role: form.role, department: form.department, phone: form.phone, subjects: form.subjects, max_periods_per_day: Number(form.max_periods_per_day) };
       if (form.id) await apiFetch(`/api/staff/${form.id}`, { method: "PUT", body: JSON.stringify(body) });
       else await apiFetch("/api/staff", { method: "POST", body: JSON.stringify({ ...body, phone: form.phone || undefined, department: form.department || undefined }) });
-      toast.push(form.id ? "Profile updated" : "Staff member added", "success");
+      toast.push(form.id ? `Profile updated for ${form.name}` : `${form.name} added to staff`, "success");
       setFormOpen(false);
       setProfile(null);
       await load();
@@ -76,10 +80,10 @@ export function DirectoryPanel() {
   };
 
   const deactivate = async (s: StaffRow) => {
-    if (!confirm(`Deactivate ${s.name}? Staff with history are kept but marked inactive.`)) return;
+    if (!(await confirmAction({ title: `Deactivate ${s.name}?`, text: "Staff with history are kept but marked inactive; others are removed.", confirmText: "Deactivate", tone: "danger" }))) return;
     try {
       const r = await apiFetch<{ deactivated: boolean }>(`/api/staff/${s.id}`, { method: "DELETE" });
-      toast.push(r.deactivated ? "Deactivated" : "Removed", "success");
+      toast.push(r.deactivated ? `${s.name} deactivated` : `${s.name} removed`, "success");
       setProfile(null);
       await load();
     } catch (e) { toast.push(errMsg(e), "error"); }
@@ -125,7 +129,7 @@ export function DirectoryPanel() {
               aside={<StatusPill status={s.isActive ? "Active" : "Inactive"} />}
             />
             <div className="space-y-1 text-[12.5px]">
-              <MailLink value={s.email} />
+              <MailLink value={s.email} className="max-md:break-all" />
               {s.phone && <div><PhoneLink value={s.phone} /></div>}
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -139,6 +143,55 @@ export function DirectoryPanel() {
     </CardGrid>
   );
 
+  /** Phones: staff card (avatar + status, contact panel, role/subject chips, Profile + Edit). */
+  const mobileCards = rows.length === 0 ? (
+    <CardEmpty title="No staff match" hint="Try a different search or clear the filters." icon="staff" />
+  ) : rows.map((s) => {
+    const tone = toneFor(s.department);
+    return (
+      <MCard key={s.id} tone={tone}>
+        <div className="flex items-start gap-3.5">
+          <MAvatar name={s.name} tone={tone} size={60} variant="soft" />
+          <div className="min-w-0 flex-1 pt-0.5">
+            <p className="text-[18px] font-bold leading-snug text-ink">{s.name}</p>
+            <p className="mt-0.5 text-[13px] text-ink-3">{s.role}{s.department ? ` · ${s.department}` : ""}</p>
+            <div className="mt-2"><StatusPill status={s.isActive ? "Active" : "Inactive"} /></div>
+          </div>
+        </div>
+        <div className="mt-3.5">
+          <MPanel>
+            <div className="divide-y divide-line">
+              <MCopyRow icon="mail" value={s.email} href={`mailto:${s.email}`} />
+              {s.phone && <MCopyRow icon="phone" value={s.phone} href={`tel:${s.phone}`} />}
+            </div>
+          </MPanel>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <MChip icon="building" tone="blue">{s.role}</MChip>
+          {s.subjects && <MChip icon="book">{s.subjects}</MChip>}
+          {s.user
+            ? <MChip icon="lock">{ROLE_LABEL[s.user.role] ?? s.user.role}</MChip>
+            : <MChip icon="lock" tone="warn">No login</MChip>}
+        </div>
+        <div className="mt-3.5 grid grid-cols-2 gap-2">
+          <Button variant="soft" onClick={() => openProfile(s.id)} className="!min-h-12">
+            <Icon name="eye" className="h-4 w-4" /> Profile
+          </Button>
+          {canAdmin && (
+            <Button variant="primary" onClick={() => edit(s)} className="!min-h-12">
+              <Icon name="edit" className="h-4 w-4" /> Edit
+            </Button>
+          )}
+          {canAdmin && !s.user && (
+            <Button variant="accent" onClick={() => setLogin({ staff: s, email: s.email, password: "", role: "teacher" })} className="col-span-2 !min-h-12">
+              <Icon name="key" className="h-4 w-4" /> Create login
+            </Button>
+          )}
+        </div>
+      </MCard>
+    );
+  });
+
   return (
     <Card className="p-4">
       <CardHead
@@ -149,6 +202,7 @@ export function DirectoryPanel() {
       />
       <div className="mb-3 flex flex-wrap items-end gap-2" role="search">
         <Input aria-label="Search staff" placeholder="Search name, email, phone" value={q} onChange={(e) => setQ(e.target.value)} className="field min-w-[12rem] flex-1" />
+        <MobileFilters active={[role, dept, loginRole].filter(Boolean).length + (active !== "true" ? 1 : 0)}>
         <Select aria-label="Designation" className="field w-full sm:w-auto" value={role} onChange={(e) => setRole(e.target.value)}>
           <option value="">All designations</option>
           {filters.roles.map((r) => <option key={r}>{r}</option>)}
@@ -166,9 +220,10 @@ export function DirectoryPanel() {
           <option value="false">Inactive</option>
           <option value="">All</option>
         </Select>
+        </MobileFilters>
         {filtered && <Button type="button" variant="ghost" onClick={clearFilters}>Clear</Button>}
       </div>
-      <TableView id="staff-directory" cards={loading ? undefined : directoryCards}>
+      <TableView id="staff-directory" cards={loading ? undefined : directoryCards} mobileCards={loading ? undefined : mobileCards}>
         <div className="table-wrap max-h-[70vh] rounded-xl border border-line">
           <table className="data-table min-w-[52rem]">
             <thead>
@@ -216,7 +271,7 @@ export function DirectoryPanel() {
         )}>
         {profile && (
           <div className="space-y-4 text-sm">
-            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 max-md:[&_dd]:[overflow-wrap:anywhere]">
               <div><dt className="text-xs text-ink-3">Email</dt><dd><MailLink value={profile.email} /></dd></div>
               <div><dt className="text-xs text-ink-3">Phone</dt><dd><PhoneLink value={profile.phone} /></dd></div>
               <div><dt className="text-xs text-ink-3">Subjects</dt><dd>{profile.subjects ?? "—"}</dd></div>
@@ -227,7 +282,7 @@ export function DirectoryPanel() {
             <div>
               <p className="mb-1 text-xs font-semibold uppercase text-ink-3">Recent leave</p>
               {profile.leaves.length ? (
-                <ul className="space-y-1">{profile.leaves.map((l) => <li key={l.id} className="flex justify-between rounded-lg bg-surface-2/70 px-3 py-1.5"><span>{l.leaveType} · {l.startDate} → {l.endDate}</span><Badge tone={l.status === "Approved" ? "emerald" : l.status === "Rejected" ? "rose" : "amber"}>{l.status}</Badge></li>)}</ul>
+                <ul className="space-y-1">{profile.leaves.map((l) => <li key={l.id} className="flex justify-between rounded-lg bg-surface-2/70 px-3 py-1.5 max-md:items-start max-md:gap-2"><span>{l.leaveType} · {l.startDate} → {l.endDate}</span><Badge tone={l.status === "Approved" ? "emerald" : l.status === "Rejected" ? "rose" : "amber"}>{l.status}</Badge></li>)}</ul>
               ) : <p className="text-ink-3">No leave on record.</p>}
             </div>
             {profile.payslips && (

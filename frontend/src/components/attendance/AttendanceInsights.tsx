@@ -15,6 +15,7 @@ import { DonutRing } from "@/components/charts/DonutRing";
 import { KpiCard } from "@/components/charts/KpiCard";
 import { SparkArea } from "@/components/charts/SparkArea";
 import { TableView } from "@/components/TableView";
+import { MobileFilters } from "@/components/mobile/MobileFilters";
 import { ClassSectionSelect, classQuery, type ClassOpt, type ClassSel } from "./ClassSectionSelect";
 import { AttendanceLegend, pctTone, type Tally } from "./status";
 
@@ -24,27 +25,32 @@ const blank = (): Filters => ({ cls: { className: "", section: "" }, from: "", t
 function FilterBar({ classes, value, onApply, busy }: { classes: ClassOpt[]; value: Filters; onApply: (f: Filters) => void; busy: boolean }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
+  const clear = () => { const f = blank(); setDraft(f); onApply(f); };
+  // Phones: applied filters that differ from the defaults (all classes, all dates, 75%).
+  const active = (value.cls.className ? 1 : 0) + (value.cls.section ? 1 : 0) + (value.from ? 1 : 0) + (value.to ? 1 : 0) + (value.threshold !== 75 ? 1 : 0);
   const bad = (!!draft.from && !!draft.to && draft.from > draft.to) || !(draft.threshold >= 0 && draft.threshold <= 100);
   return (
-    <form className="card flex flex-wrap items-end gap-3 p-4" onSubmit={(e) => { e.preventDefault(); if (!bad) onApply(draft); }}>
+    <form className="card flex flex-wrap items-end gap-3 p-4 max-md:!border-0 max-md:!bg-transparent max-md:!p-0 max-md:!shadow-none" onSubmit={(e) => { e.preventDefault(); if (!bad) onApply(draft); }}>
+      <MobileFilters active={active} onClear={clear}>
       <ClassSectionSelect classes={classes} value={draft.cls} onChange={(cls) => setDraft({ ...draft, cls })} allowAll />
-      <label className="flex flex-col gap-1">
+      <label className="flex flex-col gap-1 max-md:min-w-[8.5rem] max-md:flex-1">
         <span className="text-[11.5px] font-semibold text-ink-3">From</span>
-        <Input type="date" aria-label="From date" value={draft.from} onChange={(e) => setDraft({ ...draft, from: e.target.value })} className="w-auto" />
+        <Input type="date" aria-label="From date" value={draft.from} onChange={(e) => setDraft({ ...draft, from: e.target.value })} className="w-auto max-md:!w-full" />
       </label>
-      <label className="flex flex-col gap-1">
+      <label className="flex flex-col gap-1 max-md:min-w-[8.5rem] max-md:flex-1">
         <span className="text-[11.5px] font-semibold text-ink-3">To</span>
-        <Input type="date" aria-label="To date" value={draft.to} onChange={(e) => setDraft({ ...draft, to: e.target.value })} className="w-auto" />
+        <Input type="date" aria-label="To date" value={draft.to} onChange={(e) => setDraft({ ...draft, to: e.target.value })} className="w-auto max-md:!w-full" />
       </label>
       <label className="flex flex-col gap-1">
         <span className="text-[11.5px] font-semibold text-ink-3">Threshold %</span>
         <Input type="number" min={0} max={100} aria-label="Threshold percent" value={draft.threshold} onChange={(e) => setDraft({ ...draft, threshold: Number(e.target.value) })} className="w-24" />
       </label>
-      <div className="flex gap-2">
-        <Button type="submit" variant="primary" disabled={bad} loading={busy}><Icon name="filter" className="h-4 w-4" /> Filter</Button>
-        <Button type="button" variant="ghost" onClick={() => { const f = blank(); setDraft(f); onApply(f); }}>Clear</Button>
+      <div className="flex gap-2 max-md:w-full">
+        <Button type="submit" variant="primary" disabled={bad} loading={busy} className="max-md:flex-1"><Icon name="filter" className="h-4 w-4" /> Filter</Button>
+        <Button type="button" variant="ghost" className="max-md:flex-1" onClick={clear}>Clear</Button>
       </div>
       {bad && <p className="w-full text-[12px] text-danger">Check the dates (from on or before to) and a threshold between 0 and 100.</p>}
+      </MobileFilters>
     </form>
   );
 }
@@ -91,10 +97,10 @@ export function AnalyticsView({ classes, onMessage }: { classes: ClassOpt[]; onM
       <FilterBar classes={classes} value={filters} onApply={setFilters} busy={loading} />
       <p className="text-[12.5px] text-ink-3">Showing: {scope(filters)}</p>
       {!data ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-28" />)}</div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 max-md:grid-cols-2">{Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-28" />)}</div>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 max-md:grid-cols-2">
             <KpiCard label="Attendance" value={o?.percentage == null ? "—" : `${o.percentage}%`} hint={`${o?.attended ?? 0} of ${o?.counted ?? 0} counted student-days`} icon="attendance" tone="emerald"
               spark={pts.map((p) => p.percentage ?? NaN)} />
             <KpiCard label="Days marked" value={String(data.days_marked)} hint="Sundays excluded" icon="calendar" tone="brand" />
@@ -205,7 +211,7 @@ export function LowAttendanceView({
           <span className="font-semibold text-ink">{rows ? rows.length : "…"} students below {filters.threshold}%</span> · {scope(filters)}
         </div>
         <div className="table-wrap">
-          <TableView id="att-low">
+          <TableView id="att-low" mobileHide={["OD", "Leave"]}>
             <table className="data-table">
               <thead>
                 <tr>

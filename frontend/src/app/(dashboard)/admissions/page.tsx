@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { R, hasRole, useMe } from "@/lib/auth";
 import { Badge, Button, EmptyState, Icon, Input, PageHeader, Reveal, Select, SkeletonRows, StatCard, Tabs, useToast } from "@/components/ui";
+import { confirmAction } from "@/components/confirm";
 import { TableView } from "@/components/TableView";
 import { ApplicationPanel } from "@/components/admissions/ApplicationPanel";
 import { CreateForms } from "@/components/admissions/CreateForms";
@@ -87,6 +88,7 @@ export default function AdmissionsPage() {
   });
 
   const runReminders = async () => {
+    if (!(await confirmAction({ title: "Run admission reminders now?", text: "Pending parents get day-7 / day-13 reminders and overdue form links expire.", confirmText: "Run reminders", tone: "primary" }))) return;
     setRunning(true);
     try {
       const r = await post<{ checked: number; reminded_day7: number; reminded_day13: number; expired: number }>("/api/admissions/reminders/run");
@@ -103,20 +105,20 @@ export default function AdmissionsPage() {
     <div className="space-y-3">
       {current?.hint && <p className="text-[13px] text-ink-3">{current.hint}</p>}
       <div className="flex flex-wrap items-center gap-2">
-        <Input aria-label="Search applications" placeholder="Search name, email, login ID, roll no…" value={q} onChange={(e) => setQ(e.target.value)} className="field flex-1 min-w-56" />
+        <Input aria-label="Search applications" placeholder="Search name, email, login ID, roll no…" value={q} onChange={(e) => setQ(e.target.value)} className="field flex-1 min-w-56 max-md:min-w-full" />
         {current?.id === "all" && (
-          <Select aria-label="Filter by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-auto">
+          <Select aria-label="Filter by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-auto max-md:min-w-[9rem] max-md:flex-1">
             <option value="">All statuses</option>
             {[...PIPELINE, "Re-submit", "Link Expired", "Rejected"].map((s) => <option key={s}>{s}</option>)}
           </Select>
         )}
         {hasRole(me, R.ADMISSION_SETUP) && current?.id === "all" && (
-          <Button variant="soft" loading={running} onClick={runReminders}><Icon name="bell" className="h-4 w-4" /> Run reminders now</Button>
+          <Button variant="soft" loading={running} onClick={runReminders} className="max-md:flex-1"><Icon name="bell" className="h-4 w-4" /> Run reminders now</Button>
         )}
-        <Button variant="ghost" onClick={() => void load()}><Icon name="refresh" className="h-4 w-4" /> Refresh</Button>
+        <Button variant="ghost" onClick={() => void load()} className="max-md:flex-1"><Icon name="refresh" className="h-4 w-4" /> Refresh</Button>
       </div>
       <div className="card overflow-x-auto">
-        <TableView id={`queue-${current?.id ?? "all"}`}>
+        <TableView id={`queue-${current?.id ?? "all"}`} mobileHide={["Updated"]}>
           <table className="w-full text-sm">
             <thead className="table-head">
               <tr>
@@ -169,13 +171,13 @@ export default function AdmissionsPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-md:space-y-4">
       <Reveal>
         <PageHeader icon="admissions" title="Admissions"
           subtitle="AO → Parent → AO → Payment → Accounts → OS → VP → Principal. Each role sees the queue it owns." />
       </Reveal>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 max-md:gap-3">
         <Reveal delay={40}><StatCard label="Applications" value={apps.length} tone="brand" icon="admissions" /></Reveal>
         <Reveal delay={80}><StatCard label="In progress" value={inFlight} tone="amber" icon="spark" /></Reveal>
         <Reveal delay={120}><StatCard label="Completed" value={complete} tone="emerald" icon="check" /></Reveal>

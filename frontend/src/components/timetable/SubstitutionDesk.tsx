@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { confirmAction } from "@/components/confirm";
 import { Badge, Button, EmptyState, Field, Icon, Input, Select } from "@/components/ui";
 import { TableView } from "@/components/TableView";
 import { type MyDay, type SubstitutionRow, type SuggestResponse, type TtClass, type TtPeriod, errMsg } from "./types";
@@ -74,6 +75,14 @@ export function SubstitutionDesk({
 
   const assign = async (substituteId?: string) => {
     if (!suggest) return;
+    const cName = classes.find((c) => c.id === suggest.class_id)?.name ?? "this class";
+    const who = substituteId ? suggest.candidates.find((c) => c.id === substituteId)?.name ?? "this teacher" : "the best free teacher";
+    if (!(await confirmAction({
+      title: `Assign ${who} to ${cName} P${suggest.period_number}?`,
+      text: "The substitute is e-mailed and a notice is posted to the class.",
+      confirmText: "Assign",
+      tone: "primary",
+    }))) return;
     setBusy(substituteId ?? "auto");
     try {
       const pending = pendingFor(suggest.class_id, suggest.period_number);
@@ -102,6 +111,14 @@ export function SubstitutionDesk({
   };
 
   const cancel = async (id: string) => {
+    const s = subs.find((x) => x.id === id);
+    if (!(await confirmAction({
+      title: `Cancel substitution${s ? ` for ${s.class_name ?? "class"} P${s.period_number}` : ""}?`,
+      text: "The cover arrangement is cancelled; the record stays in the list.",
+      confirmText: "Cancel substitution",
+      cancelText: "Keep",
+      tone: "danger",
+    }))) return;
     try {
       await apiFetch(`/api/timetable/substitutions/${id}/cancel`, { method: "POST", body: "{}" });
       onMessage("Substitution cancelled");
@@ -111,6 +128,13 @@ export function SubstitutionDesk({
     }
   };
   const remove = async (id: string) => {
+    const s = subs.find((x) => x.id === id);
+    if (!(await confirmAction({
+      title: `Delete substitution${s ? ` for ${s.class_name ?? "class"} P${s.period_number}` : ""}?`,
+      text: "This removes the record permanently. This cannot be undone.",
+      confirmText: "Delete",
+      tone: "danger",
+    }))) return;
     try {
       await apiFetch(`/api/timetable/substitutions/${id}`, { method: "DELETE" });
       onMessage("Substitution removed");
@@ -142,7 +166,7 @@ export function SubstitutionDesk({
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {canRequest && (
-          <div className="rounded-xl border border-line bg-white p-5 shadow-sm space-y-3">
+          <div className="rounded-xl border border-line bg-white p-5 shadow-sm space-y-3 max-md:p-4">
             <h3 className="font-semibold text-ink">Request cover · {date}</h3>
             {myLessons.length === 0 ? (
               <p className="text-sm text-ink-3">You have no lessons on this date that still need cover.</p>
@@ -168,7 +192,7 @@ export function SubstitutionDesk({
         )}
 
         {isAdmin && (
-          <div className="rounded-xl border border-line bg-white p-5 shadow-sm space-y-3">
+          <div className="rounded-xl border border-line bg-white p-5 shadow-sm space-y-3 max-md:p-4">
             <h3 className="font-semibold text-ink">Arrange cover · {date}</h3>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Field label="Class">
@@ -193,7 +217,7 @@ export function SubstitutionDesk({
       </div>
 
       {isAdmin && suggest && (
-        <div className="rounded-xl border border-line bg-white p-5 shadow-sm space-y-3" style={{ animation: "fade-up 0.35s var(--ease-soft) both" }}>
+        <div className="rounded-xl border border-line bg-white p-5 shadow-sm space-y-3 max-md:p-4" style={{ animation: "fade-up 0.35s var(--ease-soft) both" }}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="font-semibold text-ink">

@@ -69,7 +69,7 @@ function TimetableBody({ child }: { child: PortalChild }) {
               </Button>
             }
           />
-          <div className="space-y-4 p-3 sm:p-5">
+          <div className="space-y-4 p-3 sm:p-5 max-md:min-w-0 max-md:max-w-full">
             <Tabs tabs={[{ id: "day", label: "Day view" }, { id: "week", label: "Week" }] as const} value={view} onChange={setView} />
             {view === "day" ? (
               <DayView periods={data.periods} entries={entries} emptyText="No timetable published for this class yet." />

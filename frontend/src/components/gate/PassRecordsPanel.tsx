@@ -5,6 +5,8 @@ import { apiDownload, apiFetch } from "@/lib/api";
 import { hasRole, type Me } from "@/lib/auth";
 import { Badge, Button, Card, CardHead, EmptyState, Field, Icon, IconButton, Input, Select, SkeletonRows, useToast } from "@/components/ui";
 import { TableView } from "@/components/TableView";
+import { MobileFilters } from "@/components/mobile/MobileFilters";
+import { MAvatar, MCard, MChip, MPanel, MStat } from "@/components/mobile/MobileCard";
 import { CardEmpty, CardGrid, CardBody, CardFooter, CardTitle, Chip, Metric, Monogram, RecordCard, StatusPill, initials, toneFor } from "@/components/RecordCard";
 import { GATE_PRINT, classLabel, errMsg, fmtStamp, fmtTime, statusBadge } from "@/components/leaves/shared";
 import { PASS_STATUSES, type FilterOptions, type PassRecord, type RecordsResponse } from "./types";
@@ -119,6 +121,45 @@ export function PassRecordsPanel({ me, refreshKey }: { me: Me; refreshKey?: numb
     </CardGrid>
   );
 
+  /** Phones: pass-record card (identity + status, chips, reason, 2×2 times panel). */
+  const mobileCards = rows.length === 0 ? (
+    <CardEmpty icon="door" title="No passes match" hint="Change or clear the filters." />
+  ) : rows.map((r) => (
+    <MCard key={r.id} tone={r.late ? "danger" : toneFor(r.student.fullName)}>
+      <div className="flex items-start gap-3">
+        <MAvatar name={r.student.fullName} tone={toneFor(r.student.fullName)} size={52} shape="rounded" variant="soft" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[17px] font-bold leading-snug text-ink">{r.student.fullName}</p>
+          <p className="mt-0.5 text-[13px] text-ink-3">
+            <span className="font-mono">{r.student.admissionNo}</span>{classLabel(r.student.class) && ` · ${classLabel(r.student.class)}`}
+          </p>
+        </div>
+        <span className="shrink-0 pt-0.5"><StatusPill status={r.status} /></span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <MChip icon="user">{r.type}</MChip>
+        {r.hostel && <MChip icon="home" tone="blue">{r.hostel.name} · {r.hostel.room}</MChip>}
+        {r.late && <MChip icon="alert" tone="danger">Late</MChip>}
+      </div>
+      {r.reason && <p className="mt-3 text-[14px] text-ink-2">{r.reason}</p>}
+      <div className="mt-3">
+        <MPanel>
+          <div className="grid grid-cols-2 divide-x divide-line">
+            <MStat label="Out (planned)" icon="calendar" value={fmtTime(r.outTime)} />
+            <MStat label="Expected in" icon="clock" value={r.expectedInTime ? fmtTime(r.expectedInTime) : "—"} />
+          </div>
+          <div className="grid grid-cols-2 divide-x divide-line border-t border-line">
+            <MStat label="Actual out" icon="clock" value={r.actualOutTime ? fmtStamp(r.actualOutTime) : "—"} />
+            <MStat label="Actual in" icon="clock" value={r.actualInTime ? fmtStamp(r.actualInTime) : "—"} tone={r.late && r.actualInTime ? "danger" : undefined} />
+          </div>
+        </MPanel>
+      </div>
+      {canPrint && ISSUED.includes(r.status) && (
+        <Button variant="soft" onClick={() => print(r)} className="mt-3 w-full"><Icon name="print" className="h-4 w-4" /> Print pass</Button>
+      )}
+    </MCard>
+  ));
+
   return (
     <div className="space-y-4">
       <Card>
@@ -133,6 +174,7 @@ export function PassRecordsPanel({ me, refreshKey }: { me: Me; refreshKey?: numb
               <Input value={draft.q} onChange={(e) => setDraft({ ...draft, q: e.target.value })} placeholder="Name or admission no." aria-label="Search by student name or admission number" />
             </Field>
           </div>
+          <MobileFilters active={[applied.status, applied.from, applied.to, applied.class_id, applied.hostel_id].filter(Boolean).length + (applied.late ? 1 : 0)} onClear={clear}>
           <Field label="Status">
             <Select aria-label="Filter by status" value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value })}>
               <option value="">Any status</option>
@@ -157,16 +199,25 @@ export function PassRecordsPanel({ me, refreshKey }: { me: Me; refreshKey?: numb
               {options.hostels.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
             </Select>
           </Field>
+          {/* Phone sheet only: the late toggle and an apply button, since filters here apply on submit. */}
+          <label className="flex items-center gap-2 font-medium text-ink-2 min-h-11 text-[13px] md:hidden">
+            <input type="checkbox" checked={draft.late} onChange={(e) => setDraft({ ...draft, late: e.target.checked })} />
+            Late returns only
+          </label>
+          <Button type="submit" variant="primary" disabled={badRange} className="md:!hidden">
+            <Icon name="filter" className="h-4 w-4" /> Apply filters
+          </Button>
+          </MobileFilters>
           <div className="flex flex-wrap items-center justify-between gap-3 sm:col-span-2 lg:col-span-4 xl:col-span-7">
-            <label className="flex items-center gap-2 text-[12.5px] font-medium text-ink-2">
+            <label className="flex items-center gap-2 text-[12.5px] font-medium text-ink-2 max-md:min-h-11 max-md:text-[13px] max-md:hidden">
               <input type="checkbox" checked={draft.late} onChange={(e) => setDraft({ ...draft, late: e.target.checked })} />
               Late returns only
             </label>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="ghost" onClick={clear} disabled={!active && !dirty}>
+            <div className="flex flex-wrap items-center gap-2 max-md:w-full">
+              <Button type="button" variant="ghost" onClick={clear} disabled={!active && !dirty} className="max-md:flex-1">
                 <Icon name="x" className="h-4 w-4" /> Clear
               </Button>
-              <Button type="submit" variant="primary" disabled={badRange}>
+              <Button type="submit" variant="primary" disabled={badRange} className="max-md:flex-1">
                 <Icon name="filter" className="h-4 w-4" /> Apply filters
               </Button>
             </div>
@@ -174,7 +225,7 @@ export function PassRecordsPanel({ me, refreshKey }: { me: Me; refreshKey?: numb
         </form>
       </Card>
 
-      <Card>
+      <Card className="max-md:contents">
         <CardHead
           icon="clipboard"
           title="Pass records"
@@ -187,7 +238,7 @@ export function PassRecordsPanel({ me, refreshKey }: { me: Me; refreshKey?: numb
             </Button>
           }
         />
-        <TableView id="gate-records" title="Student" badge="Status" cards={cards}>
+        <TableView id="gate-records" title="Student" badge="Status" cards={cards} mobileCards={loading ? undefined : mobileCards}>
           <div className="table-wrap">
             <table className="data-table min-w-[1180px]">
               <thead>

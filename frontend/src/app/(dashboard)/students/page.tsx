@@ -5,8 +5,12 @@ import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { hasRole, R, useMe } from "@/lib/auth";
 import { Button, EmptyState, Field, Icon, IconButton, Input, MailLink, PageHeader, PhoneLink, Reveal, Select, SkeletonRows, StatCard, useToast, Portal } from "@/components/ui";
+import { confirmAction, confirmWithReason } from "@/components/confirm";
 
 import { TableView } from "@/components/TableView";
+import { MobileFilters } from "@/components/mobile/MobileFilters";
+import { useMobileBack } from "@/components/mobile/useMobileBack";
+import { MAvatar, MCard, MChip, MCopyRow, MPanel } from "@/components/mobile/MobileCard";
 import {
   CardBody, CardEmpty, CardFooter, CardGrid, CardTitle, Chip, Monogram, RecordCard, StatusPill, initials, toneFor, type Tone,
 } from "@/components/RecordCard";
@@ -131,6 +135,7 @@ export default function StudentsPage() {
       setMessage("Admission no, name and class are required");
       return;
     }
+    if (form.id && !(await confirmAction({ title: `Update ${form.full_name.trim() || "this student"}?`, text: "Saves your changes to the student record.", confirmText: "Update", tone: "primary" }))) return;
     setLoading(true);
     setMessage("");
 
@@ -152,9 +157,9 @@ export default function StudentsPage() {
       setShowForm(false);
       setSelectedStudent(null);
       await load();
-      setMessage("Saved");
+      toast.push(`${form.full_name.trim()} ${form.id ? "updated" : "added"}`, "success");
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Save failed");
+      toast.push(e instanceof Error ? e.message : "Save failed", "error");
     } finally {
       setLoading(false);
     }
@@ -162,33 +167,35 @@ export default function StudentsPage() {
 
   /** Hard delete only succeeds for a record with no history; otherwise the API answers 409. */
   const remove = async (s: Student) => {
-    if (!window.confirm(`Delete ${s.fullName}? This only works for a record created by mistake (no attendance, marks or fees). Use "Mark as Left" for students who have left.`)) return;
+    if (!(await confirmAction({ title: `Delete ${s.fullName}?`, text: 'This only works for a record created by mistake (no attendance, marks or fees). Use "Mark as Left" for students who have left. This cannot be undone.', confirmText: "Delete", tone: "danger" }))) return;
     setLoading(true);
     try {
       await apiFetch(`/api/students/${s.id}`, { method: "DELETE" });
       await load();
-      setMessage("Deleted");
+      toast.push(`${s.fullName} deleted`, "success");
     } catch (e) {
-      setMessage(`Delete failed: ${e instanceof Error ? e.message : "error"}`);
+      toast.push(`Delete failed: ${e instanceof Error ? e.message : "error"}`, "error");
     } finally {
       setLoading(false);
     }
   };
 
   const setLeft = async (s: Student) => {
-    const reason = window.prompt(`Mark ${s.fullName} as Left? Their records are kept and a Transfer Certificate can be issued. Reason (optional):`);
+    const reason = await confirmWithReason({ title: `Mark ${s.fullName} as Left?`, text: "Their records are kept and a Transfer Certificate can be issued.", placeholder: "Reason they left (optional)", confirmText: "Mark left", tone: "danger" });
     if (reason === null) return;
     try {
       await apiFetch(`/api/students/${s.id}/status`, { method: "PUT", body: JSON.stringify({ status: "Left", ...(reason.trim() ? { reason: reason.trim() } : {}) }) });
       await load();
-      setMessage("Marked as Left");
+      toast.push(`${s.fullName} marked as Left`, "success");
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Failed");
+      toast.push(e instanceof Error ? e.message : "Could not mark as Left", "error");
     }
   };
 
   const totalPages = result ? Math.max(1, Math.ceil(result.total / result.page_size)) : 1;
   const filtered = !!(query || classFilter || statusFilter);
+
+  useMobileBack(showForm, () => setShowForm(false));
 
   /** Card view: a purpose-built student card (TableView `cards`), not the generic restyle. */
   const cards = (
@@ -215,7 +222,7 @@ export default function StudentsPage() {
             )}
           </CardBody>
           <CardFooter>
-            <Link href={`/students/${s.id}`} className="btn-soft !min-h-8 !px-2.5 !py-1.5 !text-[12.5px]">
+            <Link href={`/students/${s.id}`} className="btn-soft !min-h-8 !px-2.5 !py-1.5 !text-[12.5px] max-md:!min-h-10 max-md:!px-3">
               <Icon name="eye" className="h-3.5 w-3.5" /> Profile
             </Link>
             {canWrite && <Button size="sm" variant="ghost" onClick={() => openEdit(s)}><Icon name="edit" className="h-3.5 w-3.5" /> Edit</Button>}
@@ -227,6 +234,46 @@ export default function StudentsPage() {
     </CardGrid>
   );
 
+  /** Phones: student card (avatar + status, class/roll/house chips, contact panel, 2×2 actions). */
+  const mobileCards = (result?.data ?? []).length === 0 ? (
+    <CardEmpty icon="students" title={loading ? "Loading students…" : "No students found"} hint="Try adjusting your search or filters." />
+  ) : (result?.data ?? []).map((s) => {
+    const tone = toneFor(s.fullName);
+    return (
+      <MCard key={s.id} tone={tone}>
+        <div className="flex items-start gap-3.5">
+          <MAvatar name={s.fullName} tone={tone} size={60} dot={STATUS_TONE[s.status] ?? "slate"} />
+          <div className="min-w-0 flex-1 pt-0.5">
+            <Link href={`/students/${s.id}`} className="block text-[18px] font-bold leading-snug text-ink">{s.fullName}</Link>
+            <p className="mt-0.5 text-[13px] text-ink-3"><span className="font-mono">{s.admissionNo}</span>{s.gender ? ` · ${s.gender}` : ""}</p>
+            <div className="mt-2"><StatusPill status={s.status} tone={STATUS_TONE[s.status] ?? "slate"} /></div>
+          </div>
+        </div>
+        <div className="mt-3.5 flex flex-wrap gap-2">
+          <MChip icon="layers" tone="blue">{s.class ? classText(s.class) : "No class"}</MChip>
+          {s.rollNo && <MChip icon="hash">Roll {s.rollNo}</MChip>}
+          {s.house && <MChip icon="home" tone={toneFor(s.house)}>{s.house} House</MChip>}
+        </div>
+        {!result?.contacts_hidden && (s.mobileNumber || s.email) && (
+          <div className="mt-3">
+            <MPanel>
+              <div className="divide-y divide-line">
+                {s.mobileNumber && <MCopyRow icon="phone" value={s.mobileNumber} href={`tel:${s.mobileNumber}`} />}
+                {s.email && <MCopyRow icon="mail" value={s.email} href={`mailto:${s.email}`} />}
+              </div>
+            </MPanel>
+          </div>
+        )}
+        <div className="mt-3.5 grid grid-cols-2 gap-2">
+          <Link href={`/students/${s.id}`} className="btn-accent !min-h-12 justify-center"><Icon name="eye" className="h-4 w-4" /> Profile</Link>
+          {canWrite && <Button variant="soft" onClick={() => openEdit(s)} className="!min-h-12"><Icon name="edit" className="h-4 w-4" /> Edit</Button>}
+          {canWrite && s.status === "Active" && <Button variant="soft" onClick={() => setLeft(s)} className="!min-h-12"><Icon name="flag" className="h-4 w-4" /> Mark left</Button>}
+          {canDelete && <Button variant="danger" onClick={() => remove(s)} className="!min-h-12"><Icon name="trash" className="h-4 w-4" /> Delete</Button>}
+        </div>
+      </MCard>
+    );
+  });
+
   if (!meLoading && me && !canRead) {
     return (
       <div className="card">
@@ -236,7 +283,7 @@ export default function StudentsPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 max-md:space-y-5">
       {/* Header */}
       <Reveal>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -254,7 +301,7 @@ export default function StudentsPage() {
       </Reveal>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 max-md:gap-3">
         <StatCard label="Total Students" value={result?.total ?? null} icon="students" tone="brand" delay={0} />
         <StatCard label="On This Page" value={result?.data.length ?? null} icon="list" tone="teal" delay={60} />
         <StatCard label="Classes" value={classes.length} icon="layers" tone="sky" delay={120} />
@@ -263,24 +310,28 @@ export default function StudentsPage() {
 
       {/* Filter Bar */}
       <Reveal delay={60}>
-        <div className="rounded-2xl border border-line bg-surface p-4 shadow-soft backdrop-blur-sm">
+        <div className="rounded-2xl border border-line bg-surface p-4 shadow-soft backdrop-blur-sm max-md:p-3">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[220px]">
+            <div className="relative flex-1 min-w-[220px] max-md:min-w-full">
               <Icon name="search" className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-3" />
               <input
                 value={query}
                 onChange={(e) => { setQuery(e.target.value); setPage(1); }}
                 placeholder="Search by name or admission no…"
                 aria-label="Search students by name"
-                className="w-full rounded-xl border border-line bg-surface-2/60 pl-10 pr-4 py-2.5 text-sm text-ink placeholder-ink-3/60 focus:border-accent-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-500/20 transition-all duration-200"
+                className="w-full rounded-xl border border-line bg-surface-2/60 pl-10 pr-4 py-2.5 text-sm text-ink placeholder-ink-3/60 focus:border-accent-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-500/20 transition-all duration-200 max-md:min-h-11"
               />
             </div>
-            <div className="relative">
+            <MobileFilters
+              active={[classFilter, statusFilter].filter(Boolean).length}
+              onClear={() => { setClassFilter(""); setStatusFilter(""); setPage(1); }}
+            >
+            <div className="relative max-md:min-w-[9rem] max-md:flex-1">
               <select
                 value={classFilter}
                 onChange={(e) => { setClassFilter(e.target.value); setPage(1); }}
                 aria-label="Filter by class"
-                className="appearance-none rounded-xl border border-line bg-surface-2/60 px-4 py-2.5 pr-10 text-sm font-medium text-ink focus:border-accent-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-500/20 transition-all duration-200"
+                className="appearance-none rounded-xl border border-line bg-surface-2/60 px-4 py-2.5 pr-10 text-sm font-medium text-ink focus:border-accent-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-500/20 transition-all duration-200 max-md:min-h-11 max-md:w-full"
               >
                 <option value="">All classes</option>
                 {classes.map((c) => (
@@ -289,18 +340,19 @@ export default function StudentsPage() {
               </select>
               <Icon name="chevronDown" className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-3 pointer-events-none" />
             </div>
-            <div className="relative">
+            <div className="relative max-md:min-w-[9rem] max-md:flex-1">
               <select
                 value={statusFilter}
                 onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
                 aria-label="Filter by status"
-                className="appearance-none rounded-xl border border-line bg-surface-2/60 px-4 py-2.5 pr-10 text-sm font-medium text-ink focus:border-accent-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-500/20 transition-all duration-200"
+                className="appearance-none rounded-xl border border-line bg-surface-2/60 px-4 py-2.5 pr-10 text-sm font-medium text-ink focus:border-accent-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-500/20 transition-all duration-200 max-md:min-h-11 max-md:w-full"
               >
                 <option value="">Any status</option>
                 {STATUSES.map((st) => <option key={st} value={st}>{st}</option>)}
               </select>
               <Icon name="chevronDown" className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-3 pointer-events-none" />
             </div>
+            </MobileFilters>
             {filtered && (
               <Button variant="ghost" onClick={() => { setQuery(""); setClassFilter(""); setStatusFilter(""); setPage(1); }}>
                 <Icon name="x" className="h-4 w-4" /> Clear
@@ -315,8 +367,8 @@ export default function StudentsPage() {
 
       {/* Table Card */}
       <Reveal delay={120}>
-        <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-soft">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface px-5 py-4 sm:px-6">
+        <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-soft max-md:contents">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface px-5 py-4 sm:px-6 max-md:!border-0 max-md:!px-0 max-md:pb-1">
             <div>
               <h3 className="text-[17px] font-semibold text-ink">Student records</h3>
               <p className="mt-0.5 text-xs text-ink-3">
@@ -330,7 +382,7 @@ export default function StudentsPage() {
             )}
           </div>
 
-          <TableView id="t1" title="Student" badge="Status" cards={cards}>
+          <TableView id="t1" title="Student" badge="Status" cards={cards} mobileCards={loading && !result ? undefined : mobileCards}>
             <div className="table-wrap">
               <table className="data-table min-w-[920px]">
                 <colgroup>
@@ -413,7 +465,7 @@ export default function StudentsPage() {
           </TableView>
 
           {/* Footer */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface-2/50 px-5 py-3.5 text-sm sm:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface-2/50 px-5 py-3.5 text-sm sm:px-6 max-md:!px-4">
             <span className="text-ink-2">
               {result && result.total > 0
                 ? <>Showing <span className="tnum font-semibold text-ink">{(page - 1) * result.page_size + 1}–{Math.min(page * result.page_size, result.total)}</span> of <span className="tnum font-semibold text-ink">{result.total}</span> students</>
@@ -437,17 +489,20 @@ export default function StudentsPage() {
       {/* Modal */}
       {showForm && ( <Portal>
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-brand-900/60 p-4 backdrop-blur-md"
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-brand-900/60 p-4 backdrop-blur-md max-md:items-stretch max-md:overflow-hidden max-md:!p-0"
           onClick={() => setShowForm(false)}
         >
           <div
-            className="relative w-full max-w-lg rounded-xl border border-line bg-white p-6 shadow-2xl"
+            className="m-page relative w-full max-w-lg rounded-xl border border-line bg-white p-6 shadow-2xl max-md:h-[100dvh] max-md:max-w-none max-md:overflow-y-auto max-md:overscroll-contain max-md:rounded-none max-md:border-0 max-md:p-4 max-md:pb-0 max-md:pt-0 max-md:shadow-none"
             style={{ animation: "scale-in 0.3s var(--ease-spring) both" }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between mb-6">
-              <div>
+            <div className="flex items-center justify-between mb-6 max-md:sticky max-md:top-0 max-md:z-10 max-md:-mx-4 max-md:mb-4 max-md:justify-start max-md:gap-2 max-md:border-b max-md:border-line max-md:bg-white max-md:px-2 max-md:pb-2 max-md:pt-[calc(0.5rem+var(--m-safe-top))]">
+              <button type="button" onClick={() => setShowForm(false)} aria-label="Back" className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-ink-2 active:bg-surface-2 md:hidden">
+                <Icon name="chevronLeft" className="h-5 w-5" />
+              </button>
+              <div className="min-w-0 max-md:flex-1">
                 <h3 className="text-xl font-bold text-ink">{form.id ? "Edit Student" : "Add Student"}</h3>
                 <p className="text-sm text-ink-2 mt-0.5">
                   {form.id ? "Update student information" : "Register a new student in the system"}
@@ -455,7 +510,7 @@ export default function StudentsPage() {
               </div>
               <button
                 onClick={() => setShowForm(false)}
-                aria-label="Close" className="rounded-lg p-2 text-ink-3 hover:bg-surface-2 hover:text-ink-2 transition-all duration-150"
+                aria-label="Close" className="rounded-lg p-2 max-md:hidden text-ink-3 hover:bg-surface-2 hover:text-ink-2 transition-all duration-150"
               >
                 <Icon name="x" className="h-5 w-5" />
               </button>
@@ -463,6 +518,7 @@ export default function StudentsPage() {
 
             {/* Form */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <p className="-mb-1 mt-1 text-[11.5px] font-semibold uppercase tracking-wide text-ink-3 first:mt-0 sm:col-span-2 md:hidden">Student</p>
               <Field label="Admission no" required hint={form.id ? "Cannot be changed after creation" : undefined}>
                 <Input
                   value={form.admission_no}
@@ -480,6 +536,7 @@ export default function StudentsPage() {
                   className="bg-surface-2 hover:bg-white"
                 />
               </Field>
+              <p className="-mb-1 mt-1 text-[11.5px] font-semibold uppercase tracking-wide text-ink-3 first:mt-0 sm:col-span-2 md:hidden">Parents &amp; contact</p>
               <Field label="Father's name">
                 <Input
                   value={form.father_name}
@@ -511,6 +568,7 @@ export default function StudentsPage() {
                   className="bg-surface-2 hover:bg-white"
                 />
               </Field>
+              <p className="-mb-1 mt-1 text-[11.5px] font-semibold uppercase tracking-wide text-ink-3 first:mt-0 sm:col-span-2 md:hidden">Gender, class &amp; status</p>
               <Field label="Gender">
                 <Select
                   value={form.gender}
@@ -550,7 +608,7 @@ export default function StudentsPage() {
             </div>
 
             {/* Modal Footer */}
-            <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-line">
+            <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-line max-md:sticky max-md:bottom-0 max-md:-mx-4 max-md:bg-white max-md:px-4 max-md:pb-[calc(0.875rem+var(--m-safe-bottom))] max-md:[&>*]:flex-1">
               <Button variant="soft" onClick={() => setShowForm(false)}>
                 Cancel
               </Button>

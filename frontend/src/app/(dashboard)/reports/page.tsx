@@ -7,6 +7,7 @@ import { Badge, Button, CardHead, EmptyState, Field, Icon, Input, PageHeader, Pr
 import { TableView } from "@/components/TableView";
 import { ExportBar, ExportButtons, type ExportSpec } from "@/components/reports/ExportButtons";
 import { formatDate, inr, inrCompact } from "@/lib/format";
+import { MobileFilters } from "@/components/mobile/MobileFilters";
 
 type ClassItem = { id: string; name: string; section: string | null };
 type Dashboard = {
@@ -67,8 +68,8 @@ function Figure({ label, value, hint, tone: t }: { label: string; value: string;
     <div className="flex h-full min-w-0 flex-col justify-between rounded-xl border border-line bg-surface px-4 py-3">
       <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">{label}</p>
       <div className="mt-1.5">
-        <p className={`tnum truncate text-[18px] font-bold leading-tight ${color}`}>{value}</p>
-        {hint && <p className="mt-0.5 truncate text-[11.5px] text-ink-3">{hint}</p>}
+        <p className={`tnum truncate text-[18px] font-bold leading-tight ${color} max-md:whitespace-normal max-md:text-[17px] max-md:[overflow-wrap:anywhere]`}>{value}</p>
+        {hint && <p className="mt-0.5 truncate text-[11.5px] text-ink-3 max-md:mt-1 max-md:whitespace-normal max-md:[overflow-wrap:anywhere]">{hint}</p>}
       </div>
     </div>
   );
@@ -151,7 +152,7 @@ export default function ReportsPage() {
   const rateTone = (v: number | null) => (v === null ? "brand" : v >= 85 ? "emerald" : v >= 70 ? "amber" : "rose") as "brand" | "emerald" | "amber" | "rose";
 
   return (
-    <div className="min-w-0 space-y-6">
+    <div className="min-w-0 space-y-6 max-md:space-y-4">
       <Reveal>
         <PageHeader
           icon="reports" title="Reports & Analytics"
@@ -169,6 +170,7 @@ export default function ReportsPage() {
             onSubmit={(e) => { e.preventDefault(); apply(); }}
           >
             <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,10rem)_minmax(0,10rem)_minmax(0,10rem)_auto]">
+              <MobileFilters active={Object.values(applied).filter(Boolean).length} onClear={() => { setDraft(EMPTY); setApplied(EMPTY); }}>
               <div className="min-w-0">
                 <Field label="Class">
                   <Select aria-label="Class filter" value={draft.class_id} onChange={(e) => setDraft({ ...draft, class_id: e.target.value })}>
@@ -191,6 +193,7 @@ export default function ReportsPage() {
                 <Button type="submit" variant="primary" className="flex-1 lg:flex-none"><Icon name="filter" className="h-4 w-4" /> Apply</Button>
                 <Button type="button" variant="ghost" className="flex-1 lg:flex-none" disabled={!filtersActive && draft === EMPTY} onClick={() => { setDraft(EMPTY); setApplied(EMPTY); }}>Clear</Button>
               </div>
+              </MobileFilters>
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-[11.5px] text-ink-3">
               <p className="min-w-0">Dates filter attendance by day, fees by invoice due date, marks by exam date and payroll by payslip month.</p>
@@ -204,7 +207,7 @@ export default function ReportsPage() {
       )}
 
       {dash && (
-        <div className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-4 max-sm:grid-cols-2 max-sm:gap-3 max-sm:[&_p]:[overflow-wrap:anywhere]">
           <StatCard className="h-full" label="Active students" value={dash.students_active} icon="students" hint={`${dash.classes} classes in view`} />
           <StatCard className="h-full" label="Attendance" value={trend?.overall_pct ?? null} suffix="%" decimals={1} icon="attendance" tone="emerald" hint={trend ? `${trend.present} of ${trend.total} marks present` : "No attendance in view"} />
           <StatCard className="h-full" label="Average score" value={perf?.overall.avg_pct ?? null} suffix="%" decimals={1} icon="exams" tone="sky" hint={perf ? `Pass rate ${pctText(perf.overall.pass_rate)} (pass mark ${perf.pass_mark}%)` : "No marks in view"} />
@@ -228,9 +231,9 @@ export default function ReportsPage() {
       )}
 
       {canReports && (
-        <div className={`grid grid-cols-1 items-stretch gap-6 ${trend ? "xl:grid-cols-2" : ""}`}>
+        <div className={`grid grid-cols-1 items-stretch gap-6 max-md:gap-4 ${trend ? "xl:grid-cols-2" : ""}`}>
           <Section title="Attendance by class" subtitle="Present ÷ marked, per class" icon="attendance" query={query} exports={[{ report: "attendance-summary", label: "Attendance by class" }]}>
-            <TableView id="attendance" title="Class">
+            <TableView id="attendance" title="Class" mobileHide={["Records"]}>
               <div className="table-wrap max-h-[28rem]">
                 <table className="data-table min-w-[34rem]">
                   <thead><tr><th>Class</th><th className="th-end">Present</th><th className="th-end">Absent</th><th className="th-end">Records</th><th className="th-end">Rate</th></tr></thead>
@@ -261,7 +264,7 @@ export default function ReportsPage() {
               title="Attendance trend" subtitle={`Share of marks present, by ${trend.granularity}`} icon="activity" query={query}
               exports={[{ report: "attendance-trend", label: "Trend" }, { report: "attendance", label: "Records" }]}
             >
-              <div className="max-h-[28rem] space-y-2 overflow-y-auto p-5">
+              <div className="max-h-[28rem] space-y-2 overflow-y-auto p-5 max-md:p-4">
                 {trend.points.length === 0 && <p className="py-6 text-center text-sm text-ink-3">No attendance marked in this window</p>}
                 {trend.points.map((p) => (
                   <div key={p.period} className="grid grid-cols-[5.5rem_minmax(0,1fr)_3.5rem] items-center gap-3 text-xs sm:grid-cols-[6.5rem_minmax(0,1fr)_4rem]">
@@ -283,7 +286,7 @@ export default function ReportsPage() {
           title="Fee collection" subtitle={`${fees.invoice_count} invoices · collected vs due by class and term`} icon="fees" query={query}
           exports={[{ report: "fee-summary", label: "Fee summary" }, { report: "fees", label: "Fee invoices" }]}
         >
-          <div className="grid grid-cols-1 items-stretch gap-3 border-b border-line p-5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 items-stretch gap-3 border-b border-line p-5 sm:grid-cols-2 lg:grid-cols-4 max-md:p-4">
             <Figure label="Invoiced" value={inr(fees.invoiced)} hint={`${fees.invoice_count} invoices`} />
             <Figure label="Collected" value={inr(fees.collected)} hint={`${pctText(fees.collection_pct)} of invoiced`} tone="ok" />
             <Figure label="Outstanding" value={inr(fees.outstanding)} tone="warn" />
@@ -314,7 +317,7 @@ export default function ReportsPage() {
 
       {canFees && (
         <Section title="Fee defaulters" subtitle="Unpaid balance on an invoice past its due date" icon="alert" query={query} exports={[{ report: "defaulters", label: "Defaulters" }]}>
-          <TableView id="defaulters" title="Student">
+          <TableView id="defaulters" title="Student" mobileHide={["Overdue invoices"]}>
             <div className="table-wrap max-h-[32rem]">
               <table className="data-table min-w-[40rem]">
                 <thead><tr><th>Student</th><th>Class</th><th className="th-end">Overdue invoices</th><th className="th-end">Amount</th><th className="th-end">Oldest due</th></tr></thead>
@@ -343,7 +346,7 @@ export default function ReportsPage() {
           exports={[{ report: "performance", label: "Performance" }, { report: "exams", label: "Exam averages" }]}
         >
           {Object.keys(perf.overall.grade_distribution).length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3 text-xs">
+            <div className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3 text-xs max-md:px-4">
               <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">Grades</span>
               {Object.entries(perf.overall.grade_distribution).map(([g, n]) => <Badge key={g} tone="slate"><span className="tnum">{g}: {n}</span></Badge>)}
             </div>
@@ -375,7 +378,7 @@ export default function ReportsPage() {
       )}
 
       {((canPayroll && payroll) || (canReports && summary)) && (
-        <div className={`grid grid-cols-1 items-stretch gap-6 ${canPayroll && payroll && canReports && summary ? "xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]" : ""}`}>
+        <div className={`grid grid-cols-1 items-stretch gap-6 max-md:gap-4 ${canPayroll && payroll && canReports && summary ? "xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]" : ""}`}>
           {canPayroll && payroll && (
             <Section title="Payroll" subtitle={`${payroll.payslip_count} payslips · net ${inr(payroll.payroll_total_net)}`} icon="wallet" query={query} exports={[{ report: "payroll", label: "Payroll" }]}>
               <TableView id="payroll" title="Month">
@@ -402,9 +405,9 @@ export default function ReportsPage() {
 
           {canReports && summary && (
             <Section title="Hostel occupancy" subtitle="Beds allocated across all hostels" icon="hostel">
-              <div className="flex h-full flex-col justify-center gap-3 p-5">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="tnum font-display text-[28px] font-bold leading-none text-ink">{pctText(summary.hostel.occupancy_pct)}</span>
+              <div className="flex h-full flex-col justify-center gap-3 p-5 max-md:h-auto max-md:justify-start max-md:p-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-2 max-md:flex-col max-md:items-start max-md:gap-1">
+                  <span className="tnum font-display text-[28px] font-bold leading-none text-ink max-md:text-[24px] max-md:leading-tight">{pctText(summary.hostel.occupancy_pct)}</span>
                   <span className="tnum text-sm text-ink-2">{summary.hostel.allocated} / {summary.hostel.capacity} beds</span>
                 </div>
                 <ProgressBar value={summary.hostel.occupancy_pct ?? 0} label="Hostel occupancy" />

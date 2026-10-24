@@ -100,7 +100,7 @@ export default function SettingsPage() {
             </p>
           </div>
         </div>
-        <Button onClick={signOut} variant="danger">
+        <Button onClick={signOut} variant="danger" className="max-md:w-full">
           <Icon name="logout" className="h-4 w-4" />
           Sign out
         </Button>
@@ -122,7 +122,7 @@ export default function SettingsPage() {
               </Link>
             }
           />
-          <div className="p-5">
+          <div className="p-5 max-md:p-4">
             <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
               <div>
                 <dt className="label">Role</dt>
@@ -139,8 +139,8 @@ export default function SettingsPage() {
                 </dd>
               </div>
             </dl>
-            <p className="mt-5 flex items-start gap-2 rounded-xl border border-line bg-surface-2 px-3.5 py-3 text-[12px] leading-relaxed text-ink-2">
-              <Icon name="lock" className="mt-0.5 h-4 w-4 shrink-0 text-ink-3" />
+            <p className="mt-5 flex items-start gap-2 rounded-xl border border-line bg-surface-2 px-3.5 py-3 text-[12px] leading-relaxed text-ink-2 max-md:mt-4 max-md:block">
+              <Icon name="lock" className="mt-0.5 h-4 w-4 shrink-0 text-ink-3 max-md:mr-1.5 max-md:mt-0 max-md:inline-block max-md:align-[-3px]" />
               Roles are changed by a school administrator or HR. You can change your own password from
               <Link href="/account/password" className="mx-1 font-semibold text-accent-600 hover:underline">Change password</Link>.
             </p>
@@ -150,10 +150,10 @@ export default function SettingsPage() {
         {/* ── Institution ─────────────────────────────────────────── */}
         <Card delay={60}>
           <CardHead icon="building" title="Institution" subtitle="This deployment" />
-          <div className="space-y-3 p-5 text-[12.5px]">
+          <div className="space-y-3 p-5 text-[12.5px] max-md:p-4">
             <div className="flex items-center justify-between gap-3">
               <span className="text-ink-3">School</span>
-              <span className="font-semibold text-ink">{me?.branch_name ?? "…"}</span>
+              <span className="font-semibold text-ink max-md:min-w-0 max-md:text-right">{me?.branch_name ?? "…"}</span>
             </div>
             <div className="divider" />
             <div className="flex items-center justify-between gap-3">
@@ -188,7 +188,7 @@ export default function SettingsPage() {
             </Link>
           }
         />
-        <div className="grid grid-cols-2 gap-3 p-5 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 p-5 lg:grid-cols-4 max-md:p-4">
           <StatCard label="Delivered" value={sent} tone="emerald" icon="check" />
           <StatCard label="Failed" value={failed} tone={failed > 0 ? "rose" : "teal"} icon="alert" />
           <StatCard
@@ -200,7 +200,7 @@ export default function SettingsPage() {
           />
           <StatCard label="Channels in use" value={channels.length} tone="sky" icon="activity" />
         </div>
-        <div className="px-5 pb-5">
+        <div className="px-5 pb-5 max-md:px-4 max-md:pb-4">
           <p className="flex items-start gap-2 rounded-xl border border-line bg-surface-2 px-3.5 py-3 text-[12px] leading-relaxed text-ink-2">
             <Icon name="info" className="mt-0.5 h-4 w-4 shrink-0 text-ink-3" />
             {mocked > 0
@@ -215,7 +215,7 @@ export default function SettingsPage() {
       <Card delay={180}>
         <CardHead icon="sparkles" title="Appearance & motion" subtitle="These apply instantly on this device." />
         <div className="divide-y divide-line">
-          <label className="flex cursor-pointer items-center justify-between gap-4 p-5">
+          <label className="flex cursor-pointer items-center justify-between gap-4 p-5 max-md:p-4">
             <span className="min-w-0">
               <span className="block text-[13px] font-semibold text-ink">Reduce motion</span>
               <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-2">
@@ -236,7 +236,7 @@ export default function SettingsPage() {
             </span>
           </label>
 
-          <div className="flex items-start justify-between gap-4 p-5">
+          <div className="flex items-start justify-between gap-4 p-5 max-md:p-4">
             <span className="min-w-0">
               <span className="block text-[13px] font-semibold text-ink">Print styles</span>
               <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-2">
@@ -253,14 +253,14 @@ export default function SettingsPage() {
       {canExport && (
       <Card delay={240}>
         <CardHead icon="download" title="Data export" subtitle="School-scoped CSV downloads produced by the reports module." />
-        <div className="flex flex-wrap gap-2 p-5">
+        <div className="flex flex-wrap gap-2 p-5 max-md:p-4">
           {[
             { type: "students", ok: hasRole(me, [...R.LEADERSHIP, ROLE.OFFICE_SUPERINTENDENT]) },
             { type: "fees", ok: hasRole(me, R.FEES_READ) },
             { type: "defaulters", ok: hasRole(me, R.FEES_READ) },
             { type: "attendance", ok: true },
           ].filter((x) => x.ok).map(({ type }) => (
-            <button key={type} type="button" onClick={() => exportCsv(type)} className="btn-soft capitalize">
+            <button key={type} type="button" onClick={() => exportCsv(type)} className="btn-soft capitalize max-md:min-w-[8.5rem] max-md:flex-1">
               <Icon name="download" className="h-4 w-4" />
               {type} CSV
             </button>

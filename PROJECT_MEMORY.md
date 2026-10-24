@@ -598,3 +598,199 @@ Deps installed once by lead: pdf-lib 1.17.1, exceljs 4.4.0, qrcode 1.5.4 (+@type
   Wired into /portal/fees (was "pay at office" when razorpay configured) and /admission-form.
   OPEN: tsc error portal/fees/page.tsx `child.fullName` → must be `child.full_name` (fix was rejected mid-edit);
   real order creation + browser checkout NOT yet tested. Handoff doc: `capsule.md` (repo root).
+
+## 12. Round 4 — mobile responsiveness ONLY (2026-10-24), branch `jayanth/mobile-responsive`
+- Upstream: round 3 committed by Jayanth as 4df6e74, merged to main as PR #3 (merge identical). Branched from main.
+- Rule from Jayanth: mobile only — desktop (≥1024px) and functionality must not change. Every change is either a
+  `max-lg:`/`max-md:` Tailwind variant, a mobile-only element (`lg:hidden`/`md:hidden`), `contents` wrapper (no box on
+  desktop), or CSS inside `@media (max-width: …)` (MOBILE LAYER block at the end of globals.css).
+- Shell: 56px app bar + safe-area top on <1024px, search = icon trigger (`<CommandPalette compact />`) instead of an
+  extra row, hamburger hidden on mobile (bottom nav "More" opens the drawer), back arrow on detail pages, footer
+  hidden on mobile, main gets bottom padding for the nav. New `components/mobile/MobileBottomNav.tsx` (M3 navigation
+  bar: 4 role-priority destinations from navFor + More; badges; safe-area bottom; lg:hidden).
+- Kit (`ui.tsx`): Modal = bottom sheet on phones (grabber, 92dvh, sticky full-width actions, safe area); Tabs =
+  swipeable single row (`m-scroll-x`); PageHeader 22px title on phones, icon hidden (app bar shows it); toasts above
+  bottom nav. globals.css mobile layer: 44px buttons/fields, 16px inputs (no iOS zoom), no hover-lift on touch,
+  `.m-above-nav` for sticky save bars (MarkAttendance, RollCallPanel), `.m-scroll-x`. viewport-fit=cover.
+- Students form + IncidentDrawer made phone sheets; Timetable page (own header/tiles) got phone variants.
+- Verification plan: desktop pixel-diff (1440px) of every page vs a baseline built from main, plus mobile audit
+  (overflow, <40px targets, <12px text) — scripts in .playwright-mcp/ (capture-before/after.js, mobile-audit.js).
+- Design pass 1 audit (68 pages, 6 roles + login, 390x844): 0 pages scroll sideways; 55 overflowing elements
+  (warden /gate card wider than screen, /notifications filter bar); many <40px targets; screenshots in
+  .playwright-mcp/mobile/design/. Fixes (all mobile-only):
+  - IssuePassPanel + SecurityDesk grids: `max-lg:grid-cols-1` (implicit grid track grew to the house badge width).
+    House badge truncates on phones (`max-md:max-w-[45%]` + inner `max-md:truncate`).
+  - CardHead actions wrap full-width on phones (ui.tsx); notifications filters flex to fill the row.
+  - Drawer close button + bell → 40px on <1024px. TableView Table/Cards toggle → 40px, header padding 16px.
+  - Button size="sm" had `!min-h-8` (beats the mobile CSS) → added `max-md:!min-h-10 max-md:!px-3`.
+    IconButton `max-md:!px-3.5` (44x44). Students "Open" link, academics delete icon, login demo chips enlarged.
+  - Attendance P/A/L/OD + hostel roll call status → full-width segmented control, 44px segments, on phones.
+  - Fees: tabs = one swipeable row (were stacked 4 rows), KPIs 2x2 with label/amount stacked, 16px gutters.
+  - Login password eye: 44x44 hit area on phones.
+  - globals.css (max-md): `.field.pl-9/.pl-10` padding — PRE-EXISTING DESKTOP BUG: unlayered `.field{padding}`
+    beats Tailwind `pl-9`, so search icons overlap placeholder text on desktop too (gate, notifications, classes).
+    Fixed on mobile only per the "don't touch desktop" rule; flagged to Jayanth.
+  - Audit script now ignores off-screen elements (closed drawer) — part of the target-count drop is that, not fixes.
+- Design pass 2 audit: 0 sideways scroll, 0 overflowing elements, small targets 1772 → 253 (rest = inline text
+  links in cards, 13px CBT checkbox, settings ghost buttons 45x32), text <12px = intentional 11–11.5px captions.
+  Known UX gap (not changed — would alter behaviour): /fees renders all 488 invoice cards (no pagination), same
+  as the desktop table; page is ~190k px tall on a phone.
+- tsc clean, next build clean. ESLint has no config in this repo (`next lint` can't run) — not a pass, just absent.
+- Desktop baseline = detached worktree of HEAD 95343ac in scratchpad/baseline (node_modules junctioned), served on
+  :5175; current on :5174; both on backend :3001 with frozen prisma/mobile-baseline.db. Diff script:
+  .playwright-mcp/desktop-diff.js (1440 + 1024 widths, byte-identical PNG compare, one retry).
+- Desktop diff RESULT: 136 comparisons (6 roles, every nav page + login, at 1440 and 1024): 123 byte-identical on
+  first pass; 13 flagged → re-run with 4.5s settle → 10 identical. Remaining 3: student profile identical on 3rd run;
+  security /gate = 5 px, max delta 2/255 (anti-aliasing); admin home @1024 = "Quick access" card at y=1146 vs 1160 —
+  HEAD/main flips between the same two positions run-to-run (pre-existing load-order nondeterminism), not ours.
+  At 1024 the mobile media query is false and MobileBottomNav is display:none in the current build (checked in DOM).
+  Verdict: desktop unchanged. Baseline worktree removed afterwards (junction deleted first; real node_modules intact).
+- Jayanth tested on his real phone (360px CSS width, 720px @2x) and found clipped cards/tables, bell popover off
+  screen, toolbar scrolling with tables, roll/name overlap. My earlier audit MISSED these because (a) it ignored
+  anything inside scroll/clip containers and (b) with isMobile emulation the layout viewport silently WIDENS to fit
+  too-wide content, so innerWidth grew and nothing looked "past the edge". New audit `.playwright-mcp/mobile-audit-v3.js`
+  measures against the device width (360), flags clip-inside-cards, overlaps, unexpected scrollers, every tab + both
+  Table/Cards modes.
+- Root cause of clipped cards: `.as-cards tbody{grid-template-columns:repeat(auto-fill,minmax(21rem,1fr))}` — 21rem =
+  336px > ~290px available on a 360px phone. Mobile CSS: one column, 12px gaps, 16px card padding, title left-aligned,
+  badge max 6rem with ellipsis, dense matrices 4-across, no hover-lift.
+- Table mode on phones: pages wrap TableView in an overflow-x scroller → toolbar scrolled with the table. Mobile CSS
+  makes the wrapper visible and the table area (`.table-view > div:last-child`) the scroller.
+- Bell hover-preview hidden < lg (touch fired fake hover + navigation → popover stuck over next page).
+- Toasts move under the app bar on pages with a sticky save bar (`body:has(.m-above-nav) .m-toasts`).
+- Shell: main bottom padding `max-lg:!pb-…` (Tailwind v4 emits max-* before sm:, so sm:py-6 was winning 640–1023px
+  and the bottom nav covered page ends on tablets); Back falls back to section href when no history; landscape
+  safe-area left/right (body padding, drawer, bottom nav). Bottom nav badge: sr-only text, "/staff" short label "Staff".
+- MarkAttendance TableView title="Student" (card headline = name, not roll no; affects card mode on desktop too —
+  opt-in view). MonthlyRegister roll box `max-md:w-auto` — PRE-EXISTING DESKTOP BUG: `w-6` box overlaps "10A01"
+  with the name on desktop too; flagged to Jayanth, not changed on desktop.
+- Reference skill: github.com/ceorkm/mobile-app-ui-design (SKILL.md: 375 baseline, 8pt grid, 44pt targets,
+  value-over-label, thumb zone) cloned to scratchpad as reference data.
+- Parallel pass: 7 agents with disjoint file ownership (students/admissions/classes; attendance/timetable/WeekGrid;
+  fees/exams/cbt/reports/academics/charts; gate/leaves/hostel/discipline; staff/notifications/settings/account;
+  portal/**; home dashboards + login). Shared files stay with me. Brief: scratchpad/agent-brief.md.
+- Independent code review (agent) findings — pre-existing FUNCTIONAL bugs, reported not fixed (no functional changes
+  allowed this round): MarkAttendance load() race (switch date fast → D1 data saved as D2); RollCallPanel same race +
+  stale roster after failed load saves Morning as Night; razorpay.ts loadRazorpay retry after a failed script load
+  never settles (Pay spinner forever); staff /fees "Collect" fills a form far below the list on phones (no scroll);
+  Modal/CommandPalette no focus trap; drawer no Esc/focus trap. Command palette ranks description matches above
+  title matches ("fee" → My children). Palette has no "My account"/"Change password" entries.
+- Round-4b (Jayanth: "card look is very bad", "add toaster, sweetalert, confirmation popups on update/delete", "click every
+  component, screenshot, verify"):
+  - Card CSS (mobile): fields hug content (pills no longer stretched), values left-aligned, labels 11px; RecordCard footer
+    equal-width only for 1–2 actions (`max-md:[&:not(:has(>:nth-child(3)))>*]:flex-1`).
+  - NEW `components/confirm.ts`: `confirmAction({title,text,confirmText,tone})` + `confirmWithReason(...)` — branded
+    SweetAlert (same look as logout). 8 agents wired it into every update/delete/approve/reject/publish/check-in/out/pay
+    across all modules: 68 call sites; all window.confirm/prompt removed (0 native dialogs left). First-time creates
+    (add student, first "Save attendance", issue pass, new test) intentionally NOT confirmed. Toasts made specific.
+  - students "Mark left" native prompt() → confirmWithReason (one SweetAlert with reason field).
+  - Click-through test `.playwright-mcp/clickthrough2.js` (360px touch, every role, every nav page, every main-content
+    button; confirms cancelled, dialogs closed): 156 taps, 110 screenshots, 0 flags (no write without confirm, no native
+    dialog, no page errors, no stuck dialogs). Run 1 (clickthrough.js) had a script blind spot (custom overlays without
+    role=dialog) — fixed in v2.
+  - 360px audit after round 2: 158 states, 0 clipped cards, 0 sideways page scroll; remaining "overlaps" verified by eye as
+    detector false positives (padding boxes); 2 intentional scrollers (swipe chart, week grid).
+  - Desktop diff (round-1 agent build): 124/136 byte-identical; all others ≤32/255 deltas (anti-aliasing/timing) except the
+    known pre-existing admin-home@1024 flip on main; login identical on recapture.
+  - Agent-reported PRE-EXISTING bugs (not fixed, no functional changes allowed): toast colour picked by regex on message text
+    (timetable, fees, notifications — "N failed" success shows red; errors without the words show green; students page FIXED
+    by agent to always toast errors red); RoomsPanel run() swallows errors so follow-ups run on failure + double toast on
+    auto-assign; IncidentDrawer archive closes drawer even on failure; PayrollPanel double toast; timetable "Today" uses UTC
+    date (wrong 00:00–05:30 IST); desktop CBT top bar sticky top-0 hides under the 64px header; `.field.w-auto` can't shrink
+    (unlayered width:100%) on desktop; settings note flex <p> splits text/link on desktop; notifications search icon overlap
+    on desktop; login world-clock times are hard-coded.
+- Round-4c (Jayanth's full mobile design-system brief, mobile only): drawer profile summary (lg:hidden) → /account;
+  NEW `components/mobile/MobileFilters.tsx` (phones: "Filters (n)" button + bottom sheet with Clear all / Show results;
+  desktop: `contents` wrapper = identical inline); TableView `mobileHide` hint → `data-mhide` → hidden on phone cards only.
+  8 agents applying filters/card hierarchy/form grouping per module (brief: scratchpad/agent-brief-3.md).
+  Dedicated View/Edit ROUTES not created: edit flows are full-height bottom sheets on phones; new routes would be a
+  functional/navigation change (brief §8.6 allows sheets/dialogs by complexity). Student profile is the existing detail page.
+- Round-4d (Jayanth, testing on his phone; "just design, I will test, you don't test"):
+  - RecordCard phones: header becomes a grid (avatar spans 2 rows; name wraps to 2 lines; status badge on its own row
+    under the name — the badge no longer squeezes the name); footer `.record-card-footer` = even 2-column grid of
+    same-height buttons (ghost buttons outlined; lone/odd last action spans the row). Lead wrapped in a div (desktop
+    layout unchanged: flex item with content width).
+  - Generic TableView cards (phones): list-row card — title + status on one line, label-left/value-right rows with hairline
+    dividers, long text + controls full width under their label, equal-width action footer. Dense matrices untouched.
+  - "Every add/edit/view must be a separate page on mobile, no big popups": did NOT create new routes (would rewire
+    navigation/data on every module = functional change). Instead, on phones (<768px) every add/edit/view surface is a
+    FULL-SCREEN PAGE: shared `Modal` (23 uses) → 100dvh, app bar with back arrow (X hidden on phones via `contents
+    max-md:hidden` wrapper), scrolling body, pinned Save/Cancel, slide-in `m-page` animation; students Add/Edit form and
+    discipline IncidentDrawer converted the same way. NEW `components/mobile/useMobileBack.ts`: pushes a same-URL history
+    entry (copies Next's history.state so the app router doesn't reload) so the phone Back button closes the screen;
+    closing from UI pops it. SweetAlert confirms stay as small dialogs (right pattern). MobileFilters stays a bottom sheet.
+  - Not yet verified by me (Jayanth asked me not to test): this build's desktop pixel-diff, 360px audit, click-through.
+    Must be run before commit.
+- Round-4e (Jayanth: "filters/forms text very big on mobile"; "PDF download UI very plain — enhance in both"):
+  - Mobile `.field` 16px/44px → 14px/42px; 16px kept ONLY on iOS Safari via `@supports (-webkit-touch-callout: none)`
+    (prevents zoom-on-focus). Removed agent-added `max-md:text-base` on inputs/selects (students, timetable, fees, login).
+  - Download experience (desktop + mobile): `lib/api.ts apiDownload` now emits `erp:download` events
+    (start/progress/done/error; streams the body for real byte progress; same request, same saved file/name) and
+    NEW `components/DownloadTray.tsx` (mounted in root layout) shows a card per download: coloured file tile
+    (PDF/XLS/CSV) with shine while preparing, name, live "x KB of y KB"/percent, progress bar (indeterminate when no
+    length), green "Saved to your downloads" or red error; auto-dismiss. Desktop bottom-left, phones under the app bar.
+  - PDF documents (every printable — receipts, invoices, report cards, payslips, gate passes, admission letters, lesson
+    plans, ID cards, exports): `backend/src/common/pdf.ts buildPdf` redesigned, same PdfSpec/PdfBlock API so no caller
+    changed: navy header band + school logo tile (NEW `common/pdf-logo.ts`, base64 of frontend/public/logo.png so it ships
+    in dist, monogram fallback), reference chip, accent stripe, accent-bar title, section headings with rule, fields as a
+    rounded two-column card (splits across pages), tables with navy header (repeated on continuation pages), zebra rows,
+    right-aligned numeric columns, ellipsis instead of hard cut, signature chip, footer rule + "Page X of Y".
+    Sanity-generated a sample receipt (16.9 KB) — not a UI test. Backend rebuilt + restarted on the frozen DB copy.
+- Round-4f (Jayanth phone screenshots): (1) roll-call filter sheet "breaking" — the sheet was position:fixed inside a
+  card with backdrop-filter (creates a containing block → sheet trapped/clipped in the card). MobileFilters sheet now
+  portals to <body>; because that moves the controls out of the page <form>, the sheet is a proxy <form> forwarding any
+  submit (Apply button / Enter / "Show results") to the trigger's enclosing form via requestSubmit (page onSubmit runs as
+  before). (2) Visitor log: phone-only visitor card (name+phone, Inside/Left badge, aligned dl Meeting/Hostel/Pass/In/
+  Out/Purpose, full-width Check out); desktop markup kept inside a `contents max-md:hidden` wrapper. (3) Gate pass
+  rows: phone header name/class + status (+Late) badge, meta incl. pass code, actions as an even 2-col grid of 44px
+  buttons (Reject left, approve/issue right, Print full row); desktop badges/code wrapped `contents max-md:hidden`.
+  (4) RecordCard header back to badge top-right (name wraps 2 lines instead of truncating); footer CSS generalized:
+  captions (e.g. invoice no.) full row, button wrappers full-row 2-col grid.
+- Paused at ~95% of Jayanth's usage limit. capsule.md (repo root) rewritten as the round-4 handoff: rules, running
+  servers, mobile-only gotchas, everything built, and the IN-PROGRESS task — 4 mockup card designs (students, gate pass
+  records, hostel roll call, staff payslips) via a planned TableView `mobileCards` prop (not yet written). All round-4
+  work uncommitted on jayanth/mobile-responsive.
+- Round-4g (Jayanth's 5 mockups: payslip, staff directory, hostel roll call, gate pass records, student card):
+  - `TableView` `mobileCards` prop finished + used by students, gate pass records, staff payslips, staff directory,
+    hostel roll call. Phones render the purpose-built cards (`md:hidden`), desktop keeps the same card/table views;
+    the generic `.as-cards` restyle stays behind `max-md:hidden` when a custom phone card exists.
+  - NEW `components/mobile/MobileCard.tsx`: `MCard` (20px radius white surface + soft corner wash), `MAvatar`
+    (gradient/soft initials disc, optional status dot), `MChip` (icon chip), `MLabel`, `MPanel` (inset block),
+    `MCopyRow` (call/mail + copy-to-clipboard), `MStat` (labelled cell for 2×2 grids). One language across all
+    phone cards, 44–48px actions.
+  - Students: done in the previous session (avatar + status, class/roll/house chips, contact panel, Profile/Edit/
+    Mark left/Delete grid). Gate pass records + payslips: also from the previous session. This round added
+    **staff directory** (avatar + Active, email/phone copy panel, role/subject/login chips, Profile + Edit +
+    Create login) and **hostel roll call**: per-boarder card — room band + bed chip, Student label + avatar + ID·class,
+    Status label + 3 full-width 48px segments (Present green / Absent outline / On Leave amber, same radiogroup
+    handlers), Last-marked tinted box (green when unmarked), plus a **phone save bar** (hostel tile + name + “date ·
+    session”, Present/Absent/On-leave count tiles, unsaved dot, full-width navy Save). Desktop bar unchanged
+    (wrapped in `max-md:hidden`).
+  - App bar (mobile only, from the mockups): 66px header with a 40px icon tile, 19px `<h1>` page name and a
+    one-line tagline (`routeTagline()` in RouteMeta; short map + dynamic routes). `PageHeader`'s title/subtitle
+    block is now `max-md:hidden` — phones already show it in the app bar, actions still render; desktop unchanged.
+  - tsc 0 errors, `next build` clean, `next start` restarted on :5174 (phone URL http://192.168.31.75:5174,
+    backend already on :3001). No browser tests run — Jayanth asked to design only and test himself.
+- Round-4h (Jayanth: "remove the padding of card in hostel, payroll, students, gate … no padding in mobile view",
+  plus the Academics/Attendance mockups):
+  - Card padding on phones: `TableView`'s custom-card container lost its `p-3` + `bg-page`; the record lists'
+    enclosing cards are `max-md:contents` (students, gate Pass records, payroll payslips, hostel roster, attendance
+    mark sheet) so their box (border/white fill/padding) disappears on phones and the cards sit on the page with the
+    single 16px column gutter — exactly like the mockups. Desktop keeps the same card boxes. Hostel's filter/counter
+    rows got `max-md:px-4` back because their container's padding was dropped; students' record header lost its
+    mobile border/padding.
+  - Academics → Lesson Plans (phones): card design from the mockup — status-tinted 48px icon tile, 17px topic, unit ·
+    subject · class, date + teacher meta, Attach PDF / Export as equal 44–48px buttons (same `LessonPlanPdfActions`,
+    same upload/export handlers), hairline, then the status select tinted by state (Planned amber / In Progress blue /
+    Completed green) + red delete tile. Desktop list unchanged (`max-md:hidden`).
+  - Attendance legend: `AttendanceLegend` now renders an “Attendance Legend & Calculation” card on phones (P/A/L/OD/Lv
+    rows with the status squares, the % formula panel and the “leave and Sundays not counted” note); the compact
+    inline legend is `md:`-only. Used by Mark attendance, Low attendance and Analytics, so all three get it.
+  - Mark daily attendance (phones): per-student card via `mobileCards` — avatar, name (opens the calendar), roll,
+    approved-leave line, “Status” label + 5-segment control (Present filled green with a check; P/A/L/OD/Leave),
+    OD/Leave reason input, and the saved status/notice line. Same `setStatus` / keyboard handlers; desktop table
+    unchanged.
+  - Analytics/overview already used the mockup language (tinted KPI tiles + sparkline, Status-mix donut, by-class
+    bars, legend) — not restyled.
+  - tsc 0, `next build` clean, `next start` restarted on :5174. Committed + pushed to `jayanth/mobile-responsive`
+    (Jayanth asked for it this time).

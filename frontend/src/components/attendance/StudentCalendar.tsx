@@ -101,7 +101,7 @@ export function StudentCalendar({ studentId, showName = true, allowFuture = fals
           <div className="rounded-xl bg-surface-2 p-2 sm:p-3">
             <div className="grid grid-cols-7 gap-1 sm:gap-1.5" aria-hidden>
               {WEEK.map((w) => (
-                <span key={w} className="py-1 text-center text-[10.5px] font-semibold uppercase tracking-wide text-ink-3">
+                <span key={w} className="py-1 text-center text-[10.5px] max-md:text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">
                   <span className="sm:hidden">{w[0]}</span><span className="hidden sm:inline">{w}</span>
                 </span>
               ))}
@@ -138,7 +138,7 @@ export function StudentCalendar({ studentId, showName = true, allowFuture = fals
                 {notes.map((d) => (
                   <li key={d.date} className="flex flex-wrap items-baseline gap-2">
                     <span className="tnum w-24 shrink-0 text-ink-3">{formatDate(d.date)}</span>
-                    <span className={`rounded px-1.5 text-[10.5px] font-bold ring-1 ${metaOf(d.status)?.cell ?? "ring-line"}`}>{metaOf(d.status)?.short ?? d.status}</span>
+                    <span className={`rounded px-1.5 text-[10.5px] max-md:text-[11px] font-bold ring-1 ${metaOf(d.status)?.cell ?? "ring-line"}`}>{metaOf(d.status)?.short ?? d.status}</span>
                     <span className="min-w-0 flex-1 text-ink-2">{d.note}</span>
                   </li>
                 ))}

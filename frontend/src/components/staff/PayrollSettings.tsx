@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { Badge, Button, Card, CardHead, Field, Icon, Input, Select, useToast } from "@/components/ui";
 import { errMsg, inr } from "./types";
+import { confirmAction } from "@/components/confirm";
 
 type Slab = { upTo: number | null; rate: number };
 type Regime = { slabs: Slab[]; standardDeduction: number; rebate87A: { maxTaxable: number; maxRebate: number | null; marginalRelief: boolean } };
@@ -61,6 +62,7 @@ export function PayrollSettings({ onSaved }: { onSaved?: () => void }) {
       toast.push("EPF wage ceiling must be a positive amount, or blank for none", "error");
       return;
     }
+    if (!(await confirmAction({ title: "Save payroll settings?", text: "Professional tax and EPF rules change for the whole school. Regenerate draft payslips to apply them.", confirmText: "Save settings", tone: "primary" }))) return;
     setBusy(true);
     try {
       await apiFetch("/api/staff/payroll-config", {
@@ -98,13 +100,13 @@ export function PayrollSettings({ onSaved }: { onSaved?: () => void }) {
             <Field label="EPF wage ceiling (₹/month)" hint="EPF % is applied to basic capped at this amount. Blank = no ceiling.">
               <Input type="number" min={0} placeholder="e.g. 15000" value={ceiling} onChange={(e) => setCeiling(e.target.value)} />
             </Field>
-            <Button variant="primary" loading={busy} onClick={save}>Save settings</Button>
+            <Button variant="primary" className="max-md:w-full" loading={busy} onClick={save}>Save settings</Button>
           </div>
           {(["new", "old"] as const).map((k) => {
             const r = cfg.effective.regimes[k];
             return (
               <div key={k} className="rounded-xl border border-line bg-surface-2/60 p-3 text-[12.5px]">
-                <div className="mb-1.5 flex items-center justify-between">
+                <div className="mb-1.5 flex items-center justify-between max-md:gap-2">
                   <span className="font-semibold text-ink">{k === "new" ? "New regime (default)" : "Old regime"}</span>
                   <Badge tone="slate">{cfg.effective.version}</Badge>
                 </div>

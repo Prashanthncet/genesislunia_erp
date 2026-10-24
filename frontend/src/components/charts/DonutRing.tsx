@@ -74,7 +74,7 @@ export function DonutRing({
           <p className="font-display text-[19px] font-extrabold leading-none tracking-tight text-ink">
             {centerValue}
           </p>
-          <p className="mt-1 text-[10.5px] font-semibold uppercase tracking-wider text-ink-3">
+          <p className="mt-1 text-[10.5px] font-semibold uppercase tracking-wider text-ink-3 max-md:text-[11px]">
             {centerLabel}
           </p>
         </div>
@@ -92,7 +92,7 @@ export function DonutRing({
                 {currency}{Math.round(s.value).toLocaleString("en-IN")}
               </span>
               {showShare && total > 0 && (
-                <span className="block text-[10.5px] tabular-nums text-ink-3">
+                <span className="block text-[10.5px] tabular-nums text-ink-3 max-md:text-[11px]">
                   {Math.round((Math.max(0, s.value) / total) * 100)}%
                 </span>
               )}

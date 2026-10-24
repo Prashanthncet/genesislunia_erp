@@ -10,6 +10,8 @@ import { TableView } from "@/components/TableView";
 import { CardBody, CardEmpty, CardFooter, CardGrid, CardTitle, Chip, Meter, Monogram, RecordCard, StatusPill, initials, statusTone, toneFor } from "@/components/RecordCard";
 import { StaggerItem } from "@/components/motion/AnimatedCards";
 import { formatDate } from "@/lib/format";
+import { confirmAction } from "@/components/confirm";
+import { MobileFilters } from "@/components/mobile/MobileFilters";
 
 type ClassItem = { id: string; name: string; section: string | null };
 type Invoice = {
@@ -119,6 +121,9 @@ export default function FeesPage() {
 
   const generateInvoices = async () => {
     if (!genClass) return setMessage("Select class (required)");
+    const gc = classes.find((c) => c.id === genClass);
+    const gcName = gc ? [gc.name, gc.section].filter(Boolean).join(" ") : "this class";
+    if (!(await confirmAction({ title: `Generate ${genTerm} invoices for ${gcName}?`, text: `Every student in ${gcName} will be billed for ${genTerm} using the current fee heads, due ${formatDate(genDue)}.`, confirmText: "Generate", tone: "primary" }))) return;
     setGenerating(true);
     try {
       const res = await apiFetch<{ generated: number }>("/api/fees/invoices/generate", {
@@ -132,6 +137,9 @@ export default function FeesPage() {
 
   const recordPayment = async () => {
     if (!payInvoice || !payAmount) return setMessage("Invoice and amount required");
+    const pi = invoices.find((i) => i.id === payInvoice);
+    const amt = `₹${Number(payAmount).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+    if (!(await confirmAction({ title: `Record ${amt} from ${pi?.student.fullName ?? "this student"}?`, text: `${payMode}${payRef.trim() ? ` · Ref ${payRef.trim()}` : ""}${pi ? ` against ${pi.invoiceNo ?? pi.term}` : ""}. A receipt will be issued and downloaded.`, confirmText: "Record payment", tone: "primary" }))) return;
     setPaying(true);
     try {
       const res = await apiFetch<{ id: string; receipt_no: string }>("/api/fees/payments", {
@@ -140,7 +148,7 @@ export default function FeesPage() {
       });
       setPayInvoice(""); setPayAmount(""); setPayRef("");
       await loadAll();
-      setMessage(`Payment recorded: ${res.receipt_no}`);
+      setMessage(`${amt} recorded${pi ? ` for ${pi.student.fullName}` : ""}: ${res.receipt_no}`);
       void receipt(res.id, res.receipt_no);
     } catch (e) { setMessage(`Failed: ${e instanceof Error ? e.message : ""}`); } finally { setPaying(false); }
   };
@@ -151,16 +159,18 @@ export default function FeesPage() {
       await apiFetch("/api/fees/structures", { method: "POST", body: JSON.stringify({ class_id: stClass, fee_type: stType.trim(), amount: Number(stAmount) }) });
       setStType(""); setStAmount("");
       await loadAll();
-      setMessage("Fee head added");
+      setMessage(`${stType.trim()} added`);
     } catch (e) { setMessage(`Failed: ${e instanceof Error ? e.message : ""}`); }
   };
 
   const removeStructure = async (id: string) => {
-    if (!window.confirm("Remove this fee head? Existing invoices are not changed.")) return;
+    const st = structures.find((x) => x.id === id);
+    const stLabel = st ? `${st.feeType} (${[st.class?.name, st.class?.section].filter(Boolean).join(" ")})` : "this fee head";
+    if (!(await confirmAction({ title: `Remove ${stLabel}?`, text: "It won't be billed on future invoices. Existing invoices are not changed.", confirmText: "Remove", tone: "danger" }))) return;
     try {
       await apiFetch(`/api/fees/structures/${id}`, { method: "DELETE" });
       await loadAll();
-      setMessage("Fee head removed");
+      setMessage(st ? `${st.feeType} removed` : "Fee head removed");
     } catch (e) { setMessage(`Failed: ${e instanceof Error ? e.message : ""}`); }
   };
 
@@ -246,7 +256,7 @@ export default function FeesPage() {
   );
 
   const tabBtn = (id: Tab, label: string, icon: string, count?: number) => (
-    <button key={id} onClick={() => setTab(id)} className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 ${tab === id ? "bg-brand-50 font-semibold text-brand-700 ring-1 ring-brand-100" : "text-ink-2 hover:bg-surface-2"}`}>
+    <button key={id} onClick={() => setTab(id)} className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 max-md:min-h-11 max-md:shrink-0 max-md:snap-start max-md:gap-2 max-md:whitespace-nowrap max-md:px-3.5 max-md:py-2 ${tab === id ? "bg-brand-50 font-semibold text-brand-700 ring-1 ring-brand-100" : "text-ink-2 hover:bg-surface-2"}`}>
       <Icon name={icon} className="h-4 w-4" /> {label}
       {count !== undefined && count > 0 && <span className="px-2 py-0.5 text-xs rounded-full bg-line text-ink-2">{count}</span>}
     </button>
@@ -254,13 +264,13 @@ export default function FeesPage() {
 
   return (
     <div className="relative min-h-screen">
-      <div className="relative z-10 border-b border-line bg-white/80 backdrop-blur-xl">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
+      <div className="relative z-10 border-b border-line bg-white/80 backdrop-blur-xl max-sm:-mx-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 max-md:px-4">
           <PageHeader icon="fees" title={portal ? "Fees" : "Fees & Payments"}
             subtitle={portal ? "Invoices, payments and receipts for your child" : canWrite ? "Manage fee structures, generate invoices, and track payments" : "Read-only view of invoices, collections and defaulters"} />
           {!canWrite && !portal && <Badge tone="slate"><Icon name="eye" className="h-3.5 w-3.5" /> Read-only</Badge>}
         </div>
-        <div className="flex flex-wrap items-center gap-2 px-6">
+        <div className="m-scroll-x flex flex-wrap items-center gap-2 px-6 max-md:flex-nowrap max-md:gap-1.5 max-md:px-4 max-md:pb-3">
           {tabBtn("invoices", "Invoices", "receipt", invoices.length)}
           {staffRead && tabBtn("payments", "Payments", "wallet", payments.length)}
           {staffRead && tabBtn("defaulters", "Defaulters", "alert", defaulters?.count)}
@@ -268,23 +278,24 @@ export default function FeesPage() {
         </div>
       </div>
 
-      <div className="relative z-10 p-6 space-y-6">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Reveal delay={0}><div className="rounded-xl bg-brand-900 p-5 text-white shadow-xl"><div className="flex items-center justify-between mb-3"><span className="text-xs font-medium text-white/55 uppercase tracking-wide">Total Invoices</span><Icon name="receipt" className="h-5 w-5 text-white/65" /></div><p className="text-3xl font-bold">{invoices.length}</p></div></Reveal>
-          <Reveal delay={100}><div className="rounded-xl bg-brand-50 border border-brand-200 p-5"><div className="flex items-center justify-between mb-3"><span className="text-xs font-medium text-accent-600 uppercase tracking-wide">Total Billed</span><span className="text-xl font-bold text-brand-700">{fmt(totalBilled)}</span></div><div className="mt-2 h-2 bg-brand-200 rounded-full overflow-hidden"><div className="h-full bg-brand-700 rounded-full" style={{ width: "100%" }} /></div></div></Reveal>
-          <Reveal delay={200}><div className="rounded-xl bg-ok-soft border border-ok-line p-5"><div className="flex items-center justify-between mb-3"><span className="text-xs font-medium text-ok uppercase tracking-wide">Collected</span><span className="text-xl font-bold text-ok-ink">{fmt(totalCollected)}</span></div><div className="mt-2 h-2 bg-ok-line rounded-full overflow-hidden"><div className="h-full bg-ok rounded-full" style={{ width: `${collectionRate}%` }} /></div></div></Reveal>
-          <Reveal delay={300}><div className="rounded-xl bg-danger-soft border border-danger-line p-5"><div className="flex items-center justify-between mb-3"><span className="text-xs font-medium text-danger uppercase tracking-wide">Outstanding</span><span className="text-xl font-bold text-danger-ink">{fmt(totalOutstanding)}</span></div><div className="mt-2 flex items-center gap-2"><Icon name="alert" className="h-5 w-5 text-danger" /><span className="text-sm text-danger">{overdueCount ? `${overdueCount} overdue invoice(s)` : "Nothing overdue"}</span></div></div></Reveal>
+      <div className="relative z-10 p-6 space-y-6 max-md:space-y-4 max-md:px-0 max-md:py-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4 max-md:grid-cols-2 max-md:gap-3">
+          <Reveal delay={0}><div className="rounded-xl bg-brand-900 p-5 text-white shadow-xl max-md:h-full max-md:p-4"><div className="flex items-center justify-between mb-3"><span className="text-xs font-medium text-white/55 uppercase tracking-wide">Total Invoices</span><Icon name="receipt" className="h-5 w-5 text-white/65" /></div><p className="text-3xl font-bold max-md:text-2xl">{invoices.length}</p></div></Reveal>
+          <Reveal delay={100}><div className="rounded-xl bg-brand-50 border border-brand-200 p-5 max-md:h-full max-md:p-4"><div className="flex items-center justify-between mb-3 max-md:flex-col max-md:items-start max-md:gap-1"><span className="text-xs font-medium text-accent-600 uppercase tracking-wide">Total Billed</span><span className="text-xl font-bold text-brand-700 max-md:text-lg">{fmt(totalBilled)}</span></div><div className="mt-2 h-2 bg-brand-200 rounded-full overflow-hidden"><div className="h-full bg-brand-700 rounded-full" style={{ width: "100%" }} /></div></div></Reveal>
+          <Reveal delay={200}><div className="rounded-xl bg-ok-soft border border-ok-line p-5 max-md:h-full max-md:p-4"><div className="flex items-center justify-between mb-3 max-md:flex-col max-md:items-start max-md:gap-1"><span className="text-xs font-medium text-ok uppercase tracking-wide">Collected</span><span className="text-xl font-bold text-ok-ink max-md:text-lg">{fmt(totalCollected)}</span></div><div className="mt-2 h-2 bg-ok-line rounded-full overflow-hidden"><div className="h-full bg-ok rounded-full" style={{ width: `${collectionRate}%` }} /></div></div></Reveal>
+          <Reveal delay={300}><div className="rounded-xl bg-danger-soft border border-danger-line p-5 max-md:h-full max-md:p-4"><div className="flex items-center justify-between mb-3 max-md:flex-col max-md:items-start max-md:gap-1"><span className="text-xs font-medium text-danger uppercase tracking-wide">Outstanding</span><span className="text-xl font-bold text-danger-ink max-md:text-lg">{fmt(totalOutstanding)}</span></div><div className="mt-2 flex items-center gap-2"><Icon name="alert" className="h-5 w-5 text-danger" /><span className="text-sm text-danger">{overdueCount ? `${overdueCount} overdue invoice(s)` : "Nothing overdue"}</span></div></div></Reveal>
         </div>
 
         {tab === "invoices" && (
           <>
             <Reveal delay={100}>
-              <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl bg-white border border-line shadow-sm">
-                <div className="relative flex-1 min-w-[200px]">
+              <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl bg-white border border-line shadow-sm max-md:gap-3 max-md:p-3">
+                <div className="relative flex-1 min-w-[200px] max-md:min-w-0 max-md:basis-full">
                   <Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-3" />
-                  <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} aria-label="Search invoices" placeholder="Search by name, admission no or invoice no..." className="w-full rounded-lg border border-line-strong bg-surface-2 pl-10 pr-4 py-2.5 text-sm focus:border-brand-700 focus:ring-2 focus:ring-accent-500/20" />
+                  <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} aria-label="Search invoices" placeholder="Search by name, admission no or invoice no..." className="w-full rounded-lg border border-line-strong bg-surface-2 pl-10 pr-4 py-2.5 text-sm focus:border-brand-700 focus:ring-2 focus:ring-accent-500/20 max-md:min-h-11" />
                 </div>
-                <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} aria-label="Filter by status" className="appearance-none rounded-lg border border-line-strong bg-surface-2 px-4 py-2.5 pr-10 text-sm text-ink-2 focus:border-brand-700">
+                <MobileFilters active={filterStatus ? 1 : 0} label="Status">
+                <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} aria-label="Filter by status" className="appearance-none rounded-lg border border-line-strong bg-surface-2 px-4 py-2.5 pr-10 text-sm text-ink-2 focus:border-brand-700 max-md:min-h-11 max-md:w-full">
                   <option value="">All Status</option>
                   <option value="Overdue">Overdue</option>
                   <option value="Paid">Paid</option>
@@ -292,10 +303,11 @@ export default function FeesPage() {
                   <option value="Partial">Partial</option>
                   <option value="Unpaid">Unpaid</option>
                 </select>
+                </MobileFilters>
               </div>
             </Reveal>
             <Reveal delay={150}>
-              <div className={`grid grid-cols-1 gap-6 ${canWrite ? "lg:grid-cols-3" : ""}`}>
+              <div className={`grid grid-cols-1 gap-6 max-md:gap-4 ${canWrite ? "lg:grid-cols-3" : ""}`}>
                 <div className={`${canWrite ? "lg:col-span-2" : ""} rounded-xl border border-line bg-white shadow-soft overflow-hidden`}>
                   <div className="overflow-x-auto">
                     <TableView id="fees-invoices" cards={invoiceCards}>
@@ -359,8 +371,8 @@ export default function FeesPage() {
                   </div>
                 </div>
                 {canWrite && (
-                  <div className="space-y-6">
-                    <div className="rounded-xl border border-line bg-white shadow-sm p-6">
+                  <div className="space-y-6 max-md:space-y-4">
+                    <div className="rounded-xl border border-line bg-white shadow-sm p-6 max-md:p-4">
                       <h3 className="font-semibold text-ink mb-4">Generate Invoice</h3>
                       <div className="space-y-4">
                         <Select value={genClass} onChange={(e) => setGenClass(e.target.value)} aria-label="Class to invoice"><option value="">Select Class</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name} {c.section}</option>)}</Select>
@@ -371,7 +383,7 @@ export default function FeesPage() {
                         <Button variant="primary" onClick={generateInvoices} loading={generating} className="w-full"><Icon name="plus" className="h-4 w-4" /> Generate Invoices</Button>
                       </div>
                     </div>
-                    <div className="rounded-xl border border-line bg-white shadow-sm p-6">
+                    <div className="rounded-xl border border-line bg-white shadow-sm p-6 max-md:p-4">
                       <h3 className="font-semibold text-ink mb-4">Record Payment</h3>
                       <div className="space-y-4">
                         <Select value={payInvoice} onChange={(e) => setPayInvoice(e.target.value)} aria-label="Invoice to pay"><option value="">Select Invoice</option>{invoices.filter((i) => i.balance > 0).map((i) => <option key={i.id} value={i.id}>{i.student.fullName} · {i.term} · {fmt(i.balance)}</option>)}</Select>
@@ -383,7 +395,7 @@ export default function FeesPage() {
                         <Button variant="primary" onClick={recordPayment} loading={paying} disabled={!payInvoice || !payAmount} className="w-full"><Icon name="fees" className="h-4 w-4" /> Record Payment &amp; Print Receipt</Button>
                       </div>
                     </div>
-                    <div className="rounded-xl border border-line bg-white shadow-sm p-6">
+                    <div className="rounded-xl border border-line bg-white shadow-sm p-6 max-md:p-4">
                       <h3 className="font-semibold text-ink mb-2">Collection Progress</h3>
                       <ProgressBar value={collectionRate} tone="emerald" className="h-3" />
                       <p className="text-sm text-ink-2 mt-2">{collectionRate}% collected of {fmt(totalBilled)}</p>
@@ -398,11 +410,11 @@ export default function FeesPage() {
         {tab === "payments" && staffRead && (
           <Reveal>
             <div className="rounded-xl border border-line bg-white shadow-soft overflow-hidden">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3.5 max-md:px-4">
                 <h3 className="font-semibold text-ink">Recent payments</h3>
                 <span className="text-xs text-ink-3">Gateway payments are tagged <Badge tone="sky">Online</Badge></span>
               </div>
-              <TableView id="fees-payments">
+              <TableView id="fees-payments" mobileHide={["Invoice"]}>
                 <table className="w-full text-sm text-left">
                   <thead className="bg-surface-2/70 border-b border-line">
                     <tr className="text-[11px] font-bold text-ink-2 uppercase tracking-wider">
@@ -435,14 +447,14 @@ export default function FeesPage() {
         {tab === "defaulters" && staffRead && (
           <Reveal>
             <div className="rounded-xl border border-line bg-white shadow-soft overflow-hidden">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3.5 max-md:px-4">
                 <div>
                   <h3 className="font-semibold text-ink">Fee defaulters</h3>
                   <p className="text-xs text-ink-3">Invoices past their due date with a balance, as of {defaulters ? formatDate(defaulters.as_of) : "—"}</p>
                 </div>
                 <span className="font-mono text-sm font-bold text-danger-ink">{fmt(defaulters?.total_overdue ?? 0)} overdue</span>
               </div>
-              <TableView id="fees-defaulters">
+              <TableView id="fees-defaulters" mobileHide={["Overdue invoices", "Oldest due"]}>
                 <table className="w-full text-sm text-left">
                   <thead className="bg-surface-2/70 border-b border-line">
                     <tr className="text-[11px] font-bold text-ink-2 uppercase tracking-wider">
@@ -471,7 +483,7 @@ export default function FeesPage() {
 
         {tab === "structures" && staffRead && (
           <Reveal>
-            <div className={`grid grid-cols-1 gap-6 ${canWrite ? "lg:grid-cols-3" : ""}`}>
+            <div className={`grid grid-cols-1 gap-6 max-md:gap-4 ${canWrite ? "lg:grid-cols-3" : ""}`}>
               <div className={`${canWrite ? "lg:col-span-2" : ""} rounded-xl border border-line bg-white shadow-soft overflow-hidden`}>
                 <TableView id="fees-structures">
                   <table className="w-full text-sm text-left">
@@ -499,7 +511,7 @@ export default function FeesPage() {
                 </TableView>
               </div>
               {canWrite && (
-                <div className="rounded-xl border border-line bg-white shadow-sm p-6 h-fit">
+                <div className="rounded-xl border border-line bg-white shadow-sm p-6 h-fit max-md:p-4">
                   <h3 className="font-semibold text-ink mb-4">Add fee head</h3>
                   <div className="space-y-4">
                     <Select value={stClass} onChange={(e) => setStClass(e.target.value)} aria-label="Class">{classes.map((c) => <option key={c.id} value={c.id}>{c.name} {c.section}</option>)}</Select>

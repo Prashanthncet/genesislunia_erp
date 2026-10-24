@@ -53,7 +53,7 @@ export type ExportSpec = { report: string; label: string };
 export function ExportBar({ exports, query = "" }: { exports: ExportSpec[]; query?: string }) {
   if (!exports.length) return null;
   return (
-    <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-2 border-b border-line bg-surface-2/50 px-5 py-2.5">
+    <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-2 border-b border-line bg-surface-2/50 px-5 py-2.5 max-md:justify-start max-md:px-4">
       {exports.map((e) => (
         <div key={e.report} className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">{exports.length > 1 ? e.label : "Export"}</span>

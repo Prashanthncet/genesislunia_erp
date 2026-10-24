@@ -8,6 +8,8 @@ import { formatDate } from "@/lib/format";
 import { TableView } from "@/components/TableView";
 import { errMsg, inr, slipTone, totalDeductions, type Payslip, type Salary } from "./types";
 import { PayrollSettings } from "./PayrollSettings";
+import { confirmAction } from "@/components/confirm";
+import { MAvatar, MCard, MLabel, MPanel, MStat } from "@/components/mobile/MobileCard";
 
 type Preview = { quotas: Record<string, number>; unpaid: Record<string, { days: number; byType: Record<string, number> }> };
 type StaffLite = { id: string; name: string; role: string; isActive: boolean };
@@ -68,7 +70,19 @@ export function PayrollPanel() {
     try { await fn(); toast.push(ok, "success"); await load(); } catch (e) { toast.push(errMsg(e), "error"); } finally { setBusy(false); }
   };
 
-  const generate = () => act(async () => {
+  const generate = async () => {
+    if (!(await confirmAction({
+      title: `Run payroll for ${month}?`,
+      text: asDraft
+        ? "Payslips will be created as Drafts for you to review before releasing. Already-released payslips are skipped."
+        : "Payslips will be released straight away and become visible to staff. Releasing cannot be undone. Already-released payslips are skipped.",
+      confirmText: asDraft ? "Generate drafts" : "Generate & release",
+      tone: "primary",
+    }))) return;
+    await runGenerate();
+  };
+
+  const runGenerate = () => act(async () => {
     const entries = Object.entries(overrides).filter(([, v]) => v.trim() !== "");
     for (const [, v] of entries) {
       const n = Number(v);
@@ -83,7 +97,12 @@ export function PayrollPanel() {
     setOverrides({});
   }, "Payroll run complete");
 
-  const saveSalary = () => act(() => apiFetch(`/api/staff/salaries/${salStaff}`, {
+  const saveSalary = async () => {
+    if (!(await confirmAction({ title: `Save salary structure for ${nameOf(salStaff)}?`, text: "New pay figures apply to payslips generated from now on.", confirmText: "Save salary", tone: "primary" }))) return;
+    await runSaveSalary();
+  };
+
+  const runSaveSalary = () => act(() => apiFetch(`/api/staff/salaries/${salStaff}`, {
     method: "PUT",
     body: JSON.stringify({
       basic_salary: Number(sal.basic_salary), hra: Number(sal.hra), da: Number(sal.da), epf_percent: Number(sal.epf_percent),
@@ -122,8 +141,14 @@ export function PayrollPanel() {
 
   const slipActions = (p: Payslip) => (
     <>
-      {p.status === "Draft" && <Button type="button" size="sm" disabled={busy} onClick={() => act(() => apiFetch(`/api/staff/payslips/${p.id}/finalize`, { method: "PUT" }), "Released")}>Release</Button>}
-      {p.status === "Generated" && <Button type="button" size="sm" variant="primary" disabled={busy} onClick={() => act(() => apiFetch(`/api/staff/payslips/${p.id}/mark-paid`, { method: "PUT" }), "Marked paid")}>Mark paid</Button>}
+      {p.status === "Draft" && <Button type="button" size="sm" disabled={busy} onClick={async () => {
+        if (!(await confirmAction({ title: `Release payslip for ${p.staff?.name ?? "this staff member"}?`, text: `The ${p.monthYear} payslip becomes visible to them. This cannot be undone — a released payslip cannot be regenerated.`, confirmText: "Release", tone: "primary" }))) return;
+        await act(() => apiFetch(`/api/staff/payslips/${p.id}/finalize`, { method: "PUT" }), `Payslip released for ${p.staff?.name ?? "staff member"}`);
+      }}>Release</Button>}
+      {p.status === "Generated" && <Button type="button" size="sm" variant="primary" disabled={busy} onClick={async () => {
+        if (!(await confirmAction({ title: `Mark ${p.staff?.name ?? "this"} payslip as paid?`, text: `Records the ${p.monthYear} net pay of ${inr(p.netSalary)} as paid.`, confirmText: "Mark paid", tone: "primary" }))) return;
+        await act(() => apiFetch(`/api/staff/payslips/${p.id}/mark-paid`, { method: "PUT" }), `Payslip marked paid for ${p.staff?.name ?? "staff member"}`);
+      }}>Mark paid</Button>}
       <Button type="button" size="sm" variant="ghost" onClick={() => downloadSlip(p)} aria-label={`Download payslip PDF for ${p.staff?.name ?? "staff"}`}>
         <Icon name="download" className="h-3.5 w-3.5" /> PDF
       </Button>
@@ -162,9 +187,62 @@ export function PayrollPanel() {
     </CardGrid>
   );
 
+  /** Phones: payslip card (who + status, net-pay hero, deductions strip, period, actions). */
+  const payslipMobileCards = slips.length === 0 ? (
+    <CardEmpty title="No payslips for this month" hint="Run payroll above to generate them." icon="receipt" />
+  ) : slips.map((p) => (
+    <MCard key={p.id} tone={toneFor(p.staff?.department)}>
+      <div className="flex items-start gap-3">
+        <MAvatar name={p.staff?.name ?? "Staff"} tone={toneFor(p.staff?.department)} size={56} variant="soft" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[17px] font-bold leading-snug text-ink">{p.staff?.name ?? "Staff"}</p>
+          <p className="mt-0.5 text-[13px] text-ink-3">{p.staff?.role ?? ""}{p.staff?.department ? ` · ${p.staff.department}` : ""}</p>
+          <div className="mt-2"><StatusPill status={p.status} /></div>
+        </div>
+      </div>
+      <div className="mt-4">
+        <MPanel tone="navy">
+          <div className="flex items-stretch divide-x divide-line">
+            <div className="min-w-0 flex-[1.4] px-4 py-3">
+              <MLabel>Net pay</MLabel>
+              <p className="tnum mt-1 text-[28px] font-bold leading-tight text-accent-700">{inr(p.netSalary)}</p>
+            </div>
+            <div className="min-w-0 flex-1 px-4 py-3">
+              <MLabel>Gross</MLabel>
+              <p className="tnum mt-2 text-[16px] font-semibold text-ink">{inr(p.grossSalary)}</p>
+            </div>
+          </div>
+        </MPanel>
+      </div>
+      <div className="mt-2.5">
+        <MPanel>
+          <div className="grid grid-cols-3 divide-x divide-line">
+            <MStat label="TDS" value={inr(p.tdsDeduction)} />
+            <MStat label="PT" value={inr(p.professionalTax ?? 0)} />
+            <MStat label="EPF" value={inr(p.epfDeduction)} />
+          </div>
+        </MPanel>
+      </div>
+      <div className="mt-3 flex items-center gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-surface-2 text-ink-2"><Icon name="calendar" className="h-[18px] w-[18px]" /></span>
+        <div className="min-w-0">
+          <p className="text-[12px] text-ink-3">Payslip period</p>
+          <p className="tnum text-[15px] font-semibold text-ink">{p.monthYear}</p>
+        </div>
+        <div className="ml-auto flex flex-wrap justify-end gap-1.5">
+          {p.unpaidDays > 0 && <Badge tone="rose">{p.unpaidDays} unpaid day{p.unpaidDays === 1 ? "" : "s"}</Badge>}
+          {p.paidAt && <Badge tone="emerald">Paid {formatDate(p.paidAt)}</Badge>}
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-2 [&>*]:!min-h-12 [&>*]:w-full [&>*]:justify-center [&>.btn-ghost]:!border [&>.btn-ghost]:!border-line [&>:only-child]:col-span-2">
+        {slipActions(p)}
+      </div>
+    </MCard>
+  ));
+
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 max-md:gap-3">
         <StatCard label="Draft" value={counts.Draft} tone="amber" icon="edit" />
         <StatCard label="Generated" value={counts.Generated} tone="sky" icon="file" />
         <StatCard label="Paid" value={counts.Paid} tone="teal" icon="check" />
@@ -178,15 +256,15 @@ export function PayrollPanel() {
           title="Payroll run"
           icon="wallet"
           subtitle="Unpaid days = approved Unpaid leave + leave beyond the annual quota (Casual 12, Sick 8, Earned 15, Duty 10). Override per person below."
-          actions={<Input type="month" aria-label="Payroll month" className="field w-auto" value={month} onChange={(e) => setMonth(e.target.value)} />}
+          actions={<Input type="month" aria-label="Payroll month" className="field w-auto max-md:flex-1" value={month} onChange={(e) => setMonth(e.target.value)} />}
         />
         <div className="mb-3">
           {unpaidRows.length === 0 ? <p className="text-sm text-ink-3">No unpaid days derived for {month}.</p> : (
             <ul className="grid grid-cols-1 gap-1.5 text-sm sm:grid-cols-2">
               {unpaidRows.map(([id, u]) => (
-                <li key={id} className="flex items-center justify-between gap-2 rounded-lg bg-surface-2/70 px-3 py-1.5">
-                  <span>{nameOf(id)} <span className="text-xs text-ink-3">{Object.entries(u.byType).map(([t, d]) => `${t} ${d}`).join(", ")}</span></span>
-                  <span className="flex items-center gap-1.5">
+                <li key={id} className="flex items-center justify-between gap-2 rounded-lg bg-surface-2/70 px-3 py-1.5 max-md:flex-wrap max-md:py-2">
+                  <span className="max-md:min-w-0">{nameOf(id)} <span className="text-xs text-ink-3">{Object.entries(u.byType).map(([t, d]) => `${t} ${d}`).join(", ")}</span></span>
+                  <span className="flex items-center gap-1.5 max-md:ml-auto">
                     <Badge tone="rose">{u.days} day(s)</Badge>
                     <Input aria-label={`Override unpaid days for ${nameOf(id)}`} type="number" min={0} max={31} step={0.5} placeholder="override" className="field w-24"
                       value={overrides[id] ?? ""} onChange={(e) => setOverrides({ ...overrides, [id]: e.target.value })} />
@@ -197,19 +275,22 @@ export function PayrollPanel() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={asDraft} onChange={(e) => setAsDraft(e.target.checked)} /> Create as Draft (review before releasing)</label>
-          <Button variant="primary" loading={busy} onClick={generate}>Generate payslips</Button>
+          <label className="flex items-center gap-2 text-sm max-md:min-h-11 max-md:w-full"><input type="checkbox" checked={asDraft} onChange={(e) => setAsDraft(e.target.checked)} /> Create as Draft (review before releasing)</label>
+          <Button variant="primary" loading={busy} onClick={generate} className="max-md:flex-1">Generate payslips</Button>
           {counts.Draft > 0 && (
-            <Button variant="accent" loading={busy} onClick={() => act(() => apiFetch("/api/staff/payslips/finalize", { method: "POST", body: JSON.stringify({ month }) }), "Drafts released")}>
+            <Button variant="accent" className="max-md:flex-1" loading={busy} onClick={async () => {
+              if (!(await confirmAction({ title: `Release ${counts.Draft} draft payslip(s) for ${month}?`, text: "They become visible to staff. This cannot be undone — released payslips cannot be regenerated.", confirmText: "Release all", tone: "primary" }))) return;
+              await act(() => apiFetch("/api/staff/payslips/finalize", { method: "POST", body: JSON.stringify({ month }) }), `${counts.Draft} draft payslip(s) released for ${month}`);
+            }}>
               Release {counts.Draft} draft(s)
             </Button>
           )}
         </div>
       </Card>
 
-      <Card className="p-4">
+      <Card className="p-4 max-md:contents">
         <CardHead title={`Payslips · ${month}`} icon="receipt" subtitle="Draft → Generated (visible to the staff member) → Paid" />
-        <TableView id="payslips" cards={loading ? undefined : payslipCards}>
+        <TableView id="payslips" cards={loading ? undefined : payslipCards} mobileCards={loading ? undefined : payslipMobileCards}>
           <div className="table-wrap max-h-[70vh] rounded-xl border border-line">
             <table className="data-table min-w-[56rem]">
               <thead>
@@ -278,24 +359,30 @@ export function PayrollPanel() {
               <Input type="number" min={0} value={sal[k]} onChange={(e) => setSal({ ...sal, [k]: e.target.value })} />
             </Field>
           ))}
-          <Field label="Income tax">
-            <Select aria-label="Income tax mode" value={sal.tax_mode} onChange={(e) => setSal({ ...sal, tax_mode: e.target.value })}>
-              <option value="slab">Slab rates (Indian income tax)</option>
-              <option value="flat">Flat % (legacy)</option>
-            </Select>
-          </Field>
+          <div className="max-md:col-span-2">
+            <Field label="Income tax">
+              <Select aria-label="Income tax mode" value={sal.tax_mode} onChange={(e) => setSal({ ...sal, tax_mode: e.target.value })}>
+                <option value="slab">Slab rates (Indian income tax)</option>
+                <option value="flat">Flat % (legacy)</option>
+              </Select>
+            </Field>
+          </div>
           {sal.tax_mode === "slab" ? (
             <>
-              <Field label="Tax regime">
-                <Select aria-label="Tax regime" value={sal.tax_regime} onChange={(e) => setSal({ ...sal, tax_regime: e.target.value })}>
-                  <option value="new">New regime (default)</option>
-                  <option value="old">Old regime</option>
-                </Select>
-              </Field>
-              {sal.tax_regime === "old" && (
-                <Field label="Declared deductions (₹/year)" hint="80C, 80D … as declared by the employee">
-                  <Input type="number" min={0} value={sal.annual_deductions} onChange={(e) => setSal({ ...sal, annual_deductions: e.target.value })} />
+              <div className="max-md:col-span-2">
+                <Field label="Tax regime">
+                  <Select aria-label="Tax regime" value={sal.tax_regime} onChange={(e) => setSal({ ...sal, tax_regime: e.target.value })}>
+                    <option value="new">New regime (default)</option>
+                    <option value="old">Old regime</option>
+                  </Select>
                 </Field>
+              </div>
+              {sal.tax_regime === "old" && (
+                <div className="max-md:col-span-2">
+                  <Field label="Declared deductions (₹/year)" hint="80C, 80D … as declared by the employee">
+                    <Input type="number" min={0} value={sal.annual_deductions} onChange={(e) => setSal({ ...sal, annual_deductions: e.target.value })} />
+                  </Field>
+                </div>
               )}
             </>
           ) : (
@@ -305,7 +392,7 @@ export function PayrollPanel() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Button variant="primary" loading={busy} disabled={!salStaff || !sal.basic_salary} onClick={saveSalary}>Save structure</Button>
+          <Button variant="primary" className="max-md:w-full" loading={busy} disabled={!salStaff || !sal.basic_salary} onClick={saveSalary}>Save structure</Button>
           {sal.tax_mode === "slab" && tdsPreview !== null && (
             <span className="text-sm text-ink-2">
               Gross {inr(monthlyGross)}/month → projected TDS <strong className="tnum">{inr(tdsPreview)}</strong>/month (FY 2025-26 rates — confirm with your CA)
@@ -313,7 +400,7 @@ export function PayrollPanel() {
           )}
         </div>
         <div className="mt-4">
-          <TableView id="salary-structures">
+          <TableView id="salary-structures" mobileHide={["HRA", "DA", "EPF"]}>
             <div className="table-wrap max-h-[60vh] rounded-xl border border-line">
               <table className="data-table min-w-[52rem]">
                 <thead>

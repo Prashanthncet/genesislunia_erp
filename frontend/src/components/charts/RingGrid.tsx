@@ -66,7 +66,7 @@ function Ring({ datum, index }: { datum: RingDatum; index: number }) {
           )}
         </svg>
         <div className="pointer-events-none absolute inset-0 grid place-content-center">
-          <span className="font-display text-[10.5px] font-bold tabular-nums leading-none text-ink">
+          <span className="font-display text-[10.5px] font-bold tabular-nums leading-none text-ink max-md:text-[11.5px]">
             {value === null ? "—" : `${value}%`}
           </span>
         </div>
@@ -80,7 +80,7 @@ function Ring({ datum, index }: { datum: RingDatum; index: number }) {
           {datum.label}
         </p>
         {datum.caption && (
-          <p className="mt-0.5 text-[10.5px] tabular-nums text-ink-3">{datum.caption}</p>
+          <p className="mt-0.5 text-[10.5px] tabular-nums text-ink-3 max-md:text-[11.5px]">{datum.caption}</p>
         )}
       </div>
     </li>

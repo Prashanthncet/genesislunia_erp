@@ -68,7 +68,7 @@ export function MyPayslipsPanel() {
           <dl className="space-y-2 text-sm">
             <div><dt className="text-xs text-ink-3">Name</dt><dd className="font-semibold">{me.name}</dd></div>
             <div><dt className="text-xs text-ink-3">Designation · Department</dt><dd>{me.role} · {me.department ?? "—"}</dd></div>
-            <div><dt className="text-xs text-ink-3">Email · Phone</dt><dd>{me.email} · {me.phone ?? "—"}</dd></div>
+            <div><dt className="text-xs text-ink-3">Email · Phone</dt><dd className="max-md:[overflow-wrap:anywhere]">{me.email} · {me.phone ?? "—"}</dd></div>
             {me.salaryStructure && <div><dt className="text-xs text-ink-3">Basic / HRA / DA</dt><dd className="tnum">{inr(me.salaryStructure.basicSalary)} / {inr(me.salaryStructure.hra)} / {inr(me.salaryStructure.da)}</dd></div>}
           </dl>
         ) : <p className="text-sm text-ink-3">Loading…</p>}

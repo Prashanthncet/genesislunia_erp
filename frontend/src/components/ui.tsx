@@ -20,6 +20,7 @@ import {
   type TextareaHTMLAttributes, type ButtonHTMLAttributes, type CSSProperties,
 } from "react";
 import { createPortal } from "react-dom";
+import { useMobileBack } from "@/components/mobile/useMobileBack";
 
 /* ── Portal ───────────────────────────────────────────────────── */
 
@@ -56,6 +57,9 @@ const PATHS: Record<string, ReactNode> = {
   logout: <><path d="M14 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8" /><path d="m17 15 3-3-3-3M20 12H10" /></>,
   plus: <><path d="M12 5v14M5 12h14" /></>,
   minus: <path d="M5 12h14" />,
+  copy: <><rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5" /><path d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5" /></>,
+  bed: <><path d="M3 18V6M3 14h18v4M21 14v-2.5a3 3 0 0 0-3-3h-7v5.5" /><circle cx="7" cy="10.5" r="1.8" /></>,
+  hash: <path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18" />,
   print: <><path d="M7 8V3h10v5" /><rect x="3.5" y="8" width="17" height="8" rx="2" /><path d="M7 14h10v7H7z" /></>,
   download: <><path d="M12 3v12" /><path d="m7.5 10.5 4.5 4.5 4.5-4.5" /><path d="M4 20h16" /></>,
   upload: <><path d="M12 16V4" /><path d="m7.5 8.5 4.5-4.5 4.5 4.5" /><path d="M4 20h16" /></>,
@@ -215,22 +219,24 @@ export function PageHeader({
   title: string; subtitle?: string; actions?: ReactNode; icon?: string; eyebrow?: string;
 }) {
   return (
-    <header className="flex flex-wrap items-start justify-between gap-4">
-      <div className="flex min-w-0 items-start gap-3.5">
+    <header className="flex flex-wrap items-start justify-between gap-4 max-md:gap-3">
+      <div className="flex min-w-0 items-start gap-3.5 max-md:gap-3">
         {icon && (
-          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-700 text-white">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-700 text-white max-md:hidden">
             <Icon name={icon} />
           </span>
         )}
-        <div className="min-w-0">
+        {/* Phones get the same title + a short tagline in the app bar, so the block
+            would only repeat it. Actions below it stay. */}
+        <div className="min-w-0 max-md:hidden">
           {eyebrow && (
             <p className="mb-1 text-[12px] font-medium text-ink-3">{eyebrow}</p>
           )}
-          <h1 className="font-display text-[28px] font-bold leading-tight tracking-tight text-brand-700">{title}</h1>
+          <h1 className="font-display text-[28px] font-bold leading-tight tracking-tight text-brand-700 max-md:text-[22px]">{title}</h1>
           {subtitle && <p className="mt-1 max-w-2xl text-[14px] leading-relaxed text-ink-3">{subtitle}</p>}
         </div>
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2 max-md:w-full">{actions}</div>}
     </header>
   );
 }
@@ -272,7 +278,7 @@ export function CardHead({
           )}
         </div>
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      {actions && <div className="flex shrink-0 items-center gap-2 max-md:w-full max-md:flex-wrap">{actions}</div>}
     </div>
   );
 }
@@ -314,7 +320,7 @@ export function StatCard({
         )}
       </div>
       <div className="mt-2.5">
-        <p className="font-display text-[30px] font-bold leading-none tracking-tight text-ink">
+        <p className="font-display text-[30px] font-bold leading-none tracking-tight text-ink max-md:text-[24px]">
           {value === null
             ? <span className="text-ink-3">—</span>
             : <AnimatedNumber value={value} prefix={prefix} suffix={suffix} decimals={decimals} />}
@@ -356,7 +362,7 @@ export function Button({
   return (
     <button
       className={`${BTN_VARIANTS[variant]} disabled:pointer-events-none disabled:opacity-50 ${
-        size === "sm" ? "!min-h-8 !px-2.5 !py-1.5 !text-[12.5px]" : ""
+        size === "sm" ? "!min-h-8 !px-2.5 !py-1.5 !text-[12.5px] max-md:!min-h-10 max-md:!px-3" : ""
       } ${className}`}
       disabled={disabled || loading}
       {...rest}
@@ -379,7 +385,7 @@ export function IconButton({
     <button
       aria-label={label}
       title={label}
-      className={`${BTN_VARIANTS[variant]} !px-2.5 !py-2 ${className}`}
+      className={`${BTN_VARIANTS[variant]} !px-2.5 !py-2 max-md:!px-3.5 ${className}`}
       {...rest}
     >
       <Icon name={name} className="h-4 w-4" />
@@ -507,7 +513,7 @@ export function Tabs<T extends string>({
 }) {
   return (
     <div
-      className={`inline-flex flex-wrap items-center gap-1 rounded-lg border border-line bg-surface-2 p-1 ${className}`}
+      className={`inline-flex flex-wrap items-center gap-1 rounded-lg border border-line bg-surface-2 p-1 max-md:flex max-md:max-w-full max-md:flex-nowrap m-scroll-x ${className}`}
       role="tablist"
     >
       {tabs.map((t) => {
@@ -519,7 +525,7 @@ export function Tabs<T extends string>({
             type="button"
             aria-selected={active}
             onClick={() => onChange(t.id)}
-            className={`relative rounded-md px-3.5 py-1.5 text-[13px] font-semibold capitalize transition-all duration-200 ${
+            className={`relative rounded-md px-3.5 py-1.5 text-[13px] font-semibold capitalize transition-all duration-200 max-md:min-h-10 max-md:shrink-0 max-md:snap-start max-md:whitespace-nowrap ${
               active
                 ? "bg-brand-50 text-brand-700 ring-1 ring-brand-100"
                 : "text-ink-2 hover:bg-surface hover:text-ink"
@@ -563,13 +569,14 @@ export function Modal({
       document.body.style.overflow = prev;
     };
   }, [open, onClose]);
+  useMobileBack(open, onClose);
 
   if (!open) return null;
   const width = { sm: "max-w-md", md: "max-w-2xl", lg: "max-w-4xl" }[size];
 
   return (
     <Portal>
-    <div className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto p-4 sm:p-6">
+    <div className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto p-4 sm:p-6 max-md:items-stretch max-md:overflow-hidden max-md:!p-0">
       <div
         className="fixed inset-0 bg-navy-950/45 backdrop-blur-sm"
         style={{ animation: "fade-in 0.18s ease-out both" }}
@@ -580,18 +587,22 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`relative z-10 my-auto w-full ${width} animate-slide-up-sheet rounded-panel border border-line bg-surface shadow-pop`}
+        className={`relative z-10 my-auto w-full ${width} animate-slide-up-sheet rounded-panel border border-line bg-surface shadow-pop m-page max-md:my-0 max-md:flex max-md:h-[100dvh] max-md:max-h-none max-md:max-w-none max-md:flex-col max-md:rounded-none max-md:border-0 max-md:shadow-none`}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
-          <div className="min-w-0">
-            <h2 className="font-display text-[15px] font-bold tracking-tight text-ink">{title}</h2>
-            {subtitle && <p className="mt-0.5 text-[12px] text-ink-3">{subtitle}</p>}
+        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4 max-md:items-center max-md:justify-start max-md:gap-2 max-md:px-2 max-md:pb-2 max-md:pt-[calc(0.5rem+var(--m-safe-top))]">
+          {/* Phones: app-bar back arrow (same close action). */}
+          <button type="button" onClick={onClose} aria-label="Back" className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-ink-2 active:bg-surface-2 md:hidden">
+            <Icon name="chevronLeft" className="h-5 w-5" />
+          </button>
+          <div className="min-w-0 max-md:flex-1">
+            <h2 className="font-display text-[15px] font-bold tracking-tight text-ink max-md:truncate max-md:text-[18px]">{title}</h2>
+            {subtitle && <p className="mt-0.5 text-[12px] text-ink-3 max-md:truncate max-md:text-[12.5px]">{subtitle}</p>}
           </div>
-          <IconButton name="x" label="Close" variant="ghost" onClick={onClose} />
+          <span className="contents max-md:hidden"><IconButton name="x" label="Close" variant="ghost" onClick={onClose} /></span>
         </div>
-        <div className="scroll-slim max-h-[70vh] overflow-y-auto px-5 py-4">{children}</div>
+        <div className="scroll-slim max-h-[70vh] overflow-y-auto px-5 py-4 max-md:max-h-none max-md:min-h-0 max-md:flex-1 max-md:overscroll-contain max-md:px-4 max-md:py-5">{children}</div>
         {footer && (
-          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line bg-surface-2/70 px-5 py-3.5">
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line bg-surface-2/70 px-5 py-3.5 max-md:px-4 max-md:pb-[calc(0.875rem+var(--m-safe-bottom))] max-md:[&>*]:flex-1">
             {footer}
           </div>
         )}
@@ -661,7 +672,7 @@ export function ToastHost({ children }: { children: ReactNode }) {
     <ToastCtx.Provider value={value}>
       {children}
       <div
-        className="pointer-events-none fixed bottom-5 right-5 z-[100] flex w-[min(92vw,23rem)] flex-col gap-2"
+        className="m-toasts pointer-events-none fixed bottom-5 right-5 z-[100] flex w-[min(92vw,23rem)] flex-col gap-2 max-lg:bottom-[calc(var(--m-nav-h)+var(--m-safe-bottom)+0.75rem)] max-lg:left-4 max-lg:right-4 max-lg:w-auto"
         aria-live="polite"
         role="status"
       >

@@ -12,7 +12,8 @@ type Entry = NavItem & { category: "Navigate" | "Action" };
  * Ctrl/⌘+K command palette. Arrow keys move, Enter runs, Escape closes.
  * Only lists screens and actions `role` may open (same rule as the sidebar).
  */
-export function CommandPalette({ role, placeholder }: { role: string | null | undefined; placeholder?: string }) {
+/** `compact` renders an icon-only trigger (mobile app bar); the palette itself is the same. */
+export function CommandPalette({ role, placeholder, compact = false }: { role: string | null | undefined; placeholder?: string; compact?: boolean }) {
   const ENTRIES: Entry[] = useMemo(() => {
     const seen = new Set<string>();
     const nav = navFor(role).flatMap((g) => g.items).filter((i) => !seen.has(i.href) && seen.add(i.href));
@@ -76,21 +77,33 @@ export function CommandPalette({ role, placeholder }: { role: string | null | un
 
   return (
     <>
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-keyshortcuts="Control+K Meta+K"
-        className="group flex h-9 w-full max-w-md items-center gap-2.5 rounded-xl border border-line-strong bg-surface-2 px-3.5 text-left transition-all duration-200 hover:border-brand-300 hover:bg-surface"
-      >
-        <Icon name="search" className="h-4 w-4 shrink-0 text-ink-3 group-hover:text-brand-500" />
-        <span className="flex-1 truncate text-[13px] text-ink-3">
-          {placeholder ?? "Jump to a screen or action…"}
-        </span>
-        <kbd className="hidden shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 font-sans text-[10px] font-bold text-ink-3 sm:inline-block">
-          Ctrl K
-        </kbd>
-      </button>
+      {compact ? (
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label="Search screens and actions"
+          className="grid h-10 w-10 place-items-center rounded-full text-ink-2 transition-colors active:bg-surface-2"
+        >
+          <Icon name="search" className="h-5 w-5" />
+        </button>
+      ) : (
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-keyshortcuts="Control+K Meta+K"
+          className="group flex h-9 w-full max-w-md items-center gap-2.5 rounded-xl border border-line-strong bg-surface-2 px-3.5 text-left transition-all duration-200 hover:border-brand-300 hover:bg-surface"
+        >
+          <Icon name="search" className="h-4 w-4 shrink-0 text-ink-3 group-hover:text-brand-500" />
+          <span className="flex-1 truncate text-[13px] text-ink-3">
+            {placeholder ?? "Jump to a screen or action…"}
+          </span>
+          <kbd className="hidden shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 font-sans text-[10px] font-bold text-ink-3 sm:inline-block">
+            Ctrl K
+          </kbd>
+        </button>
+      )}
 
       {/* Portalled: the header's backdrop-blur would otherwise clip this overlay to the header strip. */}
       <Portal>

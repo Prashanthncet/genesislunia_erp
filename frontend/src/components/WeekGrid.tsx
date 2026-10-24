@@ -65,15 +65,15 @@ export function WeekGrid({
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+    <div className="overflow-x-auto rounded-xl border border-line bg-surface max-md:overscroll-x-contain">
       <div
-        className="grid min-w-[44rem]"
-        style={{ gridTemplateColumns: `6.5rem repeat(${cols.length}, minmax(7.5rem, 1fr))` }}
+        className="grid min-w-[44rem] max-md:[--wg-col:6.25rem] max-md:[--wg-head:4.25rem]"
+        style={{ gridTemplateColumns: `var(--wg-head, 6.5rem) repeat(${cols.length}, minmax(var(--wg-col, 7.5rem), 1fr))` }}
         role="table"
         aria-label="Weekly timetable"
       >
         {/* Header row */}
-        <div className="sticky left-0 z-10 border-b border-line bg-surface-2 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-3" role="columnheader">
+        <div className="sticky left-0 z-10 border-b border-line bg-surface-2 px-3 py-2.5 max-md:px-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-3" role="columnheader">
           Period
         </div>
         {cols.map((d) => (
@@ -89,25 +89,28 @@ export function WeekGrid({
             return (
               <div
                 key={n}
-                className="flex items-center justify-center gap-2 border-b border-line bg-surface-2 px-3 py-2 text-[11.5px] font-semibold uppercase tracking-[0.08em] text-ink-2"
+                className="flex items-center justify-center gap-2 border-b border-line bg-surface-2 px-3 py-2 max-md:justify-start max-md:px-0 text-[11.5px] font-semibold uppercase tracking-[0.08em] text-ink-2"
                 style={{ gridColumn: "1 / -1", backgroundImage: "repeating-linear-gradient(135deg, transparent 0 8px, color-mix(in srgb, var(--color-line) 55%, transparent) 8px 9px)" }}
                 role="row"
                 aria-label={`${t.breakName ?? "Break"}, ${t.startTime} to ${t.endTime}`}
               >
-                <Icon name="clock" className="h-3.5 w-3.5 text-ink-3" />
-                {t.breakName ?? "Break"}
-                <span className="tnum font-mono font-medium normal-case tracking-normal text-ink-3">{t.startTime}–{t.endTime}</span>
+                {/* Sticky on phones so the label stays in view while the week scrolls sideways. */}
+                <span className="inline-flex items-center gap-2 max-md:sticky max-md:left-0 max-md:px-3">
+                  <Icon name="clock" className="h-3.5 w-3.5 text-ink-3" />
+                  {t.breakName ?? "Break"}
+                  <span className="tnum font-mono font-medium normal-case tracking-normal text-ink-3">{t.startTime}–{t.endTime}</span>
+                </span>
               </div>
             );
           }
           return (
             <div key={n} className="contents" role="row">
-              <div className="sticky left-0 z-10 border-b border-line bg-surface px-3 py-2" role="rowheader">
+              <div className="sticky left-0 z-10 border-b border-line bg-surface px-3 py-2 max-md:px-2" role="rowheader">
                 <p className="text-[13px] font-bold text-brand-700">P{n}</p>
                 {t && <p className="tnum text-[11px] text-ink-3">{t.startTime}–{t.endTime}</p>}
                 {/* Lessons landed in a slot configured as a break — show it, don't hide it. */}
                 {t?.isBreak && (
-                  <p className="mt-0.5 text-[10.5px] font-semibold text-warn-ink" title={`${t.breakName ?? "Break"} is configured for this period`}>
+                  <p className="mt-0.5 text-[10.5px] font-semibold text-warn-ink max-md:text-[11px]" title={`${t.breakName ?? "Break"} is configured for this period`}>
                     <Icon name="alert" className="mr-0.5 inline h-3 w-3" />{t.breakName ?? "Break"} slot
                   </p>
                 )}

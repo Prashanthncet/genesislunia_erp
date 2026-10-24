@@ -4,9 +4,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { confirmAction } from "@/components/confirm";
 import { formatDate } from "@/lib/format";
 import { Badge, Button, EmptyState, Icon, IconButton, Input, Select, SkeletonRows, Tabs } from "@/components/ui";
 import { TableView } from "@/components/TableView";
+import { MobileFilters } from "@/components/mobile/MobileFilters";
 import { ClassSectionSelect, classQuery, type ClassOpt, type ClassSel } from "./ClassSectionSelect";
 import { StatusTag, todayLocal } from "./status";
 
@@ -60,10 +62,21 @@ export function AbsenteesView({
 
   const apply = () => setApplied({ ...draft });
   const clear = () => { const f = initial(); setDraft(f); setApplied(f); };
+  // Phones: how many applied filters differ from the defaults (today, all classes, Absent).
+  const activeFilters = (applied.mode === "range" || applied.date !== todayLocal() ? 1 : 0)
+    + (applied.cls.className ? 1 : 0) + (applied.cls.section ? 1 : 0)
+    + (applied.notNotified || applied.status !== "Absent" ? 1 : 0);
   const rangeInvalid = draft.mode === "range" && (!draft.from && !draft.to || (!!draft.from && !!draft.to && draft.from > draft.to));
 
   const sendPending = async () => {
     if (applied.mode !== "day") return;
+    const pending = data?.pending_notices ?? 0;
+    if (!(await confirmAction({
+      title: `Send ${pending} pending absence notice${pending === 1 ? "" : "s"}?`,
+      text: `Parents of absent students not yet notified for ${formatDate(applied.date)} will get an SMS / e-mail.`,
+      confirmText: "Send notices",
+      tone: "primary",
+    }))) return;
     setSending(true);
     try {
       const cq = classQuery(classes, applied.cls);
@@ -86,46 +99,48 @@ export function AbsenteesView({
 
   return (
     <div className="space-y-4">
-      <form className="card flex flex-wrap items-end gap-3 p-4" onSubmit={(e) => { e.preventDefault(); if (!rangeInvalid) apply(); }}>
+      <form className="card flex flex-wrap items-end gap-3 p-4 max-md:!border-0 max-md:!bg-transparent max-md:!p-0 max-md:!shadow-none" onSubmit={(e) => { e.preventDefault(); if (!rangeInvalid) apply(); }}>
+        <MobileFilters active={activeFilters} onClear={clear}>
         <div className="flex flex-col gap-1">
           <span className="text-[11.5px] font-semibold text-ink-3">Period</span>
           <Tabs tabs={[{ id: "day", label: "One day" }, { id: "range", label: "Date range" }] as const} value={draft.mode} onChange={(mode) => setDraft({ ...draft, mode })} />
         </div>
         {draft.mode === "day" ? (
-          <label className="flex flex-col gap-1">
+          <label className="flex flex-col gap-1 max-md:min-w-[8.5rem] max-md:flex-1">
             <span className="text-[11.5px] font-semibold text-ink-3">Date</span>
-            <Input type="date" aria-label="Date" value={draft.date} max={todayLocal()} onChange={(e) => setDraft({ ...draft, date: e.target.value })} className="w-auto" />
+            <Input type="date" aria-label="Date" value={draft.date} max={todayLocal()} onChange={(e) => setDraft({ ...draft, date: e.target.value })} className="w-auto max-md:!w-full" />
           </label>
         ) : (
           <>
-            <label className="flex flex-col gap-1">
+            <label className="flex flex-col gap-1 max-md:min-w-[8.5rem] max-md:flex-1">
               <span className="text-[11.5px] font-semibold text-ink-3">From</span>
-              <Input type="date" aria-label="From date" value={draft.from} onChange={(e) => setDraft({ ...draft, from: e.target.value })} className="w-auto" />
+              <Input type="date" aria-label="From date" value={draft.from} onChange={(e) => setDraft({ ...draft, from: e.target.value })} className="w-auto max-md:!w-full" />
             </label>
-            <label className="flex flex-col gap-1">
+            <label className="flex flex-col gap-1 max-md:min-w-[8.5rem] max-md:flex-1">
               <span className="text-[11.5px] font-semibold text-ink-3">To</span>
-              <Input type="date" aria-label="To date" value={draft.to} onChange={(e) => setDraft({ ...draft, to: e.target.value })} className="w-auto" />
+              <Input type="date" aria-label="To date" value={draft.to} onChange={(e) => setDraft({ ...draft, to: e.target.value })} className="w-auto max-md:!w-full" />
             </label>
           </>
         )}
         <ClassSectionSelect classes={classes} value={draft.cls} onChange={(cls) => setDraft({ ...draft, cls })} allowAll />
-        <label className="flex flex-col gap-1">
+        <label className="flex flex-col gap-1 max-md:min-w-[8.5rem] max-md:flex-1">
           <span className="text-[11.5px] font-semibold text-ink-3">Status</span>
-          <Select aria-label="Status" value={draft.status} disabled={draft.notNotified} onChange={(e) => setDraft({ ...draft, status: e.target.value as Filters["status"] })} className="w-auto">
+          <Select aria-label="Status" value={draft.status} disabled={draft.notNotified} onChange={(e) => setDraft({ ...draft, status: e.target.value as Filters["status"] })} className="w-auto max-md:!w-full">
             <option value="Absent">Absent</option>
             <option value="Late">Late</option>
             <option value="both">Absent + Late</option>
           </Select>
         </label>
-        <label className="flex items-center gap-2 self-center pt-5 text-[13px] text-ink-2">
+        <label className="flex items-center gap-2 self-center pt-5 text-[13px] text-ink-2 max-md:min-h-11 max-md:w-full max-md:pt-0">
           <input type="checkbox" checked={draft.notNotified} onChange={(e) => setDraft({ ...draft, notNotified: e.target.checked })} className="h-4 w-4 accent-[var(--color-brand-700)]" />
           Not yet notified
         </label>
-        <div className="flex gap-2">
-          <Button type="submit" variant="primary" disabled={rangeInvalid}><Icon name="filter" className="h-4 w-4" /> Apply</Button>
-          <Button type="button" variant="ghost" onClick={clear}>Clear</Button>
+        <div className="flex gap-2 max-md:w-full">
+          <Button type="submit" variant="primary" disabled={rangeInvalid} className="max-md:flex-1"><Icon name="filter" className="h-4 w-4" /> Apply</Button>
+          <Button type="button" variant="ghost" onClick={clear} className="max-md:flex-1">Clear</Button>
         </div>
         {rangeInvalid && <p className="w-full text-[12px] text-danger">Pick a start and/or end date (start on or before end).</p>}
+        </MobileFilters>
       </form>
 
       <div className="card overflow-hidden">
@@ -136,7 +151,7 @@ export function AbsenteesView({
           )}
         </div>
         <div className="table-wrap">
-          <TableView id="att-absentees">
+          <TableView id="att-absentees" mobileHide={applied.mode === "day" ? ["Date"] : []}>
             <table className="data-table">
               <thead>
                 <tr>
@@ -162,7 +177,7 @@ export function AbsenteesView({
                       </td>
                       <td className="tnum whitespace-nowrap">{formatDate(r.date)}</td>
                       <td className="whitespace-nowrap">{r.class_name}</td>
-                      <td className="td-end tnum">{r.roll_no ?? "—"}</td>
+                      <td className="td-end tnum"><span className="max-md:text-left">{r.roll_no ?? "—"}</span></td>
                       <td><StatusTag status={r.status} /></td>
                       <td className="font-mono text-[12px] text-ink-2">{r.contact ?? "—"}</td>
                       <td>
