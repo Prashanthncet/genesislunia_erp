@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiDownload, apiFetch } from "@/lib/api";
-import { Badge, Button, Card, CardHead, EmptyState, Field, Input, Select, StatCard, useToast } from "@/components/ui";
+import { Badge, Button, Card, CardHead, EmptyState, Field, Icon, Input, Select, SkeletonRows, StatCard, useToast } from "@/components/ui";
+import { CardBody, CardEmpty, CardFooter, CardGrid, CardTitle, Chip, Metric, Monogram, RecordCard, StatusPill, initials, statusTone, toneFor } from "@/components/RecordCard";
+import { formatDate } from "@/lib/format";
 import { TableView } from "@/components/TableView";
 import { errMsg, inr, slipTone, totalDeductions, type Payslip, type Salary } from "./types";
 import { PayrollSettings } from "./PayrollSettings";
@@ -25,8 +27,10 @@ export function PayrollPanel() {
   const [salStaff, setSalStaff] = useState("");
   const [sal, setSal] = useState(EMPTY_SAL);
   const [tdsPreview, setTdsPreview] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const [p, s, pv] = await Promise.all([
         apiFetch<Payslip[]>(`/api/staff/payslips?month=${month}`),
@@ -38,6 +42,8 @@ export function PayrollPanel() {
       setPreview(pv);
     } catch (e) {
       toast.push(errMsg(e), "error");
+    } finally {
+      setLoading(false);
     }
   }, [month, toast]);
 
@@ -111,6 +117,51 @@ export function PayrollPanel() {
   const unpaidRows = preview ? Object.entries(preview.unpaid) : [];
   const nameOf = (id: string) => salaries.find((s) => s.staffId === id)?.staff.name ?? staffOptions.find((s) => s.id === id)?.name ?? id;
 
+  const downloadSlip = (p: Payslip) =>
+    apiDownload(`/api/staff/payslips/${p.id}/pdf`, `payslip-${p.monthYear}.pdf`).catch((e) => toast.push(errMsg(e), "error"));
+
+  const slipActions = (p: Payslip) => (
+    <>
+      {p.status === "Draft" && <Button type="button" size="sm" disabled={busy} onClick={() => act(() => apiFetch(`/api/staff/payslips/${p.id}/finalize`, { method: "PUT" }), "Released")}>Release</Button>}
+      {p.status === "Generated" && <Button type="button" size="sm" variant="primary" disabled={busy} onClick={() => act(() => apiFetch(`/api/staff/payslips/${p.id}/mark-paid`, { method: "PUT" }), "Marked paid")}>Mark paid</Button>}
+      <Button type="button" size="sm" variant="ghost" onClick={() => downloadSlip(p)} aria-label={`Download payslip PDF for ${p.staff?.name ?? "staff"}`}>
+        <Icon name="download" className="h-3.5 w-3.5" /> PDF
+      </Button>
+    </>
+  );
+
+  const payslipCards = (
+    <CardGrid min="19rem" empty={<CardEmpty title="No payslips for this month" hint="Run payroll above to generate them." icon="receipt" />}>
+      {slips.map((p) => (
+        <RecordCard key={p.id} rail={statusTone(p.status)}>
+          <CardBody>
+            <CardTitle
+              lead={<Monogram text={initials(p.staff?.name)} tone={toneFor(p.staff?.department)} shape="circle" />}
+              title={p.staff?.name ?? "Staff"}
+              subtitle={`${p.staff?.role ?? ""}${p.staff?.department ? ` · ${p.staff.department}` : ""}`}
+              aside={<StatusPill status={p.status} />}
+            />
+            <div className="flex items-end justify-between gap-3 rounded-lg bg-surface-2 px-3.5 py-3">
+              <Metric label="Net pay" value={inr(p.netSalary)} size="lg" />
+              <Metric label="Gross" value={inr(p.grossSalary)} align="right" />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <Metric label="TDS" value={inr(p.tdsDeduction)} />
+              <Metric label="PT" value={inr(p.professionalTax ?? 0)} />
+              <Metric label="EPF" value={inr(p.epfDeduction)} />
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <Chip icon="calendar">{p.monthYear}</Chip>
+              {p.unpaidDays > 0 && <Chip icon="alert" tone="danger">{p.unpaidDays} unpaid day{p.unpaidDays === 1 ? "" : "s"}</Chip>}
+              {p.paidAt && <Chip icon="check" tone="ok">Paid {formatDate(p.paidAt)}</Chip>}
+            </div>
+          </CardBody>
+          <CardFooter>{slipActions(p)}</CardFooter>
+        </RecordCard>
+      ))}
+    </CardGrid>
+  );
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -158,37 +209,57 @@ export function PayrollPanel() {
 
       <Card className="p-4">
         <CardHead title={`Payslips · ${month}`} icon="receipt" subtitle="Draft → Generated (visible to the staff member) → Paid" />
-        {slips.length === 0 ? <EmptyState title="No payslips for this month" icon="receipt" /> : (
-          <TableView id="payslips">
-            <table className="w-full text-sm">
-              <thead className="table-head">
-                <tr><th className="px-3 py-2 text-left">Staff</th><th className="px-3 py-2 text-right">Gross</th><th className="px-3 py-2 text-right">Unpaid days</th><th className="px-3 py-2 text-right">Deductions</th><th className="px-3 py-2 text-right">Net</th><th className="px-3 py-2 text-left">Status</th><th className="px-3 py-2 text-left">Actions</th></tr>
+        <TableView id="payslips" cards={loading ? undefined : payslipCards}>
+          <div className="table-wrap max-h-[70vh] rounded-xl border border-line">
+            <table className="data-table min-w-[56rem]">
+              <thead>
+                <tr>
+                  <th>Staff</th><th className="th-end">Gross</th><th className="th-end">Unpaid days</th><th className="th-end">Deductions</th>
+                  <th className="th-end">Net pay</th><th>Status</th><th className="th-end">Actions</th>
+                </tr>
               </thead>
-              <tbody>
-                {slips.map((p) => (
-                  <tr key={p.id} className="border-t border-line">
-                    <td className="px-3 py-2"><span className="font-semibold">{p.staff?.name}</span> <span className="text-xs text-ink-3">{p.staff?.role}</span></td>
-                    <td className="tnum px-3 py-2 text-right">{inr(p.grossSalary)}</td>
-                    <td className="tnum px-3 py-2 text-right">{p.unpaidDays}</td>
-                    <td className="tnum px-3 py-2 text-right" title={`TDS ${inr(p.tdsDeduction)} · Professional tax ${inr(p.professionalTax ?? 0)} · EPF ${inr(p.epfDeduction)} · Unpaid leave ${inr(p.otherDeductions)}`}>
-                      {inr(totalDeductions(p))}
-                      <span className="block text-[11px] text-ink-3">TDS {inr(p.tdsDeduction)} · PT {inr(p.professionalTax ?? 0)} · EPF {inr(p.epfDeduction)}</span>
-                    </td>
-                    <td className="tnum px-3 py-2 text-right font-semibold">{inr(p.netSalary)}</td>
-                    <td className="px-3 py-2"><Badge tone={slipTone(p.status)}>{p.status}{p.paidAt ? ` ${p.paidAt.slice(0, 10)}` : ""}</Badge></td>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-wrap gap-1">
-                        {p.status === "Draft" && <Button size="sm" onClick={() => act(() => apiFetch(`/api/staff/payslips/${p.id}/finalize`, { method: "PUT" }), "Released")}>Release</Button>}
-                        {p.status === "Generated" && <Button size="sm" variant="primary" onClick={() => act(() => apiFetch(`/api/staff/payslips/${p.id}/mark-paid`, { method: "PUT" }), "Marked paid")}>Mark paid</Button>}
-                        <Button size="sm" onClick={() => apiDownload(`/api/staff/payslips/${p.id}/pdf`, `payslip-${p.monthYear}.pdf`).catch((e) => toast.push(errMsg(e), "error"))}>PDF</Button>
-                      </div>
-                    </td>
+              {loading ? <SkeletonRows rows={5} cols={7} /> : (
+                <tbody>
+                  {slips.map((p) => (
+                    <tr key={p.id}>
+                      <td>
+                        <span className="block font-semibold text-ink">{p.staff?.name}</span>
+                        <span className="block text-xs text-ink-3">{p.staff?.role}{p.staff?.department ? ` · ${p.staff.department}` : ""}</span>
+                      </td>
+                      <td className="td-end tnum whitespace-nowrap">{inr(p.grossSalary)}</td>
+                      <td className="td-end tnum">{p.unpaidDays || "—"}</td>
+                      <td className="td-end tnum whitespace-nowrap" title={`TDS ${inr(p.tdsDeduction)} · Professional tax ${inr(p.professionalTax ?? 0)} · EPF ${inr(p.epfDeduction)} · Unpaid leave ${inr(p.otherDeductions)}`}>
+                        {inr(totalDeductions(p))}
+                        <span className="block text-[11px] text-ink-3">TDS {inr(p.tdsDeduction)} · PT {inr(p.professionalTax ?? 0)} · EPF {inr(p.epfDeduction)}</span>
+                      </td>
+                      <td className="td-end tnum whitespace-nowrap font-semibold text-ink">{inr(p.netSalary)}</td>
+                      <td>
+                        <Badge tone={slipTone(p.status)}>{p.status}</Badge>
+                        {p.paidAt && <span className="mt-0.5 block text-[11px] text-ink-3">{formatDate(p.paidAt)}</span>}
+                      </td>
+                      <td className="td-end"><div className="flex justify-end gap-1 whitespace-nowrap">{slipActions(p)}</div></td>
+                    </tr>
+                  ))}
+                  {slips.length === 0 && (
+                    <tr><td colSpan={7}><EmptyState title="No payslips for this month" hint="Run payroll above to generate them." icon="receipt" /></td></tr>
+                  )}
+                </tbody>
+              )}
+              {!loading && slips.length > 0 && (
+                <tfoot>
+                  <tr className="bg-surface-2/70 font-semibold">
+                    <td className="border-t border-line-strong px-4 py-3">Total · {slips.length} payslip{slips.length === 1 ? "" : "s"}</td>
+                    <td className="tnum border-t border-line-strong px-4 py-3 text-right whitespace-nowrap">{inr(slips.reduce((t, x) => t + x.grossSalary, 0))}</td>
+                    <td className="tnum border-t border-line-strong px-4 py-3 text-right">{slips.reduce((t, x) => t + x.unpaidDays, 0) || "—"}</td>
+                    <td className="tnum border-t border-line-strong px-4 py-3 text-right whitespace-nowrap">{inr(slips.reduce((t, x) => t + totalDeductions(x), 0))}</td>
+                    <td className="tnum border-t border-line-strong px-4 py-3 text-right whitespace-nowrap">{inr(counts.net)}</td>
+                    <td className="border-t border-line-strong px-4 py-3" /><td className="border-t border-line-strong px-4 py-3" />
                   </tr>
-                ))}
-              </tbody>
+                </tfoot>
+              )}
             </table>
-          </TableView>
-        )}
+          </div>
+        </TableView>
       </Card>
 
       <Card className="p-4">
@@ -196,7 +267,7 @@ export function PayrollPanel() {
         <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-6">
           <div className="col-span-2">
             <Field label="Staff">
-              <Select value={salStaff} onChange={(e) => pickSalary(e.target.value)}>
+              <Select aria-label="Staff member" value={salStaff} onChange={(e) => pickSalary(e.target.value)}>
                 <option value="">Select…</option>
                 {staffOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </Select>
@@ -240,6 +311,52 @@ export function PayrollPanel() {
               Gross {inr(monthlyGross)}/month → projected TDS <strong className="tnum">{inr(tdsPreview)}</strong>/month (FY 2025-26 rates — confirm with your CA)
             </span>
           )}
+        </div>
+        <div className="mt-4">
+          <TableView id="salary-structures">
+            <div className="table-wrap max-h-[60vh] rounded-xl border border-line">
+              <table className="data-table min-w-[52rem]">
+                <thead>
+                  <tr>
+                    <th>Staff</th><th className="th-end">Basic</th><th className="th-end">HRA</th><th className="th-end">DA</th>
+                    <th className="th-end">Gross / month</th><th className="th-end">EPF</th><th>Income tax</th><th className="th-end">Actions</th>
+                  </tr>
+                </thead>
+                {loading ? <SkeletonRows rows={4} cols={8} /> : (
+                  <tbody>
+                    {salaries.map((s) => (
+                      <tr key={s.id} className={s.staffId === salStaff ? "bg-brand-50" : undefined}>
+                        <td>
+                          <span className="block font-semibold text-ink">{s.staff.name}</span>
+                          <span className="block text-xs text-ink-3">{s.staff.role}{s.staff.department ? ` · ${s.staff.department}` : ""}</span>
+                        </td>
+                        <td className="td-end tnum whitespace-nowrap">{inr(s.basicSalary)}</td>
+                        <td className="td-end tnum whitespace-nowrap">{inr(s.hra)}</td>
+                        <td className="td-end tnum whitespace-nowrap">{inr(s.da)}</td>
+                        <td className="td-end tnum whitespace-nowrap font-semibold text-ink">{inr(s.basicSalary + s.hra + s.da)}</td>
+                        <td className="td-end tnum">{s.epfPercent}%</td>
+                        <td>
+                          {s.taxMode === "flat"
+                            ? <Badge tone="slate">Flat {s.tdsPercent}%</Badge>
+                            : <Badge tone="sky">Slab · {s.taxRegime === "old" ? "old" : "new"} regime</Badge>}
+                        </td>
+                        <td className="td-end">
+                          <div className="flex justify-end">
+                            <Button type="button" size="sm" onClick={() => pickSalary(s.staffId)} aria-label={`Edit salary of ${s.staff.name}`}>
+                              <Icon name="edit" className="h-3.5 w-3.5" /> Edit
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {salaries.length === 0 && (
+                      <tr><td colSpan={8}><EmptyState title="No salary structures yet" hint="Pick a staff member above and save a structure." icon="wallet" /></td></tr>
+                    )}
+                  </tbody>
+                )}
+              </table>
+            </div>
+          </TableView>
         </div>
       </Card>
     </div>

@@ -18,7 +18,7 @@ import { R, ROLE, ROLE_LABEL, hasRole, useMe, type Me } from "@/lib/auth";
 import { canAccess } from "@/lib/nav";
 import {
   AdmissionQueueWidget, ApprovalsWidget, ClassesToMarkWidget, FeesWidget, GateDeskWidget,
-  LeaveApprovalsWidget, LessonPlansWidget, SafeguardingWidget, StudentLeaveWidget, TodayScheduleWidget,
+  LeaveApprovalsWidget, LessonPlansWidget, SafeguardingWidget, StudentLeaveWidget, TodayScheduleWidget, WardenHostelWidget,
 } from "./_home/RoleWidgets";
 
 /* ── API shapes ───────────────────────────────────────────────── */
@@ -627,6 +627,7 @@ function RoleHero({ me, subtitle }: { me: Me; subtitle: string }) {
 /** Shortcuts every staff member has (Leaves, Staff and Discipline are open to all staff). */
 function MyShortcuts({ me }: { me: Me }) {
   const links = [
+    { href: "/gate", icon: "door", label: "Gate Desk" },
     { href: "/leaves", icon: "leaves", label: "Apply for leave" },
     { href: "/staff", icon: "wallet", label: "My payslips" },
     { href: "/discipline", icon: "shield", label: "Report a concern" },
@@ -660,8 +661,8 @@ const SUBTITLE: Record<string, string> = {
   [ROLE.HR]: "Leave decisions waiting for you.",
   [ROLE.HOD]: "Your day, your department's leave and your lesson plans.",
   [ROLE.TEACHER]: "Your periods today, roll calls to take and lesson plans due.",
-  [ROLE.WARDEN]: "Students off campus, visitors and requests to approve.",
-  [ROLE.SECURITY]: "Who is out on a gate pass and who is visiting.",
+  [ROLE.WARDEN]: "The gate desk, passes waiting for you, hostel occupancy and tonight's roll call.",
+  [ROLE.SECURITY]: "Who is out on a gate pass, who is due back late and who is visiting.",
   [ROLE.DISCIPLINE_OFFICER]: "Open and escalated safeguarding cases.",
 };
 
@@ -679,8 +680,8 @@ function RoleDashboard({ me }: { me: Me }) {
         {(r === ROLE.ACCOUNTS || r === ROLE.OFFICE_SUPERINTENDENT) && <FeesWidget me={me} />}
         {(r === ROLE.HR || r === ROLE.HOD) && <LeaveApprovalsWidget />}
         {(r === ROLE.WARDEN || r === ROLE.SECURITY) && <GateDeskWidget me={me} />}
+        {r === ROLE.WARDEN && <WardenHostelWidget me={me} />}
         {(r === ROLE.WARDEN || r === ROLE.TEACHER) && <StudentLeaveWidget />}
-        {r === ROLE.WARDEN && <ApprovalsWidget me={me} />}
         {r === ROLE.DISCIPLINE_OFFICER && <SafeguardingWidget />}
       </div>
       <MyShortcuts me={me} />

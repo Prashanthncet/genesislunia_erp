@@ -24,6 +24,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { PortalModule } from './portal/portal.module';
 import { HealthModule } from './health/health.module';
 import { AuditModule } from './audit/audit.module';
+import { NoticesModule } from './notices/notices.module';
 import { RequestLoggerMiddleware } from './common/request-logger.middleware';
 import { RequestContextMiddleware } from './common/request-context';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
@@ -73,6 +74,7 @@ import { TelemetryModule } from './telemetry/telemetry.controller';
     PortalModule,
     HealthModule,
     AuditModule,
+    NoticesModule,
   ],
   providers: [
     // Without this the ThrottlerModule config above was inert: registered but never enforced.

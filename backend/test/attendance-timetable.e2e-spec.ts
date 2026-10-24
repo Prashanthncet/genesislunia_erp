@@ -107,7 +107,7 @@ describe('Attendance & Timetable (e2e)', () => {
     expect(read.status).toBe(403);
   });
 
-  it('admin can mark any class; warden cannot mark (403) but can read', async () => {
+  it('admin can mark any class; warden can neither mark nor read class attendance (403)', async () => {
     const ok = await as('admin').post('/api/attendance', {
       class_id: 'cls_p3_other', date: '2026-10-19', records: [{ student_id: 'stu_p3_x', status: 'Absent' }],
     });
@@ -121,7 +121,8 @@ describe('Attendance & Timetable (e2e)', () => {
       class_id: 'cls_10a', date: '2026-10-19', records: [{ student_id: 'stu_001', status: 'Absent' }],
     });
     expect(w.status).toBe(403);
-    expect((await as('warden').get('/api/attendance?class_id=cls_10a&date=2026-10-19')).status).toBe(200);
+    // Warden = hostel + gate desk + student list; no class attendance (school decision 2026-10-24).
+    expect((await as('warden').get('/api/attendance?class_id=cls_10a&date=2026-10-19')).status).toBe(403);
     expect((await as('parent').get('/api/attendance?class_id=cls_10a&date=2026-10-19')).status).toBe(403);
   });
 

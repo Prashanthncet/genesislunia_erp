@@ -58,6 +58,7 @@ model Branch {
   hostelRollCalls  HostelRollCall[]
   reportCards      ReportCardSnapshot[]
   payrollConfig    PayrollConfig?
+  notices          Notice[]
 
   @@map("branches")
 }
@@ -262,6 +263,7 @@ model AttendanceRecord {
   status    String
   markedBy  String? @map("marked_by")
   notified  Int     @default(0)
+  note      String? // reason for OD (On Duty) / remarks
 
   branch  Branch  @relation(fields: [branchId], references: [id])
   student Student @relation(fields: [studentId], references: [id])
@@ -416,14 +418,17 @@ model Syllabus {
 }
 
 model LessonPlan {
-  id         String   @id @default(uuid())
-  branchId   String   @map("branch_id")
-  syllabusId String   @map("syllabus_id")
-  teacherId  String   @map("teacher_id")
-  topic      String
-  date       String
-  status     String   @default("Planned")
-  createdAt  DateTime @default(now()) @map("created_at")
+  id             String   @id @default(uuid())
+  branchId       String   @map("branch_id")
+  syllabusId     String   @map("syllabus_id")
+  teacherId      String   @map("teacher_id")
+  topic          String
+  date           String
+  status         String   @default("Planned")
+  attachmentKey  String?  @map("attachment_key") // PDF in the object store
+  attachmentName String?  @map("attachment_name")
+  attachmentSize Int?     @map("attachment_size")
+  createdAt      DateTime @default(now()) @map("created_at")
 
   branch   Branch   @relation(fields: [branchId], references: [id])
   syllabus Syllabus @relation(fields: [syllabusId], references: [id])
@@ -1030,4 +1035,42 @@ model JobRun {
 
   @@unique([name, runKey])
   @@map("job_runs")
+}
+
+/// An in-app notice for students (and their parents): the whole school, one class, or one
+/// student. Shown in the student/parent portal with an unread badge; optionally also sent by
+/// SMS/email through the notification dispatcher.
+model Notice {
+  id        String    @id @default(uuid())
+  branchId  String    @map("branch_id")
+  title     String
+  body      String
+  audience  String // all_students | class | student
+  classId   String?   @map("class_id")
+  studentId String?   @map("student_id")
+  priority  String    @default("normal") // normal | important
+  createdBy String?   @map("created_by") // user id
+  createdAt DateTime  @default(now()) @map("created_at")
+  expiresAt DateTime? @map("expires_at")
+
+  branch Branch       @relation(fields: [branchId], references: [id])
+  reads  NoticeRead[]
+
+  @@index([branchId, audience, createdAt])
+  @@index([classId])
+  @@index([studentId])
+  @@map("notices")
+}
+
+/// Who has read which notice (per user: a parent with two children reads once).
+model NoticeRead {
+  id       String   @id @default(uuid())
+  noticeId String   @map("notice_id")
+  userId   String   @map("user_id")
+  readAt   DateTime @default(now()) @map("read_at")
+
+  notice Notice @relation(fields: [noticeId], references: [id])
+
+  @@unique([noticeId, userId])
+  @@map("notice_reads")
 }

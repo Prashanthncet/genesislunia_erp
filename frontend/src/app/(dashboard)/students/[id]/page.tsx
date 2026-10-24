@@ -10,6 +10,8 @@ import {
 } from "@/components/ui";
 import { TableView } from "@/components/TableView";
 import { DocLink, docHref } from "@/components/admissions/shared";
+import { StudentCalendar } from "@/components/attendance/StudentCalendar";
+import { ATTENDANCE_READ, ATTENDANCE_RULE_TEXT, AttendanceLegend, CountTile, StatusTag } from "@/components/attendance/status";
 
 /** Shape of GET /api/students/:id/profile (sections the role can't see are null). */
 type Profile = {
@@ -25,7 +27,8 @@ type Profile = {
   };
   attendance: {
     percentage: number | null; records_counted: number; present: number; absent: number; late: number;
-    recent: { date: string; status: string }[];
+    od?: number; leave?: number; attended?: number; rule?: string;
+    recent: { date: string; status: string; note?: string | null }[];
   };
   fees: null | {
     as_of: string; invoiced: number; paid: number; balance: number; overdue_amount: number; overdue_count: number;
@@ -41,7 +44,6 @@ type Profile = {
 type TabId = "overview" | "attendance" | "fees" | "academics" | "documents";
 
 const rupees = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-const statusTone = (s: string) => (s === "Present" ? "emerald" : s === "Late" ? "amber" : "rose");
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -159,7 +161,7 @@ export default function StudentProfilePage() {
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Attendance" value={data.attendance.percentage} suffix="%" decimals={1} icon="attendance" tone="emerald"
-          hint={`${data.attendance.records_counted} days recorded`} />
+          hint={`${data.attendance.attended ?? data.attendance.present} of ${data.attendance.records_counted} counted days`} />
         <StatCard label="House" value={null} icon="flag" tone="sky" hint={s.house ?? "Not assigned"} />
         {data.fees
           ? <StatCard label="Fee balance" value={data.fees.balance} prefix="₹" icon="wallet" tone={data.fees.overdue_count ? "rose" : "brand"}
@@ -221,25 +223,40 @@ export default function StudentProfilePage() {
 
         {tab === "attendance" && (
           <Card>
-            <CardHead title="Attendance" icon="attendance" subtitle="Percentage is computed over every recorded day." />
-            <div className="space-y-4 px-5 pb-5">
-              <ProgressBar value={data.attendance.percentage ?? 0} tone="emerald" label="Attendance percentage" />
-              <div className="flex flex-wrap gap-2 text-[13px]">
-                <Badge tone="emerald">Present {data.attendance.present}</Badge>
-                <Badge tone="rose">Absent {data.attendance.absent}</Badge>
-                <Badge tone="amber">Late {data.attendance.late}</Badge>
+            <CardHead title="Attendance" icon="attendance" subtitle={ATTENDANCE_RULE_TEXT} />
+            <div className="space-y-4 px-3 pb-5 sm:px-5">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                <div className="flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-2">
+                  <span className="text-[12px] text-ink-2">Overall</span>
+                  <span className="tnum ml-auto text-[15px] font-bold text-brand-700">{data.attendance.percentage == null ? "—" : `${data.attendance.percentage}%`}</span>
+                </div>
+                <CountTile status="Present" value={data.attendance.present} />
+                <CountTile status="Absent" value={data.attendance.absent} />
+                <CountTile status="Late" value={data.attendance.late} />
+                <CountTile status="OD" value={data.attendance.od ?? 0} />
+                <CountTile status="Leave" value={data.attendance.leave ?? 0} />
               </div>
-              {data.attendance.recent.length === 0
-                ? <EmptyState icon="calendar" title="No attendance recorded yet" />
-                : (
-                  <div className="flex flex-wrap gap-1.5">
+              <ProgressBar value={data.attendance.percentage ?? 0} tone="emerald" label="Attendance percentage" />
+              {hasRole(me, ATTENDANCE_READ) ? (
+                <div className="rounded-xl border border-line p-3 sm:p-4">
+                  <StudentCalendar studentId={s.id} showName={false} />
+                </div>
+              ) : data.attendance.recent.length === 0 ? (
+                <EmptyState icon="calendar" title="No attendance recorded yet" />
+              ) : (
+                <>
+                  <p className="text-[12px] font-semibold uppercase tracking-wide text-ink-3">Recent days</p>
+                  <ul className="flex flex-wrap gap-1.5">
                     {data.attendance.recent.map((r) => (
-                      <span key={r.date} title={`${r.date}: ${r.status}`}>
-                        <Badge tone={statusTone(r.status)} className="tnum">{r.date.slice(5)}</Badge>
-                      </span>
+                      <li key={r.date} className="flex items-center gap-1 rounded-md bg-surface-2 px-1.5 py-1 text-[11.5px]">
+                        <span className="tnum text-ink-3">{r.date.slice(5)}</span>
+                        <StatusTag status={r.status} title={r.note ? `${r.status}: ${r.note}` : undefined} />
+                      </li>
                     ))}
-                  </div>
-                )}
+                  </ul>
+                  <AttendanceLegend showRule={false} />
+                </>
+              )}
             </div>
           </Card>
         )}

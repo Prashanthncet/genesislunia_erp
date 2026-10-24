@@ -11,6 +11,7 @@
  */
 
 import { toneClasses, toneFor, initials } from "@/components/RecordCard";
+import { Icon } from "@/components/ui";
 
 export type WeekSlot = {
   day_of_week: string;
@@ -27,6 +28,12 @@ export type WeekPeriod = { periodNumber: number; startTime: string; endTime: str
 
 const DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+/** Bell schedule in the order the day runs: by start time ("9:30" = "09:30"), then period number. */
+export function orderPeriods<T extends WeekPeriod>(periods: T[]): T[] {
+  const key = (t: string) => (/^\d:\d{2}$/.test(t) ? `0${t}` : t);
+  return [...periods].sort((a, b) => key(a.startTime).localeCompare(key(b.startTime)) || a.periodNumber - b.periodNumber);
+}
+
 export function WeekGrid({
   slots, periods = [], days, emptyText = "No timetable yet for this class. Run the Auto-Generator to create one.",
 }: { slots: WeekSlot[]; periods?: WeekPeriod[]; days?: string[]; emptyText?: string }) {
@@ -41,10 +48,11 @@ export function WeekGrid({
     .slice()
     .sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b));
 
-  // Rows: every configured period plus any period number present in the data.
-  const nums = new Set<number>(slots.map((s) => s.period_number));
-  periods.forEach((p) => nums.add(p.periodNumber));
-  const rows = Array.from(nums).sort((a, b) => a - b);
+  // Rows: the bell schedule in time order (breaks in place), then any unconfigured period numbers.
+  const ordered = orderPeriods(periods);
+  const configured = new Set(ordered.map((p) => p.periodNumber));
+  const extra = [...new Set(slots.map((s) => s.period_number))].filter((n) => !configured.has(n)).sort((a, b) => a - b);
+  const rows = [...ordered.map((p) => p.periodNumber), ...extra];
   const configOf = (n: number) => periods.find((p) => p.periodNumber === n);
   const hasSlots = (n: number) => slots.some((s) => s.period_number === n);
 
@@ -81,11 +89,14 @@ export function WeekGrid({
             return (
               <div
                 key={n}
-                className="border-b border-line bg-surface-2 px-3 py-1.5 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3"
-                style={{ gridColumn: "1 / -1" }}
+                className="flex items-center justify-center gap-2 border-b border-line bg-surface-2 px-3 py-2 text-[11.5px] font-semibold uppercase tracking-[0.08em] text-ink-2"
+                style={{ gridColumn: "1 / -1", backgroundImage: "repeating-linear-gradient(135deg, transparent 0 8px, color-mix(in srgb, var(--color-line) 55%, transparent) 8px 9px)" }}
                 role="row"
+                aria-label={`${t.breakName ?? "Break"}, ${t.startTime} to ${t.endTime}`}
               >
-                {t.breakName ?? "Break"} · {t.startTime}–{t.endTime}
+                <Icon name="clock" className="h-3.5 w-3.5 text-ink-3" />
+                {t.breakName ?? "Break"}
+                <span className="tnum font-mono font-medium normal-case tracking-normal text-ink-3">{t.startTime}–{t.endTime}</span>
               </div>
             );
           }
@@ -97,7 +108,7 @@ export function WeekGrid({
                 {/* Lessons landed in a slot configured as a break — show it, don't hide it. */}
                 {t?.isBreak && (
                   <p className="mt-0.5 text-[10.5px] font-semibold text-warn-ink" title={`${t.breakName ?? "Break"} is configured for this period`}>
-                    ⚠ {t.breakName ?? "Break"} slot
+                    <Icon name="alert" className="mr-0.5 inline h-3 w-3" />{t.breakName ?? "Break"} slot
                   </p>
                 )}
               </div>

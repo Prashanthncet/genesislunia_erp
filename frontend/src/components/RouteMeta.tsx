@@ -63,8 +63,13 @@ export const ROUTES: Record<string, { title: string; description: string; crumb:
   },
   "/leaves": {
     title: "Leaves & Gate Passes",
-    description: "Staff and student leave approvals plus the parent-OTP gate pass workflow.",
+    description: "Staff and student leave requests and approvals; gate-pass requests for teaching staff.",
     crumb: "Leaves & Passes",
+  },
+  "/gate": {
+    title: "Gate Desk",
+    description: "Issue gate passes, verify the parent's code at the gate, check students out and in, pass records and visitors.",
+    crumb: "Gate Desk",
   },
   "/hostel": {
     title: "Hostel",
@@ -98,7 +103,7 @@ export const ROUTES: Record<string, { title: string; description: string; crumb:
   },
   "/account": {
     title: "My account",
-    description: "Your profile, role and linked records.",
+    description: "Your profile, role, employment details, classes and linked records.",
     crumb: "My account",
   },
   "/account/password": {
@@ -142,9 +147,9 @@ export const ROUTES: Record<string, { title: string; description: string; crumb:
     crumb: "Gate passes",
   },
   "/portal/messages": {
-    title: "Messages",
-    description: "SMS, email and WhatsApp messages the school sent about your child.",
-    crumb: "Messages",
+    title: "Notices & messages",
+    description: "Notices from the school and the SMS, email and WhatsApp messages it sent you.",
+    crumb: "Notices & messages",
   },
   "/portal/admission": {
     title: "Admission status",

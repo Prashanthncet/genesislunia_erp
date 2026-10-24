@@ -384,7 +384,8 @@ describe('SIS / fees / notifications / classes (e2e)', () => {
   describe('classes', () => {
     it('staff read; portal 403; teacher cannot write; principal can', async () => {
       expect((await as('teacher').get('/api/classes')).status).toBe(200);
-      expect((await as('security').get('/api/classes/cls_10a')).status).toBe(200);
+      // Security = gate desk + visitors only (school decision 2026-10-24).
+      expect((await as('security').get('/api/classes/cls_10a')).status).toBe(403);
       expect((await as('parent').get('/api/classes')).status).toBe(403);
       expect((await as('teacher').post('/api/classes', { name: 'SIS Class' })).status).toBe(403);
       const c = await as('principal').post('/api/classes', { name: 'SIS Class', section: 'Z' });
@@ -394,7 +395,7 @@ describe('SIS / fees / notifications / classes (e2e)', () => {
     });
 
     it('class detail does not leak student contacts', async () => {
-      const res = await as('security').get('/api/classes/cls_10a');
+      const res = await as('teacher').get('/api/classes/cls_10a');
       expect(res.body.students[0]).not.toHaveProperty('mobileNumber');
     });
   });

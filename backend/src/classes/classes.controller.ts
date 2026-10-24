@@ -14,7 +14,7 @@ export class ClassesController {
   constructor(private prisma: PrismaService) {}
 
   @Get()
-  @Roles(...R.STAFF)
+  @Roles(...R.ACADEMIC_STAFF)
   list(@Req() req: ReqWithUser) {
     return this.prisma.class.findMany({
       where: { branchId: req.user.branch_id },
@@ -24,7 +24,7 @@ export class ClassesController {
   }
 
   @Get(':id')
-  @Roles(...R.STAFF)
+  @Roles(...R.ACADEMIC_STAFF)
   async get(@Req() req: ReqWithUser, @Param('id') id: string) {
     const cls = await this.prisma.class.findFirst({
       where: { id, branchId: req.user.branch_id },

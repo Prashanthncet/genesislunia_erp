@@ -1,10 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { relativeTime } from "@/lib/format";
-import { Badge, Card, CardHead, EmptyState, Icon, PageHeader } from "@/components/ui";
-import { PortalPage, type PortalChild, type PortalMessage } from "@/components/portal/PortalContext";
+import { useMe, ROLE } from "@/lib/auth";
+import { Badge, Card, CardHead, EmptyState, Icon, PageHeader, Tabs } from "@/components/ui";
+import { PortalPage, usePortal, type PortalChild, type PortalMessage } from "@/components/portal/PortalContext";
 import { useChildData } from "@/components/portal/useChildData";
 import { PanelState } from "@/components/portal/bits";
+import { PortalNotices } from "@/components/notices/PortalNotices";
 
 const CHANNEL_ICON: Record<string, string> = { sms: "phone", email: "mail", whatsapp: "phone" };
 
@@ -12,9 +15,9 @@ function MessagesBody({ child }: { child: PortalChild }) {
   const { data, error, loading, reload } = useChildData<PortalMessage[]>(child.id, "messages");
   return (
     <Card>
-      <CardHead icon="bell" title="Messages from the school" subtitle={`About ${child.full_name}`} />
+      <CardHead icon="mail" title="SMS & email from the school" subtitle={`About ${child.full_name}. Codes and passwords are hidden.`} />
       <PanelState loading={loading} error={error} reload={reload} />
-      {data && data.length === 0 && <EmptyState icon="bell" title="No messages yet" />}
+      {data && data.length === 0 && <EmptyState icon="mail" title="No messages yet" />}
       {data && data.length > 0 && (
         <ul className="divide-y divide-line">
           {data.map((m) => (
@@ -44,10 +47,22 @@ function MessagesBody({ child }: { child: PortalChild }) {
 }
 
 export default function PortalMessagesPage() {
+  const { me } = useMe();
+  const { overview } = usePortal();
+  const [tab, setTab] = useState<"notices" | "messages">("notices");
+  // Parents with more than one child see who each notice is for.
+  const showChildLabels = me?.role === ROLE.PARENT && (overview?.children.length ?? 0) > 1;
   return (
     <div className="space-y-4">
-      <PageHeader icon="bell" title="Messages" subtitle="SMS, email and WhatsApp messages the school sent you. Codes and passwords are hidden." />
-      <PortalPage>{(child) => <MessagesBody key={child.id} child={child} />}</PortalPage>
+      <PageHeader icon="bell" title="Notices & messages" subtitle="Notices from the school and class teachers, plus SMS and email the school sent you." />
+      <Tabs
+        value={tab}
+        onChange={setTab}
+        tabs={[{ id: "notices", label: "Notices" }, { id: "messages", label: "SMS & email" }] as const}
+      />
+      {tab === "notices"
+        ? <PortalNotices showChildLabels={showChildLabels} />
+        : <PortalPage>{(child) => <MessagesBody key={child.id} child={child} />}</PortalPage>}
     </div>
   );
 }

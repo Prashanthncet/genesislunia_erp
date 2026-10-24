@@ -12,21 +12,24 @@ import {
   Put,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import { buildPdf, PdfBlock, sendPdf } from '../common/pdf';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthGuard, Roles, RolesGuard } from '../auth/auth.guard';
 import { R, ROLE, isPortalRole } from '../auth/roles';
-import { AuthUser, ReqWithUser, assertInBranch, currentStaffId, portalStudentIds } from '../common/access';
+import { AuthUser, ReqWithUser, assertInBranch, audit, currentStaffId, portalStudentIds } from '../common/access';
 import { SubstitutionService } from './substitution.service';
-import { DAY_ORDER, classLabel, dayOfWeek, todayISO, weekDates } from './timetable.util';
+import { DAY_ORDER, WEEK_DAYS, classLabel, dayOfWeek, periodOut, sortPeriods, todayISO, weekDates } from './timetable.util';
 import {
   AssignSubstitutionDto, CreateTeacherDto, GenerateDto, GenerateSubjectDto, RoomDto, SavePeriodsDto, ScheduleExamDto,
   SubstituteDto, SubstitutionRequestDto, TeacherAbsentDto, UpdateRoomDto, UpdateTeacherDto, UpsertSlotDto,
 } from './dto/timetable.dto';
 
 /** Class timetables are readable by staff and by the portal (own child's / own class only). */
-const CLASS_READ: string[] = [...R.STAFF, ROLE.PARENT, ROLE.STUDENT];
+const CLASS_READ: string[] = [...R.ACADEMIC_STAFF, ROLE.PARENT, ROLE.STUDENT];
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 @Controller('timetable')
@@ -52,8 +55,9 @@ export class TimetableController {
     return [...new Set(students.map((s) => s.classId).filter((c): c is string => !!c))];
   }
 
+  /** The whole bell schedule (breaks included) in the order the day runs — by start time. */
   private async teachingPeriods(branchId: string) {
-    return this.prisma.periodConfig.findMany({ where: { branchId }, orderBy: { periodNumber: 'asc' } });
+    return sortPeriods(await this.prisma.periodConfig.findMany({ where: { branchId }, orderBy: { periodNumber: 'asc' } }));
   }
 
   // ─── Classes (role-aware list for the timetable screens) ─────
@@ -72,7 +76,7 @@ export class TimetableController {
   // ─── Teachers ────────────────────────────────────────────────
 
   @Get('teachers')
-  @Roles(...R.STAFF)
+  @Roles(...R.ACADEMIC_STAFF)
   listTeachers(@Req() req: ReqWithUser) {
     return this.prisma.staff.findMany({
       where: { branchId: req.user.branch_id, role: 'Teacher' },
@@ -126,7 +130,7 @@ export class TimetableController {
   // ─── Rooms ───────────────────────────────────────────────────
 
   @Get('rooms')
-  @Roles(...R.STAFF)
+  @Roles(...R.ACADEMIC_STAFF)
   listRooms(@Req() req: ReqWithUser) {
     return this.prisma.academicRoom.findMany({ where: { branchId: req.user.branch_id }, orderBy: { name: 'asc' } });
   }
@@ -196,7 +200,7 @@ export class TimetableController {
   // ─── Exam invigilation scheduler ─────────────────────────────
 
   @Get('exams')
-  @Roles(...R.STAFF)
+  @Roles(...R.ACADEMIC_STAFF)
   async listExamSchedules(@Req() req: ReqWithUser) {
     const schedules = await this.prisma.examSchedule.findMany({
       where: { branchId: req.user.branch_id },
@@ -341,14 +345,22 @@ export class TimetableController {
     ]);
     const subMap = new Map(subs.map((s) => [s.periodNumber, s]));
 
+    const periods = await this.teachingPeriods(req.user.branch_id);
+    const cfg = new Map(periods.map((p) => [p.periodNumber, p]));
+    const order = new Map(periods.map((p, i) => [p.periodNumber, i]));
+    slots.sort((a, b) => (order.get(a.periodNumber) ?? 99 + a.periodNumber) - (order.get(b.periodNumber) ?? 99 + b.periodNumber));
     return {
       date,
       day: dow,
+      /** Full bell schedule incl. breaks (Short Break, Lunch Break…), in time order. */
+      periods: periods.map(periodOut),
       schedule: slots.map((s) => {
         const sub = subMap.get(s.periodNumber);
         return {
           id: s.id,
           period_number: s.periodNumber,
+          start_time: cfg.get(s.periodNumber)?.startTime ?? null,
+          end_time: cfg.get(s.periodNumber)?.endTime ?? null,
           subject: s.subject,
           teacher_id: s.teacherId,
           teacher_name: s.teacher.name,
@@ -365,7 +377,7 @@ export class TimetableController {
   }
 
   @Get('school-view')
-  @Roles(...R.STAFF)
+  @Roles(...R.ACADEMIC_STAFF)
   async schoolView(@Req() req: ReqWithUser, @Query('date') dateQ?: string) {
     const date = dateQ && ISO_DATE.test(dateQ) ? dateQ : todayISO();
     const dow = dayOfWeek(date);
@@ -410,11 +422,93 @@ export class TimetableController {
     return { date, day: dow, classes: Object.values(grouped) };
   }
 
+  // ─── Printable timetables (server-side PDF) ──────────────────
+
+  /**
+   * Class week as a PDF: a Mon–Sat grid with times and every break row (Short Break,
+   * Lunch Break…) in bell order, then a per-day list with teacher and room.
+   * Parents / students: own (child's) class only — 403 otherwise.
+   */
+  @Get('class/:classId/pdf')
+  @Roles(...CLASS_READ)
+  async classPdf(@Req() req: ReqWithUser, @Param('classId') classId: string, @Res() res: Response) {
+    await this.assertCanSeeClass(req.user, classId);
+    const branchId = req.user.branch_id;
+    const [cls, branch, periods, slots] = await Promise.all([
+      this.prisma.class.findFirst({ where: { id: classId, branchId }, select: { name: true, section: true, classTeacher: { select: { name: true } } } }),
+      this.prisma.branch.findUnique({ where: { id: branchId }, select: { name: true, location: true } }),
+      this.teachingPeriods(branchId),
+      this.prisma.timetableSlot.findMany({
+        where: { branchId, classId },
+        include: { teacher: { select: { name: true } }, room: { select: { name: true } } },
+      }),
+    ]);
+    if (!cls) throw new NotFoundException('class not found');
+    const at = new Map(slots.map((s) => [`${s.dayOfWeek}|${s.periodNumber}`, s]));
+    const name = classLabel(cls);
+    const buf = await buildPdf({
+      school: branch?.name ?? 'School',
+      schoolLine: branch?.location ?? undefined,
+      title: `Class timetable - ${name}`,
+      reference: `Printed ${todayISO()}`,
+      blocks: [
+        { kind: 'fields', rows: [['Class', name], ['Class teacher', cls.classTeacher?.name ?? '-']] },
+        ...weekPdfBlocks(periods, (day, n) => at.get(`${day}|${n}`)?.subject ?? null,
+          (day, n) => {
+            const s = at.get(`${day}|${n}`);
+            return s ? [s.subject, s.teacher.name, s.room?.name ?? '-'] : null;
+          }, ['Subject', 'Teacher', 'Room']),
+      ],
+    });
+    await audit(this.prisma, req.user, 'EXPORT', 'timetable', classId, 'class pdf');
+    return sendPdf(res, buf, `timetable-${name}.pdf`);
+  }
+
+  /** Teacher week as a PDF. A teacher may print only their own; timetable admins any teacher. */
+  @Get('teacher/:staffId/pdf')
+  @Roles(...R.ACADEMIC_STAFF)
+  async teacherPdf(@Req() req: ReqWithUser, @Param('staffId') staffId: string, @Res() res: Response) {
+    const branchId = req.user.branch_id;
+    const teacher = await this.prisma.staff.findFirst({ where: { id: staffId, branchId }, select: { id: true, name: true, subjects: true } });
+    if (!teacher) throw new NotFoundException('teacher not found');
+    if (!(R.TIMETABLE_ADMIN as string[]).includes(req.user.role)) {
+      const me = await currentStaffId(this.prisma, req.user);
+      if (me !== staffId) throw new ForbiddenException('You can only download your own timetable');
+    }
+    const [branch, periods, slots] = await Promise.all([
+      this.prisma.branch.findUnique({ where: { id: branchId }, select: { name: true, location: true } }),
+      this.teachingPeriods(branchId),
+      this.prisma.timetableSlot.findMany({
+        where: { branchId, teacherId: staffId },
+        include: { class: { select: { name: true, section: true } }, room: { select: { name: true } } },
+      }),
+    ]);
+    const at = new Map(slots.map((s) => [`${s.dayOfWeek}|${s.periodNumber}`, s]));
+    const buf = await buildPdf({
+      school: branch?.name ?? 'School',
+      schoolLine: branch?.location ?? undefined,
+      title: `Teacher timetable - ${teacher.name}`,
+      reference: `Printed ${todayISO()}`,
+      blocks: [
+        { kind: 'fields', rows: [['Teacher', teacher.name], ['Lessons per week', slots.length]] },
+        ...weekPdfBlocks(periods, (day, n) => {
+          const s = at.get(`${day}|${n}`);
+          return s ? `${classLabel(s.class)}` : null;
+        }, (day, n) => {
+          const s = at.get(`${day}|${n}`);
+          return s ? [classLabel(s.class), s.subject, s.room?.name ?? '-'] : null;
+        }, ['Class', 'Subject', 'Room']),
+      ],
+    });
+    await audit(this.prisma, req.user, 'EXPORT', 'timetable', staffId, 'teacher pdf');
+    return sendPdf(res, buf, `timetable-${teacher.name}.pdf`);
+  }
+
   // ─── Teacher views ───────────────────────────────────────────
 
   /** Weekly grid for one teacher: regular lessons, plus covers they take / hand over in that week. */
   @Get('teacher/:staffId/week')
-  @Roles(...R.STAFF)
+  @Roles(...R.ACADEMIC_STAFF)
   async teacherWeek(@Req() req: ReqWithUser, @Param('staffId') staffId: string, @Query('date') dateQ?: string) {
     const branchId = req.user.branch_id;
     const teacher = await this.prisma.staff.findFirst({
@@ -439,10 +533,13 @@ export class TimetableController {
       }),
     ]);
     const subjectAt = new Map(slots.map((s) => [`${s.classId}|${s.dayOfWeek}|${s.periodNumber}`, s.subject]));
+    const periods = await this.teachingPeriods(branchId);
 
     return {
       teacher: { id: teacher.id, name: teacher.name, max_periods: teacher.maxPeriodsPerDay, subjects: teacher.subjects },
       week: { from: dates[0], to: dates[6], dates },
+      /** Full bell schedule incl. breaks, in time order. */
+      periods: periods.map(periodOut),
       slots: slots
         .map((s) => ({
           day_of_week: s.dayOfWeek,
@@ -483,7 +580,7 @@ export class TimetableController {
    * (`relieved` — it is off their plate), a break, or free.
    */
   @Get('me/today')
-  @Roles(...R.STAFF)
+  @Roles(...R.ACADEMIC_STAFF)
   async myDay(@Req() req: ReqWithUser, @Query('date') dateQ?: string) {
     const branchId = req.user.branch_id;
     const staffId = await currentStaffId(this.prisma, req.user);
@@ -516,9 +613,12 @@ export class TimetableController {
     };
     const entries: Entry[] = [];
     const cfg = new Map(periods.map((p) => [p.periodNumber, p]));
-    const nums = new Set<number>([...periods.map((p) => p.periodNumber), ...slots.map((s) => s.periodNumber), ...covers.map((c) => c.periodNumber)]);
+    // Bell-schedule order (by start time, breaks in place), then any unconfigured period numbers.
+    const extra = [...new Set([...slots.map((s) => s.periodNumber), ...covers.map((c) => c.periodNumber)])]
+      .filter((n) => !cfg.has(n)).sort((a, b) => a - b);
+    const nums = [...periods.map((p) => p.periodNumber), ...extra];
 
-    for (const n of [...nums].sort((a, b) => a - b)) {
+    for (const n of nums) {
       const p = cfg.get(n);
       const base = { period_number: n, start_time: p?.startTime ?? null, end_time: p?.endTime ?? null };
       const lesson = slots.find((s) => s.periodNumber === n);
@@ -577,7 +677,7 @@ export class TimetableController {
   // ─── Substitutions ───────────────────────────────────────────
 
   @Get('substitutions')
-  @Roles(...R.STAFF)
+  @Roles(...R.ACADEMIC_STAFF)
   async listSubstitutions(@Req() req: ReqWithUser, @Query('date') dateQ?: string, @Query('status') status?: string) {
     const date = dateQ && ISO_DATE.test(dateQ) ? dateQ : todayISO();
     const subs = await this.prisma.substitution.findMany({
@@ -893,6 +993,49 @@ export class TimetableController {
 
     return { generated: state.assignments.length, periods_used: dayPeriods, timetable: state.assignments };
   }
+}
+
+// ─── PDF helpers ───────────────────────────────────────────────
+
+type BellRow = { periodNumber: number; startTime: string; endTime: string; isBreak: boolean; breakName: string | null };
+
+/**
+ * Week grid (periods in bell order × Mon–Sat; break rows labelled across the week) and a
+ * per-day detail table. `cell` gives the short grid text, `detail` the day-list columns.
+ */
+function weekPdfBlocks(
+  periods: BellRow[],
+  cell: (day: string, period: number) => string | null,
+  detail: (day: string, period: number) => string[] | null,
+  detailHead: string[],
+): PdfBlock[] {
+  const time = (p: BellRow) => `${p.startTime}-${p.endTime}`;
+  const rowLabel = (p: BellRow) => (p.isBreak ? (p.breakName ?? 'Break') : `P${p.periodNumber}`);
+  const blocks: PdfBlock[] = [
+    { kind: 'heading', text: 'Week at a glance' },
+    {
+      kind: 'table',
+      head: ['Period', 'Time', ...WEEK_DAYS],
+      widths: [62, 67, 61.6, 61.6, 61.6, 61.6, 61.6, 61.6],
+      rows: periods.map((p) => [
+        rowLabel(p), time(p),
+        ...WEEK_DAYS.map((d) => (p.isBreak ? (p.breakName ?? 'Break') : cell(d, p.periodNumber) ?? '-')),
+      ]),
+    },
+  ];
+  for (const d of WEEK_DAYS) {
+    blocks.push({ kind: 'heading', text: d });
+    blocks.push({
+      kind: 'table',
+      head: ['Period', 'Time', ...detailHead],
+      widths: [70, 80, 130, 129.28, 90],
+      rows: periods.map((p) => {
+        if (p.isBreak) return [rowLabel(p), time(p), p.breakName ?? 'Break', '', ''];
+        return [rowLabel(p), time(p), ...(detail(d, p.periodNumber) ?? ['Free', '', ''])];
+      }),
+    });
+  }
+  return blocks;
 }
 
 // ─── Generator helpers ─────────────────────────────────────────

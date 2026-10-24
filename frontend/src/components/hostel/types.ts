@@ -18,6 +18,7 @@ export type Room = {
 export type RosterRow = {
   student_id: string; student: StudentLite; room: string; bed: string | null;
   status: "Present" | "Absent" | "On Leave"; saved: boolean; leave_reason: string | null;
+  marked_by_name?: string | null; marked_at?: string | null;
 };
 
 export type Visitor = {

@@ -4,10 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { hasRole, R, useMe } from "@/lib/auth";
-import { Badge, Button, EmptyState, Field, Icon, Input, MailLink, PageHeader, PhoneLink, Reveal, Select, StatCard, useToast, Portal } from "@/components/ui";
+import { Button, EmptyState, Field, Icon, IconButton, Input, MailLink, PageHeader, PhoneLink, Reveal, Select, SkeletonRows, StatCard, useToast, Portal } from "@/components/ui";
 
 import { TableView } from "@/components/TableView";
-import { initials } from "@/components/RecordCard";
+import {
+  CardBody, CardEmpty, CardFooter, CardGrid, CardTitle, Chip, Monogram, RecordCard, StatusPill, initials, toneFor, type Tone,
+} from "@/components/RecordCard";
 type ClassItem = { id: string; name: string; section: string | null };
 type Student = {
   id: string;
@@ -19,12 +21,16 @@ type Student = {
   email: string | null;
   gender: string;
   rollNo: string | null;
+  house?: string | null;
   status: string;
   class?: { id: string; name: string; section: string | null } | null;
 };
 type Paged = { total: number; page: number; page_size: number; contacts_hidden?: boolean; data: Student[] };
 
 const STATUSES = ["Active", "Inactive", "Left", "Transferred", "Alumni"];
+/** Status colour + text (never colour alone). */
+const STATUS_TONE: Record<string, Tone> = { Active: "ok", Inactive: "warn", Left: "slate", Transferred: "sky", Alumni: "navy" };
+const classText = (c: { name: string; section: string | null }) => [c.name, c.section].filter(Boolean).join(" ");
 
 const EMPTY_FORM = {
   id: "",
@@ -57,6 +63,8 @@ export default function StudentsPage() {
   const canRead = hasRole(me, R.STUDENT_READ);
   const canWrite = hasRole(me, R.STUDENT_WRITE);
   const canDelete = hasRole(me, R.ADMINS);
+  /** Warden (and other read-only roles) see the directory without edit/delete actions. */
+  const readOnly = !canWrite && !canDelete;
 
   useEffect(() => {
     if (!message) return;
@@ -83,10 +91,13 @@ export default function StudentsPage() {
 
   useEffect(() => {
     if (!canRead) return;
-    apiFetch<ClassItem[]>("/api/classes")
+    const academic = hasRole(me, R.ACADEMIC_STAFF);
+    (academic
+      ? apiFetch<ClassItem[]>("/api/classes")
+      : apiFetch<{ classes: ClassItem[] }>("/api/gate-passes/filters").then((r) => r.classes))
       .then(setClasses)
       .catch(() => undefined);
-  }, [canRead]);
+  }, [canRead, me]);
 
   useEffect(() => {
     load();
@@ -141,7 +152,7 @@ export default function StudentsPage() {
       setShowForm(false);
       setSelectedStudent(null);
       await load();
-      setMessage("Saved ✓");
+      setMessage("Saved");
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Save failed");
     } finally {
@@ -177,6 +188,44 @@ export default function StudentsPage() {
   };
 
   const totalPages = result ? Math.max(1, Math.ceil(result.total / result.page_size)) : 1;
+  const filtered = !!(query || classFilter || statusFilter);
+
+  /** Card view: a purpose-built student card (TableView `cards`), not the generic restyle. */
+  const cards = (
+    <CardGrid min="17.5rem" empty={<CardEmpty icon="students" title={loading ? "Loading students…" : "No students found"} hint="Try adjusting your search or filters." />}>
+      {(result?.data ?? []).map((s) => (
+        <RecordCard key={s.id} rail={STATUS_TONE[s.status] === "ok" ? undefined : STATUS_TONE[s.status] ?? "slate"}>
+          <CardBody>
+            <CardTitle
+              lead={<Monogram text={initials(s.fullName)} tone={toneFor(s.fullName)} size="lg" shape="circle" solid />}
+              title={<Link href={`/students/${s.id}`} className="hover:text-brand-700 hover:underline">{s.fullName}</Link>}
+              subtitle={<><span className="font-mono">{s.admissionNo}</span>{s.gender ? ` · ${s.gender}` : ""}</>}
+              aside={<StatusPill status={s.status} tone={STATUS_TONE[s.status] ?? "slate"} />}
+            />
+            <div className="flex flex-wrap gap-1.5">
+              <Chip icon="layers" tone="blue">{s.class ? classText(s.class) : "No class"}</Chip>
+              {s.rollNo && <Chip>Roll <span className="tnum">{s.rollNo}</span></Chip>}
+              {s.house && <Chip tone={toneFor(s.house)}>{s.house} House</Chip>}
+            </div>
+            {!result?.contacts_hidden && (s.mobileNumber || s.email) && (
+              <div className="space-y-1 text-[12.5px]">
+                {s.mobileNumber && <p className="flex items-center gap-2"><Icon name="phone" className="h-3.5 w-3.5 text-ink-3" /><PhoneLink value={s.mobileNumber} className="tnum" /></p>}
+                {s.email && <p className="flex min-w-0 items-center gap-2"><Icon name="mail" className="h-3.5 w-3.5 shrink-0 text-ink-3" /><span className="truncate"><MailLink value={s.email} /></span></p>}
+              </div>
+            )}
+          </CardBody>
+          <CardFooter>
+            <Link href={`/students/${s.id}`} className="btn-soft !min-h-8 !px-2.5 !py-1.5 !text-[12.5px]">
+              <Icon name="eye" className="h-3.5 w-3.5" /> Profile
+            </Link>
+            {canWrite && <Button size="sm" variant="ghost" onClick={() => openEdit(s)}><Icon name="edit" className="h-3.5 w-3.5" /> Edit</Button>}
+            {canWrite && s.status === "Active" && <Button size="sm" variant="ghost" onClick={() => setLeft(s)}><Icon name="flag" className="h-3.5 w-3.5" /> Mark left</Button>}
+            {canDelete && <IconButton name="trash" label={`Delete ${s.fullName}`} variant="ghost" className="text-danger" onClick={() => remove(s)} />}
+          </CardFooter>
+        </RecordCard>
+      ))}
+    </CardGrid>
+  );
 
   if (!meLoading && me && !canRead) {
     return (
@@ -214,14 +263,14 @@ export default function StudentsPage() {
 
       {/* Filter Bar */}
       <Reveal delay={60}>
-        <div className="rounded-2xl border border-line bg-white/80 p-4 shadow-soft backdrop-blur-sm">
+        <div className="rounded-2xl border border-line bg-surface p-4 shadow-soft backdrop-blur-sm">
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative flex-1 min-w-[220px]">
               <Icon name="search" className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-3" />
               <input
                 value={query}
                 onChange={(e) => { setQuery(e.target.value); setPage(1); }}
-                placeholder="Search by student name or roll..."
+                placeholder="Search by name or admission no…"
                 aria-label="Search students by name"
                 className="w-full rounded-xl border border-line bg-surface-2/60 pl-10 pr-4 py-2.5 text-sm text-ink placeholder-ink-3/60 focus:border-accent-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-500/20 transition-all duration-200"
               />
@@ -252,191 +301,134 @@ export default function StudentsPage() {
               </select>
               <Icon name="chevronDown" className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-3 pointer-events-none" />
             </div>
+            {filtered && (
+              <Button variant="ghost" onClick={() => { setQuery(""); setClassFilter(""); setStatusFilter(""); setPage(1); }}>
+                <Icon name="x" className="h-4 w-4" /> Clear
+              </Button>
+            )}
+            <span className="tnum text-[12.5px] text-ink-3" aria-live="polite">
+              {result ? `${result.total} ${result.total === 1 ? "student" : "students"}${filtered ? " match" : ""}` : ""}
+            </span>
           </div>
         </div>
       </Reveal>
 
       {/* Table Card */}
       <Reveal delay={120}>
-        <div className="rounded-2xl border border-line bg-white shadow-soft overflow-hidden">
-          {/* Table Header */}
-          <div className="border-b border-line bg-surface px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-[17px] font-semibold text-ink">Student Records</h3>
-                <p className="text-xs text-ink-3 mt-0.5">Comprehensive directory of enrolled students</p>
-              </div>
-              <div className="flex items-center gap-2 rounded-full border border-line bg-surface-2/80 px-3 py-1 text-xs font-medium text-ink-2 shadow-2xs">
-                <Icon name="sparkles" className="h-3.5 w-3.5 text-accent-500" />
-                <span>Sorted by admission date</span>
-              </div>
+        <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-soft">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface px-5 py-4 sm:px-6">
+            <div>
+              <h3 className="text-[17px] font-semibold text-ink">Student records</h3>
+              <p className="mt-0.5 text-xs text-ink-3">
+                {readOnly ? "Read-only directory — changes are made by the school office." : "Open a profile, edit details or mark a student as left."}
+              </p>
             </div>
+            {result?.contacts_hidden && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-2 px-3 py-1 text-xs font-medium text-ink-2" title="Parent contact details are visible to office and leadership roles">
+                <Icon name="lock" className="h-3.5 w-3.5 text-ink-3" /> Contacts restricted for your role
+              </span>
+            )}
           </div>
 
-          {/* Table */}
-          <div className="overflow-x-auto">
-            <TableView id="t1" title="Name">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-line bg-surface-2/30">
-                  <th className="whitespace-nowrap px-3 py-3.5 text-left text-xs font-semibold text-ink-2 uppercase tracking-wider">Adm No</th>
-                  <th className="whitespace-nowrap px-3 py-3.5 text-left text-xs font-semibold text-ink-2 uppercase tracking-wider">Name</th>
-                  <th className="whitespace-nowrap px-3 py-3.5 text-left text-xs font-semibold text-ink-2 uppercase tracking-wider">Class</th>
-                  <th className="whitespace-nowrap px-3 py-3.5 text-left text-xs font-semibold text-ink-2 uppercase tracking-wider">Roll</th>
-                  <th className="whitespace-nowrap px-3 py-3.5 text-left text-xs font-semibold text-ink-2 uppercase tracking-wider">Contact</th>
-                  <th className="whitespace-nowrap px-3 py-3.5 text-left text-xs font-semibold text-ink-2 uppercase tracking-wider">Status</th>
-                  <th className="whitespace-nowrap px-3 py-3.5 text-right text-xs font-semibold text-ink-2 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {(result?.data ?? []).map((s, index) => (
-                  <tr
-                    key={s.id}
-                    className="group row-enter transition-all duration-200 hover:bg-brand-50/50 hover:shadow-sm"
-                    style={{ animationDelay: `${index * 50}ms` }}
-                  >
-                    <td className="px-3 py-3">
-                      <span className="inline-flex whitespace-nowrap rounded-md bg-slate-100 px-2 py-1 text-xs font-mono font-medium text-ink-2">
-                        {s.admissionNo}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-[12px] font-bold text-brand-700">
-                          {initials(s.fullName)}
-                        </div>
-                        <div className="min-w-0">
-                          <Link href={`/students/${s.id}`} className="whitespace-nowrap font-semibold text-ink hover:text-brand-700 hover:underline">{s.fullName}</Link>
-                          <p className="text-xs text-ink-3">{s.gender}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-accent-50 px-2 py-1 text-xs font-medium text-accent-700">
-                        <Icon name="layers" className="h-3.5 w-3.5" />
-                        {s.class ? `${s.class.name} ${s.class.section ?? ""}` : "—"}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className="whitespace-nowrap font-mono text-[13px] text-ink-2">{s.rollNo ?? "—"}</span>
-                    </td>
-                    <td className="px-3 py-3">
-                      {result?.contacts_hidden ? <span className="text-xs text-ink-3" title="Parent contact details are visible to office and leadership roles">Restricted</span> :
-                      <div className="flex flex-col gap-1 whitespace-nowrap text-xs">
-                        <span className="flex items-center gap-1.5">
-                          <Icon name="phone" className="h-3.5 w-3.5 text-ink-3" />
-                          {s.mobileNumber ? (
-                            <PhoneLink value={s.mobileNumber} className="text-accent-600 hover:underline" />
-                          ) : <span className="text-ink-3">—</span>}
-                        </span>
-                        {s.email && (
-                          <span className="flex items-center gap-1.5 text-ink-3">
-                            <Icon name="mail" className="h-3.5 w-3.5" />
-                            <span className="block max-w-[12.5rem] truncate" title={s.email}><MailLink value={s.email} className="text-accent-600 hover:underline" /></span>
-                          </span>
-                        )}
-                      </div>}
-                    </td>
-                    <td className="px-3 py-3">
-                      <Badge
-                        tone={s.status === "Active" ? "emerald" : "slate"}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold ${s.status === "Active" ? "bg-ok-soft text-ok-ink ring-1 ring-ok-line" : "bg-slate-100 text-ink-2 ring-1 ring-line"}`}
-                      >
-                        <Icon name={s.status === "Active" ? "check" : "x"} className="h-3.5 w-3.5" />
-                        {s.status}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-3 text-right">
-                      {/* Always visible — they used to appear only on hover and sat off-screen.
-                          Icon-only in table view; `.row-action-label` shows the words on cards. */}
-                      <div className="flex items-center justify-end gap-2 flex-wrap">
-                        <Link
-                          href={`/students/${s.id}`}
-                          title="View profile"
-                          aria-label={`View profile of ${s.fullName}`}
-                          className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-line-strong bg-white px-2.5 text-xs font-semibold text-ink-2 shadow-xs transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
-                        >
-                          <Icon name="eye" className="h-3.5 w-3.5 shrink-0" />
-                          <span className="row-action-label hidden">Profile</span>
-                        </Link>
-                        {canWrite && <button
-                          onClick={() => openEdit(s)}
-                          title="Edit student"
-                          aria-label={`Edit ${s.fullName}`}
-                          className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-line-strong bg-white px-2.5 text-xs font-semibold text-ink-2 shadow-xs transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
-                        >
-                          <Icon name="edit" className="h-3.5 w-3.5 shrink-0" />
-                          <span className="row-action-label hidden">Edit</span>
-                        </button>}
-                        {canWrite && s.status === "Active" && (
-                          <button
-                            onClick={() => setLeft(s)}
-                            title="Mark as Left"
-                            aria-label={`Mark ${s.fullName} as Left`}
-                            className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-warn-line bg-warn-soft px-2.5 text-xs font-semibold text-warn-ink shadow-xs transition-colors hover:border-warn"
-                          >
-                            <Icon name="lock" className="h-3.5 w-3.5 shrink-0" />
-                            <span className="row-action-label hidden">Mark Left</span>
-                          </button>
-                        )}
-                        {canDelete && <button
-                          onClick={() => remove(s)}
-                          title="Delete student"
-                          aria-label={`Delete ${s.fullName}`}
-                          className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-danger-line bg-danger-soft px-2.5 text-xs font-semibold text-danger-ink shadow-xs transition-colors hover:border-danger"
-                        >
-                          <Icon name="trash" className="h-3.5 w-3.5 shrink-0" />
-                          <span className="row-action-label hidden">Delete</span>
-                        </button>}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {(result?.data.length ?? 0) === 0 && (
+          <TableView id="t1" title="Student" badge="Status" cards={cards}>
+            <div className="table-wrap">
+              <table className="data-table min-w-[920px]">
+                <colgroup>
+                  <col className="w-[32%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
+                </colgroup>
+                <thead>
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center">
-                      <div className="flex flex-col items-center gap-3">
-                        <div className="rounded-full bg-slate-100 p-4">
-                          <Icon name="students" className="h-8 w-8 text-ink-3" />
-                        </div>
-                        <p className="text-sm font-medium text-ink-2">{loading ? "Loading students..." : "No students found"}</p>
-                        <p className="text-xs text-ink-3">Try adjusting your search or filters</p>
-                      </div>
-                    </td>
+                    <th>Student</th>
+                    <th>Class</th>
+                    <th className="th-end">Roll</th>
+                    <th>House</th>
+                    <th>Contact</th>
+                    <th>Status</th>
+                    <th className="th-end">Actions</th>
                   </tr>
+                </thead>
+                {loading && !result ? <SkeletonRows rows={8} cols={7} /> : (
+                  <tbody>
+                    {(result?.data ?? []).map((s) => (
+                      <tr key={s.id}>
+                        <td>
+                          <div className="flex items-center gap-3">
+                            <Monogram text={initials(s.fullName)} tone={toneFor(s.fullName)} size="sm" shape="circle" />
+                            <div className="min-w-0">
+                              <Link href={`/students/${s.id}`} className="block truncate font-semibold text-ink hover:text-brand-700 hover:underline">{s.fullName}</Link>
+                              <p className="truncate text-[11.5px] text-ink-3">
+                                <span className="font-mono">{s.admissionNo}</span>{s.gender ? ` · ${s.gender}` : ""}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap">{s.class ? classText(s.class) : <span className="text-ink-3">—</span>}</td>
+                        <td className="td-end tnum whitespace-nowrap">{s.rollNo ?? <span className="text-ink-3">—</span>}</td>
+                        <td className="whitespace-nowrap">{s.house ? <Chip tone={toneFor(s.house)}>{s.house}</Chip> : <span className="text-ink-3">—</span>}</td>
+                        <td>
+                          {result?.contacts_hidden ? <span className="text-xs text-ink-3">Restricted</span> : (
+                            <div className="flex min-w-0 flex-col gap-0.5 text-xs">
+                              {s.mobileNumber ? <PhoneLink value={s.mobileNumber} className="tnum" /> : <span className="text-ink-3">No phone</span>}
+                              {s.email && <span className="block truncate" title={s.email}><MailLink value={s.email} /></span>}
+                            </div>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap"><StatusPill status={s.status} tone={STATUS_TONE[s.status] ?? "slate"} /></td>
+                        <td className="td-end">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Link href={`/students/${s.id}`} className="btn-ghost !px-2.5 !py-1.5" title="View profile" aria-label={`View profile of ${s.fullName}`}>
+                              <Icon name="eye" className="h-4 w-4" />
+                              <span className="row-action-label hidden">Profile</span>
+                            </Link>
+                            {canWrite && (
+                              <IconButton name="edit" label={`Edit ${s.fullName}`} variant="ghost" onClick={() => openEdit(s)} />
+                            )}
+                            {canWrite && s.status === "Active" && (
+                              <IconButton name="flag" label={`Mark ${s.fullName} as Left`} variant="ghost" onClick={() => setLeft(s)} />
+                            )}
+                            {canDelete && (
+                              <IconButton name="trash" label={`Delete ${s.fullName}`} variant="ghost" className="text-danger" onClick={() => remove(s)} />
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {(result?.data.length ?? 0) === 0 && (
+                      <tr>
+                        <td colSpan={7}>
+                          <EmptyState icon="students" title={loading ? "Loading students…" : "No students found"} hint={loading ? undefined : "Try adjusting your search or filters."} />
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
                 )}
-              </tbody>
-            </table>
-            </TableView>
-          </div>
+              </table>
+            </div>
+          </TableView>
 
           {/* Footer */}
-          <div className="border-t border-line bg-surface-2/50 px-6 py-4">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-ink-2">
-                <span className="font-semibold text-ink">{result?.total ?? 0}</span> student(s)
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface-2/50 px-5 py-3.5 text-sm sm:px-6">
+            <span className="text-ink-2">
+              {result && result.total > 0
+                ? <>Showing <span className="tnum font-semibold text-ink">{(page - 1) * result.page_size + 1}–{Math.min(page * result.page_size, result.total)}</span> of <span className="tnum font-semibold text-ink">{result.total}</span> students</>
+                : <><span className="font-semibold text-ink">0</span> students</>}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="soft" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+                <Icon name="chevronLeft" className="h-4 w-4" /> Prev
+              </Button>
+              <span className="tnum rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink-2">
+                Page {page} / {totalPages}
               </span>
-              <div className="flex items-center gap-2">
-                <button
-                  disabled={page <= 1}
-                  onClick={() => setPage(page - 1)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-surface-2 hover:border-line-strong disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150"
-                >
-                  <Icon name="chevronLeft" className="h-4 w-4" />
-                  Prev
-                </button>
-                <span className="px-3 py-1.5 text-xs font-medium text-ink-2 bg-white rounded-lg border border-line">
-                  Page {page} / {totalPages}
-                </span>
-                <button
-                  disabled={page >= totalPages}
-                  onClick={() => setPage(page + 1)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-surface-2 hover:border-line-strong disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150"
-                >
-                  Next
-                  <Icon name="chevronRight" className="h-4 w-4" />
-                </button>
-              </div>
+              <Button size="sm" variant="soft" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
+                Next <Icon name="chevronRight" className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         </div>
@@ -463,7 +455,7 @@ export default function StudentsPage() {
               </div>
               <button
                 onClick={() => setShowForm(false)}
-                className="rounded-lg p-2 text-ink-3 hover:bg-slate-100 hover:text-ink-2 transition-all duration-150"
+                aria-label="Close" className="rounded-lg p-2 text-ink-3 hover:bg-surface-2 hover:text-ink-2 transition-all duration-150"
               >
                 <Icon name="x" className="h-5 w-5" />
               </button>
@@ -477,7 +469,7 @@ export default function StudentsPage() {
                   onChange={(e) => setForm({ ...form, admission_no: e.target.value })}
                   placeholder="ADM-2026-0001"
                   disabled={!!form.id}
-                  className={form.id ? "bg-slate-100 cursor-not-allowed" : "bg-surface-2 hover:bg-white"}
+                  className={form.id ? "bg-surface-2 cursor-not-allowed" : "bg-surface-2 hover:bg-surface"}
                 />
               </Field>
               <Field label="Full name" required>

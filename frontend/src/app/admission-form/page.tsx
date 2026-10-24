@@ -6,6 +6,7 @@ import { BASE } from "@/lib/api";
 import { Badge, Button, Field, Icon, ProgressBar, Reveal, Skeleton, ToastHost, useToast } from "@/components/ui";
 import { useRouteMeta } from "@/components/RouteMeta";
 import { fmtDate, inr, readUpload } from "@/components/admissions/shared";
+import { payWithRazorpay, type GatewayOrder } from "@/lib/razorpay";
 
 type FormField = { id: string; key: string; label: string; field_type: string; is_required: boolean; validation_rule: string | null };
 type Doc = { id: string; docType: string; fileName: string; sizeBytes: number };
@@ -26,7 +27,8 @@ type FormData = {
   documents: Doc[];
   payment: { can_pay: boolean; amount: number | null; status: string; last_order: { gateway: string; status: string } | null };
 };
-type Order = { order_id: string; gateway: "mock" | "razorpay"; amount: number; amount_minor: number; currency: string; key_id?: string };
+type Order = GatewayOrder;
+
 
 const DOC_TYPES = [
   { id: "photo", label: "Passport photo" },
@@ -58,21 +60,6 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
     throw new HttpError(res.status, msg);
   }
   return res.json();
-}
-
-declare global {
-  interface Window { Razorpay?: new (opts: Record<string, unknown>) => { open: () => void } }
-}
-
-function loadRazorpay(): Promise<void> {
-  if (window.Razorpay) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://checkout.razorpay.com/v1/checkout.js";
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("Could not load the payment window"));
-    document.body.appendChild(s);
-  });
 }
 
 function AdmissionFormInner() {
@@ -170,26 +157,14 @@ function AdmissionFormInner() {
         setOrder(o);
         return;
       }
-      await loadRazorpay();
-      if (!window.Razorpay) throw new Error("Payment window unavailable");
-      new window.Razorpay({
-        key: o.key_id,
-        amount: o.amount_minor,
-        currency: o.currency,
-        order_id: o.order_id,
+      const result = await payWithRazorpay(o, {
         name: data?.school ?? "School admission",
-        description: `Admission fee ${data?.academic_year ?? ""}`,
+        description: `Admission fee ${data?.academic_year ?? ""}`.trim(),
         prefill: { name: data?.parent_name ?? "" },
-        handler: async (resp: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
-          try {
-            await call("/api/payments/razorpay/verify", { method: "POST", body: JSON.stringify(resp) });
-            toast.push("Payment received — thank you", "success");
-          } catch (e) {
-            toast.push(`Payment done but confirmation is pending: ${(e as Error).message}`, "info");
-          }
-          await load();
-        },
-      }).open();
+      });
+      if (result.status === "paid") toast.push("Payment received — thank you", "success");
+      else if (result.status === "failed") toast.push(result.reason, "error");
+      await load();
     } catch (e) {
       fail(e);
     } finally {

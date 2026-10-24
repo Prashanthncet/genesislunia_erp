@@ -27,6 +27,8 @@ export type NavItem = {
 export type NavGroup = { group: string; items: NavItem[] };
 
 const STAFF = R.STAFF;
+/** Staff who request gate passes from the Leaves screen (they have no Gate Desk). */
+const TEACHING_PASS: readonly string[] = [ROLE.TEACHER, ROLE.HOD];
 const uniq = (...lists: readonly (readonly string[])[]) => Array.from(new Set(lists.flat()));
 
 /** Staff navigation. Portal roles never see any of it. */
@@ -41,11 +43,11 @@ export const NAV_GROUPS: NavGroup[] = [
     group: "Academics",
     items: [
       { name: "Students", href: "/students", icon: "students", hint: "Student master directory", roles: R.STUDENT_READ },
-      { name: "Classes", href: "/classes", icon: "layers", hint: "Classes, sections and strength", roles: STAFF },
+      { name: "Classes", href: "/classes", icon: "layers", hint: "Classes, sections and strength", roles: R.ACADEMIC_STAFF },
       { name: "Admissions", href: "/admissions", icon: "admissions", hint: "Admission pipeline and approvals", roles: R.ADMISSION_READ },
-      { name: "Timetable", href: "/timetable", icon: "timetable", hint: "Period grid and substitutions", roles: STAFF },
-      { name: "Academics", href: "/academics", icon: "book", hint: "Subjects, syllabus, lessons, assignments", roles: STAFF },
-      { name: "Exams", href: "/exams", icon: "exams", hint: "Exam schedules and report cards", roles: STAFF },
+      { name: "Timetable", href: "/timetable", icon: "timetable", hint: "Period grid and substitutions", roles: R.ACADEMIC_STAFF },
+      { name: "Academics", href: "/academics", icon: "book", hint: "Subjects, syllabus, lessons, assignments", roles: R.ACADEMIC_STAFF },
+      { name: "Exams", href: "/exams", icon: "exams", hint: "Exam schedules and report cards", roles: R.ACADEMIC_STAFF },
       { name: "CBT Tests", href: "/cbt", icon: "cbt", hint: "Question bank and online tests", roles: uniq(R.CBT_AUTHOR, [ROLE.STUDENT]) },
     ],
   },
@@ -54,8 +56,12 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { name: "Attendance", href: "/attendance", icon: "attendance", hint: "Daily roll call and monthly register", roles: uniq(R.ATTENDANCE_MARK, R.LEADERSHIP) },
       { name: "Fees", href: "/fees", icon: "fees", hint: "Invoices, collections and receipts", roles: R.FEES_READ },
-      { name: "Leaves & Passes", href: "/leaves", icon: "leaves", hint: "Leave requests, approvals and gate passes", roles: STAFF },
-      { name: "Hostel", href: "/hostel", icon: "hostel", hint: "Rooms, bed allocation and visitors", roles: R.HOSTEL_DESK },
+      // Teachers/HODs still request + track gate passes from /leaves; everyone with the
+      // Gate Desk works passes there instead, so for them this screen is just "Leaves".
+      { name: "Leaves & Passes", href: "/leaves", icon: "leaves", hint: "Leave requests, approvals and gate-pass requests", roles: TEACHING_PASS },
+      { name: "Leaves", href: "/leaves", icon: "leaves", hint: "My leave, leave approvals and student leave", roles: STAFF.filter((r) => !TEACHING_PASS.includes(r)) },
+      { name: "Gate Desk", href: "/gate", icon: "door", hint: "Issue passes, verify exit codes, check in, pass records, visitors", roles: R.GATE_DESK },
+      { name: "Hostel", href: "/hostel", icon: "hostel", hint: "Rooms, beds, roll-call and visitors", roles: R.HOSTEL_ADMIN },
     ],
   },
   {
@@ -70,7 +76,9 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { name: "Reports", href: "/reports", icon: "reports", hint: "Analytics and CSV exports", roles: R.REPORTS },
       { name: "Notifications", href: "/notifications", icon: "bell", hint: "Outbound SMS and email log", roles: R.NOTIFICATION_LOG },
-      { name: "Settings", href: "/settings", icon: "settings", hint: "User management, this device, delivery status", roles: STAFF },
+      // Security = gate desk + visitors + staff self-service only (school decision 2026-10-24);
+      // their account screen (/account) is open to everyone.
+      { name: "Settings", href: "/settings", icon: "settings", hint: "User management, this device, delivery status", roles: STAFF.filter((r) => r !== ROLE.SECURITY) },
     ],
   },
 ];
@@ -98,7 +106,7 @@ export const PORTAL_NAV_GROUPS: NavGroup[] = [
       { name: "Fees", href: "/portal/fees", icon: "fees", hint: "Invoices, payments and receipts", roles: PARENT_ONLY },
       { name: "Leave requests", href: "/portal/leaves", icon: "leaves", hint: "Ask for leave and track approvals", roles: PARENT_ONLY },
       { name: "Gate passes", href: "/portal/gate-passes", icon: "door", hint: "Gate pass history and status", roles: PARENT_ONLY },
-      { name: "Messages", href: "/portal/messages", icon: "bell", hint: "SMS and email the school sent you", roles: PARENT_ONLY },
+      { name: "Notices & messages", href: "/portal/messages", icon: "bell", hint: "School notices plus the SMS and email sent to you", roles: PORTAL },
       { name: "Admission status", href: "/portal/admission", icon: "admissions", hint: "Your application and its progress", roles: PARENT_ONLY },
     ],
   },
@@ -117,6 +125,8 @@ export const QUICK_ACTIONS: NavItem[] = [
   { name: "Review admissions", href: "/admissions", icon: "admissions", hint: "Applications waiting at your step", roles: R.ADMISSION_READ },
   { name: "Publish an announcement", href: "/notifications", icon: "bell", hint: "Send SMS / email to parents", roles: R.BROADCAST.filter((r) => R.NOTIFICATION_LOG.includes(r)) },
   { name: "Report a discipline incident", href: "/discipline", icon: "shield", hint: "Record a safeguarding concern", roles: STAFF },
+  { name: "Issue a gate pass", href: "/gate", icon: "door", hint: "Create a pass for a student", roles: R.GATE_PASS_APPROVE },
+  { name: "Verify a gate pass", href: "/gate", icon: "key", hint: "Pass code + parent OTP at the gate", roles: R.GATE_DESK },
   { name: "Apply for leave", href: "/leaves", icon: "leaves", hint: "Request leave or check its status", roles: STAFF },
   { name: "My payslips", href: "/staff", icon: "wallet", hint: "Download your payslips", roles: STAFF },
   { name: "Export a report", href: "/reports", icon: "download", hint: "Download CSV analytics", roles: R.REPORTS },

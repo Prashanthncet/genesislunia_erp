@@ -1,3 +1,4 @@
+import { ATTENDANCE_RULE, tally } from '../attendance/attendance-math';
 import {
   Body, ConflictException, Controller, Delete, Get, NotFoundException, Param, Post, Put, Query, Req, Res, UseGuards,
 } from '@nestjs/common';
@@ -107,16 +108,15 @@ export class StudentsController {
     await assertCanSeeStudent(this.prisma, req.user, id);
 
     const [grouped, recent, marks] = await Promise.all([
-      this.prisma.attendanceRecord.groupBy({ by: ['status'], where: { studentId: id }, _count: { _all: true } }),
-      this.prisma.attendanceRecord.findMany({ where: { studentId: id }, orderBy: { date: 'desc' }, take: 60, select: { date: true, status: true } }),
+      this.prisma.attendanceRecord.findMany({ where: { studentId: id }, select: { date: true, status: true } }),
+      this.prisma.attendanceRecord.findMany({ where: { studentId: id }, orderBy: { date: 'desc' }, take: 60, select: { date: true, status: true, note: true } }),
       this.prisma.examMark.findMany({
         where: { studentId: id, branchId },
         include: { exam: { select: { id: true, name: true, date: true, term: true } }, subject: { select: { name: true, code: true } } },
       }),
     ]);
-    const count = (st: string) => grouped.find((g) => g.status === st)?._count._all ?? 0;
-    const totalDays = grouped.reduce((n, g) => n + g._count._all, 0);
-    const present = count('Present');
+    // THE attendance rule (attendance/attendance-math.ts): (P + Late + OD) / (P + Late + OD + Absent).
+    const att = tally(grouped);
 
     marks.sort((a, b) => b.exam.date.localeCompare(a.exam.date) || a.subject.name.localeCompare(b.subject.name));
     const contacts = canSeeContacts(req.user);
@@ -149,9 +149,10 @@ export class StudentsController {
         linked_accounts: s.parentLinks.map((l) => ({ name: l.user.name, relation: l.relation, email: contacts ? l.user.email : null })),
       },
       attendance: {
-        percentage: totalDays > 0 ? Math.round((present / totalDays) * 1000) / 10 : null,
-        records_counted: totalDays,
-        present, absent: count('Absent'), late: count('Late'),
+        percentage: att.percentage,
+        records_counted: att.counted,
+        present: att.present, absent: att.absent, late: att.late, od: att.od, leave: att.leave, attended: att.attended,
+        rule: ATTENDANCE_RULE,
         recent,
       },
       fees: showFees ? await studentFeeSummary(this.prisma, branchId, id) : null,
@@ -228,11 +229,11 @@ export class StudentsController {
   async tcData(@Req() req: ReqWithUser, @Param('id') id: string) {
     const s = await this.exportBase(req, id);
     if (s.status === 'Active') throw new ConflictException('A Transfer Certificate can only be issued once the student is marked Inactive / Left');
-    const [total, present, fees] = await Promise.all([
-      this.prisma.attendanceRecord.count({ where: { studentId: id } }),
-      this.prisma.attendanceRecord.count({ where: { studentId: id, status: 'Present' } }),
+    const [records, fees] = await Promise.all([
+      this.prisma.attendanceRecord.findMany({ where: { studentId: id }, select: { date: true, status: true } }),
       studentFeeSummary(this.prisma, req.user.branch_id, id),
     ]);
+    const att = tally(records);
     return {
       certificate_no: `TC-${(s.branch.code ?? s.branchId).toUpperCase()}-${s.admissionNo}`,
       issue_date: new Date().toISOString().slice(0, 10),
@@ -242,7 +243,7 @@ export class StudentsController {
         father_name: s.fatherName, mother_name: s.motherName, class: classLabel(s.class), roll_no: s.rollNo,
         house: s.house, enrollment_date: s.enrollmentDate, status: s.status,
       },
-      attendance: { records_counted: total, present, percentage: total ? Math.round((present / total) * 1000) / 10 : null },
+      attendance: { records_counted: att.counted, present: att.attended, percentage: att.percentage },
       fees_cleared: fees.balance <= 0.001,
       balance_due: fees.balance,
     };
@@ -367,14 +368,11 @@ export class StudentsController {
     if (from || to) {
       rangeWhere.date = { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) };
     }
-    const [totalWorking, present] = await Promise.all([
-      this.prisma.attendanceRecord.count({ where: rangeWhere }),
-      this.prisma.attendanceRecord.count({ where: { ...rangeWhere, status: 'Present' } }),
-    ]);
+    const att = tally(await this.prisma.attendanceRecord.findMany({ where: rangeWhere, select: { date: true, status: true } }));
     return {
       ...stripContacts(student, req.user),
-      attendance_percentage: totalWorking > 0 ? Math.round((present / totalWorking) * 1000) / 10 : null,
-      attendance_records_counted: totalWorking,
+      attendance_percentage: att.percentage,
+      attendance_records_counted: att.counted,
     };
   }
 

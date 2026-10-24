@@ -535,3 +535,66 @@ Deps installed once by lead: pdf-lib 1.17.1, exceljs 4.4.0, qrcode 1.5.4 (+@type
   .gitignore now ignores .playwright-mcp/, .qoder/, .shots/. PUSH REJECTED: gh token (jayanth-torii) lacks the
   `workflow` scope needed to push .github/workflows/ci.yml → Jayanth must run
   `gh auth refresh -h github.com -s workflow`, then `git push -u origin jayanth/phase-0-11-completion`.
+
+## 11. Round 3 — client feedback (2026-10-24), branch `jayanth/feedback-round-1`
+- Upstream on arrival: PR #2 (my phase-completion branch) MERGED to main; commit b02823a (Jayanth) DELETED
+  `.github/workflows/ci.yml` to push without the gh `workflow` scope → CI no longer runs. Re-add once the
+  token has `workflow` scope (`gh auth refresh -h github.com -s workflow`).
+- dev.db is still on the OLD seed (4 logins, principal@ = branch_admin) — migrations applied but never reseeded.
+  Reseed (with backup) before demoing.
+- School decisions (Jayanth, 2026-10-24): Teacher and Warden stay SEPARATE logins; Warden = hostel + gate desk +
+  pass records + student list; Security = gate desk + visitors only (both keep self-service + incident report);
+  OD = On Duty, counts as present, mandatory reason, no absence SMS; "Jayantha attendance" = a specific person's
+  attendance looked wrong — nobody named Jayantha in seed or dev.db (reviewer's own data) → audit attendance maths.
+- Lead: `R.ACADEMIC_STAFF` (staff minus warden/security) backend + frontend, applied to classes/timetable/academics/
+  exams reads + nav; security removed from STUDENT_READ; nav Hostel → R.HOSTEL_ADMIN. Tests updated (security 403
+  on classes). e2e testTimeout 60s globally (suite setups logging in many roles exceeded 5s on this machine).
+- Lead: migrations `20261024090000_notices_lesson_attachments` (Notice, NoticeRead, LessonPlan attachment*) and
+  `20261024100000_attendance_note` (AttendanceRecord.note for OD reason), SQLite + Postgres. Seed bell schedule:
+  period 7 = Lunch Break 13:00–14:00 (was a gap), afternoon periods 8/9, PERIODS teaching = [1,2,4,5,6,8].
+- Fees "card Download PDF not working": API verified — all 488 invoice + 335 receipt PDFs return valid PDFs
+  (accounts + parent) → bug is browser-side (agent investigating) or the stale :3001 backend the reviewer hit.
+- sweetalert2 11.26.25 installed in frontend (logout confirmation).
+- 3 builder agents (brief: scratchpad BRIEF3.md): gate desk/roles/logout/profile/students table; attendance/OD/
+  timetable/roll-call/attendance-math audit; student notices/lesson-plan PDF/staff tables/reports alignment/fees.
+- **Gate desk / roles (agent, 14/14 own suite):** new `/gate` page (Issue pass — `POST /gate-passes {issue:true}`
+  by warden/admin = created + warden-approved in one action, principal approval still follows; Approvals; Verify &
+  exit/return; Pass records `GET /gate-passes/records` filters + CSV, never passCode/OTP; Visitors). /leaves lost the
+  security-desk tab (link card to /gate). Hostel reads (rooms/allocations/unallocated/roll-call) = HOSTEL_ADMIN +
+  leadership; GET /hostel + visitors stay on desk roles. `confirmLogout()` SweetAlert exported from DashboardShell
+  (user menu, mobile drawer, Settings sign-out). Notices unread badge on "Notices & messages" (parents + students).
+  Students page own card design + table cleanup; warden read-only. /account profile + /account/password reworked;
+  users stay signed in after a password change; `/auth/me` returns password_changed_at.
+- Lead: tests updated for decisions (hostel rooms/roll-call reads as warden, warden attendance read → 403);
+  Settings role descriptions updated. TODO (lead): server-side enforcement of mustChangePassword in auth.guard
+  (frontend-only today) — do after agents finish; parent/test flows must change password first.
+- **Notices / academics / tables (agent, 15/15 own suite):** `backend/src/notices/` (POST /api/notices — R.BROADCAST
+  any target; teacher/HOD only own classes/students; also_send sms|email via notify ref_type 'notice'; GET /notices,
+  /notices/targets, /mine, /:id/read, /unread-count, expire/delete). /notifications has "Student notices" tab;
+  teachers get "Notify class" in the Academics header; /portal/messages = Notices | SMS & email (fires
+  `notices:changed`). Lesson plan PDF: POST/DELETE/GET /academics/lesson-plans/:id/attachment (multipart, PDF magic
+  bytes, 10 MB) + /plan.pdf export. Staff & payroll tables, /reports alignment reworked. Fees card ROOT CAUSE:
+  card view had NO receipt download (only a non-clickable "N receipts" chip; phones default to cards) → footer now
+  has invoice + receipt buttons; /portal/fees rebuilt with invoice + receipt PDFs.
+  GOTCHA: `table.data-table thead th { text-align:left }` is unlayered → `text-right` on <th> loses; use `th-end`.
+- Lead: nav badge refreshes on `notices:changed`; apiDownload keeps the blob URL 60 s (1 s could cancel downloads on
+  iOS Safari / Firefox — second plausible cause of "PDF download not working").
+- **Attendance / timetable (agent, 11/11 own suite; full run 406/406):** ONE attendance rule in
+  `backend/src/attendance/attendance-math.ts` — attended = Present+Late+OD; counted = Present+Late+OD+Absent; Leave
+  excluded; Sundays/'Holiday' never counted — applied to all 13 endpoints (reports, profile, TC, calendar, report
+  card, portal). Before: one student could show 4 different % (reports/profile counted Present only; nobody excluded
+  Leave or Sundays) — most likely the "Jayantha attendance looked wrong" report. OD needs a reason (stored in
+  AttendanceRecord.note), never sends absence SMS. New /attendance/sheet, /analytics, filtered /absentees, /low.
+  Warden removed from attendance reads. Timetable: bell order by start time everywhere, lunch/short break rows,
+  class + teacher week PDFs, Day View. New components/attendance/* (status colours, StudentCalendar,
+  ClassSectionSelect, MarkAttendance, MonthlyRegister, AbsenteesView, AttendanceInsights). RollCallPanel rebuilt.
+  /reports/attendance semantics changed: `present` = attended, `total_records` = counted days (+late/od/leave fields).
+- Lead: roll-call roster returns marked_at + marked_by_name (shown in "Last marked"); test titles updated.
+- **Razorpay (test mode) — IN PROGRESS when paused:** keys written ONLY to git-ignored `backend/.env`
+  (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET) and `frontend/.env.local` (NEXT_PUBLIC_RAZORPAY_KEY_ID). Backend accepts
+  RAZORPAY_SECRET as alias (`razorpayKeySecret()` in payments.service.ts). `test/e2e-env.ts` blanks RAZORPAY_* so
+  tests always use the mock gateway. New `frontend/src/lib/razorpay.ts` (`payWithRazorpay(order, details)` → Checkout
+  → POST /api/payments/razorpay/verify; settles paid|dismissed|failed; failures during retry don't settle early).
+  Wired into /portal/fees (was "pay at office" when razorpay configured) and /admission-form.
+  OPEN: tsc error portal/fees/page.tsx `child.fullName` → must be `child.full_name` (fix was rejected mid-edit);
+  real order creation + browser checkout NOT yet tested. Handoff doc: `capsule.md` (repo root).

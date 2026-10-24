@@ -15,6 +15,8 @@ import { AuthGuard, Roles, RolesGuard } from '../auth/auth.guard';
 import { ROLE } from '../auth/roles';
 import { AuthUser, ReqWithUser, assertCanSeeStudent, portalStudentIds } from '../common/access';
 import { PortalLeaveRequestDto } from './portal.dto';
+import { ATTENDANCE_RULE, isSunday, tally } from '../attendance/attendance-math';
+import { sortPeriods } from '../timetable/timetable.util';
 
 /** Today as YYYY-MM-DD in local time (school dates are stored as plain strings). */
 function todayISO(): string {
@@ -71,23 +73,31 @@ export class PortalController {
     return student;
   }
 
+  /** Month view + overall, under THE attendance rule (attendance/attendance-math.ts). */
   private async attendanceFor(studentId: string, month: string) {
-    const rows = await this.prisma.attendanceRecord.findMany({
-      where: { studentId, date: { startsWith: month } },
-      select: { date: true, status: true },
+    const all = await this.prisma.attendanceRecord.findMany({
+      where: { studentId },
+      select: { date: true, status: true, note: true },
       orderBy: { date: 'asc' },
     });
-    const counted = rows.filter((r) => r.status !== 'Holiday');
-    const present = counted.filter((r) => r.status === 'Present' || r.status === 'Late').length;
+    const rows = all.filter((r) => r.date.startsWith(month));
+    const t = tally(rows);
+    const overall = tally(all);
     return {
       month,
-      days: rows,
-      present,
-      absent: counted.filter((r) => r.status === 'Absent').length,
-      late: counted.filter((r) => r.status === 'Late').length,
-      leave: counted.filter((r) => r.status === 'Leave' || r.status === 'On Leave').length,
-      total: counted.length,
-      attendance_pct: pct(present, counted.length),
+      rule: ATTENDANCE_RULE,
+      days: rows.map((r) => ({ date: r.date, status: r.status, note: r.note ?? null, is_sunday: isSunday(r.date) })),
+      /** attended = Present + Late + OD */
+      present: t.attended,
+      present_only: t.present,
+      absent: t.absent,
+      late: t.late,
+      od: t.od,
+      leave: t.leave,
+      /** counted days = Present + Late + OD + Absent (Leave, Sundays excluded) */
+      total: t.counted,
+      attendance_pct: t.percentage,
+      overall: { attended: overall.attended, counted: overall.counted, percentage: overall.percentage },
     };
   }
 
@@ -258,7 +268,7 @@ export class PortalController {
           house: s.house,
           status: s.status,
           class: s.class,
-          attendance: { month, present: att.present, total: att.total, attendance_pct: att.attendance_pct },
+          attendance: { month, present: att.present, total: att.total, od: att.od, attendance_pct: att.attendance_pct, overall_pct: att.overall.percentage },
           fees: { total: fees.total, paid: fees.paid, balance: fees.balance, overdue: fees.invoices.filter((i) => i.overdue).length },
           latest_marks: latest
             ? { exam_id: latest.exam_id, exam_name: latest.exam_name, date: latest.date, pct: latest.pct, grade: latest.grade, subjects: latest.subjects }
@@ -355,7 +365,9 @@ export class PortalController {
       class: s.class,
       date,
       day,
-      periods,
+      /** Bell schedule incl. breaks (Short Break, Lunch Break…) in the order the day runs. */
+      periods: sortPeriods(periods).map((p) => ({ ...p, breakName: p.isBreak ? (p.breakName ?? 'Break') : null })),
+      pdf_url: `/api/timetable/class/${s.classId}/pdf`,
       slots: slots.map((x) => ({
         day_of_week: x.dayOfWeek,
         period_number: x.periodNumber,

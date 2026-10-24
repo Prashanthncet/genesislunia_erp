@@ -64,5 +64,6 @@ export async function apiDownload(path: string, fallbackName: string): Promise<v
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  // Revoking too early cancels the save on iOS Safari / Firefox (they read the blob lazily).
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

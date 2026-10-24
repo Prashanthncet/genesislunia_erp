@@ -130,7 +130,7 @@ describe('Hostel / Staff & Payroll / CBT (e2e)', () => {
       expect(outOfRange.status).toBe(400);
       const auto = await as('warden').post('/api/hostel/allocations').send({ student_id: b, room_id: room.body.id });
       expect(auto.body.bed_label).toBe('B1');
-      const rooms = await as('security').get(`/api/hostel/rooms?hostel_id=${hostelId}`);
+      const rooms = await as('warden').get(`/api/hostel/rooms?hostel_id=${hostelId}`);
       const beds = rooms.body.find((r: { id: string }) => r.id === room.body.id).beds;
       expect(beds.map((x: { label: string; student: { id: string } | null }) => [x.label, x.student?.id])).toEqual([['B1', b], ['B2', a]]);
       const shrink = await as('warden').put(`/api/hostel/rooms/${room.body.id}`).send({ capacity: 1 });
@@ -146,7 +146,7 @@ describe('Hostel / Staff & Payroll / CBT (e2e)', () => {
       const other = free.body[0].id;
       await as('warden').post('/api/hostel/allocations').send({ student_id: other, room_id: room.body.id });
 
-      const roster = await as('security').get(`/api/hostel/roll-call?hostel_id=${hostelId}&date=2026-10-12&session=Night`);
+      const roster = await as('warden').get(`/api/hostel/roll-call?hostel_id=${hostelId}&date=2026-10-12&session=Night`);
       expect(roster.status).toBe(200);
       const r4 = roster.body.roster.find((r: { student_id: string }) => r.student_id === 'stu_004');
       expect(r4.status).toBe('On Leave');
@@ -164,7 +164,7 @@ describe('Hostel / Staff & Payroll / CBT (e2e)', () => {
       const row = await prisma.hostelRollCall.findFirst({ where: { studentId: other, date: '2026-10-12', session: 'Night' } });
       expect(row?.markedBy).toBe('t_amit');
 
-      const again = await as('security').get(`/api/hostel/roll-call?hostel_id=${hostelId}&date=2026-10-12&session=Night`);
+      const again = await as('warden').get(`/api/hostel/roll-call?hostel_id=${hostelId}&date=2026-10-12&session=Night`);
       expect(again.body.already_marked).toBe(true);
       expect(again.body.roster.find((r: { student_id: string }) => r.student_id === other).status).toBe('Absent');
 

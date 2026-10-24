@@ -1,7 +1,14 @@
+import * as crypto from 'crypto';
 import {
   BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get,
-  NotFoundException, Param, Patch, Post, Put, Query, Req, UseGuards,
+  NotFoundException, Param, Patch, Post, Put, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
+import { buildPdf, sendPdf } from '../common/pdf';
+import { StorageService } from '../storage/storage.service';
+import { safeId, safeName } from '../storage/keys';
+import { sniffMime } from '../storage/mime';
 import { AuthGuard, Roles, RolesGuard } from '../auth/auth.guard';
 import { R, ROLE } from '../auth/roles';
 import { assertInBranch, audit, AuthUser, currentStaffId, portalStudentIds } from '../common/access';
@@ -14,13 +21,26 @@ import {
 
 type Req_ = { user: AuthUser };
 
+/** The multer file shape we use (memory storage). */
+type Upload = { originalname: string; mimetype: string; size: number; buffer: Buffer };
+
+/** Lesson-plan attachments: PDF only, at most 10 MB (checked by content, not by the declared type). */
+export const LESSON_PDF_MAX_BYTES = 10 * 1024 * 1024;
+
+const lessonPlanKey = (branchId: string, planId: string, fileName: string) =>
+  `branches/${safeId(branchId)}/lesson-plans/${safeId(planId)}/${crypto.randomUUID()}-${safeName(fileName)}`;
+
 /** Staff read everything in their school; parents/students only their own class (narrowed below). */
-const READ_ALL = [...R.STAFF, ROLE.PARENT, ROLE.STUDENT];
+const READ_ALL = [...R.ACADEMIC_STAFF, ROLE.PARENT, ROLE.STUDENT];
 
 @Controller('academics')
 @UseGuards(AuthGuard, RolesGuard)
 export class AcademicsController {
-  constructor(private prisma: PrismaService, private notifications: NotificationsService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+    private storage: StorageService,
+  ) {}
 
   /** Classes a portal user may see (their children's / own class); null for staff. */
   private async portalClassIds(user: AuthUser): Promise<string[] | null> {
@@ -247,7 +267,7 @@ export class AcademicsController {
   // ─── Lesson plans ──────────────────────────────────────────
 
   @Get('lesson-plans')
-  @Roles(...R.STAFF)
+  @Roles(...R.ACADEMIC_STAFF)
   listLessonPlans(@Req() req: Req_, @Query('teacher_id') teacherId?: string, @Query('syllabus_id') syllabusId?: string, @Query('class_id') classId?: string) {
     return this.prisma.lessonPlan.findMany({
       where: {
@@ -313,8 +333,110 @@ export class AcademicsController {
     if (!existing) throw new NotFoundException('Lesson plan not found');
     await this.assertOwner(req.user, existing.teacherId);
     await this.prisma.lessonPlan.delete({ where: { id } });
+    await this.storage.deleteQuietly(existing.attachmentKey);
     await audit(this.prisma, req.user, 'DELETE', 'lesson_plan', id, existing.topic);
     return { success: true };
+  }
+
+  // ─── Lesson-plan PDF attachment + export ───────────────────
+
+  /**
+   * Attach or replace the plan's PDF (multipart field `file`). Owner teacher, or HOD/leadership.
+   * Object first, then the row; the previous object is removed once the row points at the new one.
+   */
+  @Post('lesson-plans/:id/attachment')
+  @Roles(...R.TEACHING)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: LESSON_PDF_MAX_BYTES + 2 * 1024 * 1024, files: 1 } }))
+  async uploadLessonAttachment(@Req() req: Req_, @Param('id') id: string, @UploadedFile() file?: Upload) {
+    const existing = await this.prisma.lessonPlan.findFirst({ where: { id, branchId: req.user.branch_id } });
+    if (!existing) throw new NotFoundException('Lesson plan not found');
+    await this.assertOwner(req.user, existing.teacherId);
+    if (!file?.buffer?.length) throw new BadRequestException('Attach a PDF file in the "file" field');
+    if (file.buffer.length > LESSON_PDF_MAX_BYTES) throw new BadRequestException('The PDF is larger than 10 MB');
+    if (sniffMime(file.buffer) !== 'application/pdf') throw new BadRequestException('Only PDF files can be attached to a lesson plan');
+    const original = (file.originalname || 'lesson-plan').slice(0, 150);
+    const name = /\.pdf$/i.test(original) ? original : `${original}.pdf`;
+    const key = lessonPlanKey(req.user.branch_id, id, name);
+    await this.storage.put(key, file.buffer, 'application/pdf');
+    try {
+      await this.prisma.lessonPlan.update({
+        where: { id },
+        data: { attachmentKey: key, attachmentName: name, attachmentSize: file.buffer.length },
+      });
+    } catch (e) {
+      await this.storage.deleteQuietly(key);
+      throw e;
+    }
+    if (existing.attachmentKey && existing.attachmentKey !== key) await this.storage.deleteQuietly(existing.attachmentKey);
+    await audit(this.prisma, req.user, 'UPDATE', 'lesson_plan', id, `${existing.attachmentKey ? 'replaced' : 'attached'} PDF ${name} (${file.buffer.length} bytes)`);
+    return { id, attachment_name: name, attachment_size: file.buffer.length };
+  }
+
+  @Delete('lesson-plans/:id/attachment')
+  @Roles(...R.TEACHING)
+  async removeLessonAttachment(@Req() req: Req_, @Param('id') id: string) {
+    const existing = await this.prisma.lessonPlan.findFirst({ where: { id, branchId: req.user.branch_id } });
+    if (!existing) throw new NotFoundException('Lesson plan not found');
+    await this.assertOwner(req.user, existing.teacherId);
+    if (!existing.attachmentKey) throw new NotFoundException('This lesson plan has no PDF attached');
+    await this.prisma.lessonPlan.update({ where: { id }, data: { attachmentKey: null, attachmentName: null, attachmentSize: null } });
+    await this.storage.deleteQuietly(existing.attachmentKey);
+    await audit(this.prisma, req.user, 'UPDATE', 'lesson_plan', id, `removed PDF ${existing.attachmentName ?? ''}`);
+    return { id, success: true };
+  }
+
+  /** Short-lived signed download link, same contract as student documents. Anyone who can read plans. */
+  @Get('lesson-plans/:id/attachment')
+  @Roles(...R.ACADEMIC_STAFF)
+  async lessonAttachmentLink(@Req() req: Req_, @Param('id') id: string, @Query('inline') inline?: string) {
+    const p = await this.prisma.lessonPlan.findFirst({ where: { id, branchId: req.user.branch_id } });
+    if (!p) throw new NotFoundException('Lesson plan not found');
+    if (!p.attachmentKey) throw new NotFoundException('This lesson plan has no PDF attached');
+    const fileName = p.attachmentName || 'lesson-plan.pdf';
+    const { url, expires_at } = await this.storage.signedUrl(p.attachmentKey, undefined, fileName, { inline: inline === '1', mime: 'application/pdf' });
+    return { url, expires_at, file_name: fileName, mime_type: 'application/pdf', size_bytes: p.attachmentSize };
+  }
+
+  /** The plan itself as a printable PDF (common/pdf.ts). */
+  @Get('lesson-plans/:id/plan.pdf')
+  @Roles(...R.ACADEMIC_STAFF)
+  async lessonPlanPdf(@Req() req: Req_, @Param('id') id: string, @Res() res: Response) {
+    const p = await this.prisma.lessonPlan.findFirst({
+      where: { id, branchId: req.user.branch_id },
+      include: {
+        syllabus: { include: { subject: true, class: { select: { name: true, section: true } } } },
+        teacher: { select: { name: true } },
+      },
+    });
+    if (!p) throw new NotFoundException('Lesson plan not found');
+    const b = await this.prisma.branch.findUnique({ where: { id: req.user.branch_id }, select: { name: true, location: true } });
+    const cls = `${p.syllabus.class.name}${p.syllabus.class.section ? ` ${p.syllabus.class.section}` : ''}`;
+    const pdf = await buildPdf({
+      school: b?.name ?? 'School',
+      schoolLine: b?.location ?? undefined,
+      title: 'Lesson Plan',
+      reference: p.date,
+      blocks: [
+        {
+          kind: 'fields',
+          rows: [
+            ['Topic', p.topic],
+            ['Date', p.date],
+            ['Class', cls],
+            ['Subject', `${p.syllabus.subject.name} (${p.syllabus.subject.code})`],
+            ['Syllabus unit', p.syllabus.title],
+            ['Teacher', p.teacher.name],
+            ['Status', p.status],
+            ['Attached PDF', p.attachmentName ? `${p.attachmentName} (${Math.max(1, Math.round((p.attachmentSize ?? 0) / 1024))} KB)` : 'None'],
+          ],
+        },
+        ...(p.syllabus.description
+          ? [{ kind: 'heading' as const, text: 'Unit outline' }, { kind: 'text' as const, text: p.syllabus.description }]
+          : []),
+      ],
+    });
+    await audit(this.prisma, req.user, 'EXPORT', 'lesson_plan', p.id, 'plan.pdf');
+    return sendPdf(res, pdf, `lesson-plan-${p.date}-${p.topic}`.slice(0, 100) + '.pdf');
   }
 
   // ─── Assignments ───────────────────────────────────────────

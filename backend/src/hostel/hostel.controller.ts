@@ -13,8 +13,13 @@ import {
 import { textContains } from '../common/search';
 import { retryOnUniqueRace } from '../common/retry';
 
-/** Who may look at hostel data: the front desk plus school leadership. */
+/** Hostel names + visitor log: the front desk (incl. security) plus school leadership. */
 const HOSTEL_READ = [...new Set([...R.HOSTEL_DESK, ...R.LEADERSHIP])];
+/**
+ * Rooms, bed map, allocations and roll call: hostel administration plus leadership.
+ * Security is deliberately excluded (school decision 2026-10-24: security = gate desk + visitors only).
+ */
+const HOSTEL_ADMIN_READ = [...new Set([...R.HOSTEL_ADMIN, ...R.LEADERSHIP])];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 type Tx = Prisma.TransactionClient;
@@ -150,7 +155,7 @@ export class HostelController {
    * service) with who sleeps in it. Rooms that predate the Bed table are healed first.
    */
   @Get('rooms')
-  @Roles(...HOSTEL_READ)
+  @Roles(...HOSTEL_ADMIN_READ)
   async listRooms(@Req() req: ReqWithUser, @Query('hostel_id') hostelId?: string) {
     const where = { hostel: { branchId: req.user.branch_id }, ...(hostelId ? { hostelId } : {}) };
     const stale = await this.prisma.room.findMany({
@@ -318,7 +323,7 @@ export class HostelController {
   // ─── Allocations ────────────────────────────────────────────
 
   @Get('allocations')
-  @Roles(...HOSTEL_READ)
+  @Roles(...HOSTEL_ADMIN_READ)
   listAllocations(@Req() req: ReqWithUser, @Query('hostel_id') hostelId?: string) {
     return this.prisma.hostelAllocation.findMany({
       where: { room: { hostel: { branchId: req.user.branch_id }, ...(hostelId ? { hostelId } : {}) } },
@@ -333,7 +338,7 @@ export class HostelController {
 
   /** Students of this school with no hostel bed yet (allocation picker). */
   @Get('unallocated-students')
-  @Roles(...R.HOSTEL_ADMIN)
+  @Roles(...HOSTEL_ADMIN_READ)
   unallocated(@Req() req: ReqWithUser, @Query('q') q?: string) {
     return this.prisma.student.findMany({
       where: {
@@ -535,7 +540,7 @@ export class HostelController {
    * everyone else Present.
    */
   @Get('roll-call')
-  @Roles(...HOSTEL_READ)
+  @Roles(...HOSTEL_ADMIN_READ)
   async roster(@Req() req: ReqWithUser, @Query('hostel_id') hostelId?: string, @Query('date') date?: string, @Query('session') session?: string) {
     if (!hostelId || !date || !DATE_RE.test(date) || !session || !(ROLL_SESSIONS as readonly string[]).includes(session)) {
       throw new BadRequestException('hostel_id, date (YYYY-MM-DD) and session (Morning|Night) are required');
@@ -558,6 +563,16 @@ export class HostelController {
       }),
     ]);
     const savedBy = new Map(saved.map((s) => [s.studentId, s]));
+    // markedBy is a staff id (or a user id for admins without a staff row).
+    const markerIds = [...new Set(saved.map((s) => s.markedBy).filter((x): x is string => !!x))];
+    const [markerStaff, markerUsers] = await Promise.all([
+      this.prisma.staff.findMany({ where: { id: { in: markerIds } }, select: { id: true, name: true } }),
+      this.prisma.user.findMany({ where: { id: { in: markerIds } }, select: { id: true, name: true, email: true } }),
+    ]);
+    const markerNames = new Map<string, string>([
+      ...markerUsers.map((u) => [u.id, u.name ?? u.email] as [string, string]),
+      ...markerStaff.map((m) => [m.id, m.name] as [string, string]),
+    ]);
     const leaveBy = new Map(leaves.map((l) => [l.studentId, `Approved leave (${l.leaveType})`]));
     const passBy = new Map(passes.map((p) => [p.studentId, `Checked out on gate pass (${p.type})`]));
 
@@ -574,6 +589,8 @@ export class HostelController {
           saved: !!s,
           leave_reason: reason,
           marked_by: s?.markedBy ?? null,
+          marked_by_name: s?.markedBy ? markerNames.get(s.markedBy) ?? null : null,
+          marked_at: s?.createdAt ?? null,
         };
       })
       .sort((x, y) => x.room.localeCompare(y.room) || bedNo(x.bed ?? '') - bedNo(y.bed ?? ''));
@@ -637,7 +654,7 @@ export class HostelController {
 
   /** History / absentee report: one row per mark in the range, filterable by status. */
   @Get('roll-call/report')
-  @Roles(...HOSTEL_READ)
+  @Roles(...HOSTEL_ADMIN_READ)
   async rollCallReport(
     @Req() req: ReqWithUser,
     @Query('from') from?: string,

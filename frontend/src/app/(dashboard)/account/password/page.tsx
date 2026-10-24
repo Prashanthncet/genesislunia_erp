@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type InputHTMLAttributes } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useMe } from "@/lib/auth";
@@ -25,6 +25,27 @@ function strength(p: string): { score: number; label: string; tone: string } {
   return { score, label: "Strong", tone: "bg-ok" };
 }
 
+/** Password input with its own show/hide toggle (keyboard + screen-reader friendly). */
+function PasswordInput({ label, ...rest }: InputHTMLAttributes<HTMLInputElement> & { label: string }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <Input {...rest} type={show ? "text" : "password"} className="pr-11" spellCheck={false} autoCapitalize="none" />
+      <button
+        type="button"
+        onClick={() => setShow((v) => !v)}
+        aria-label={show ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+        aria-pressed={show}
+        className="absolute inset-y-0 right-0 grid w-10 place-items-center rounded-r-lg text-ink-3 transition-colors hover:text-ink"
+      >
+        <Icon name={show ? "lock" : "eye"} className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
+const WRONG_CURRENT = /current password is incorrect/i;
+
 export default function ChangePasswordPage() {
   const { me, refresh } = useMe();
   const router = useRouter();
@@ -32,7 +53,6 @@ export default function ChangePasswordPage() {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [show, setShow] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -53,9 +73,11 @@ export default function ChangePasswordPage() {
         method: "POST",
         body: JSON.stringify({ current_password: current, new_password: next }),
       });
-      toast.push("Password changed");
+      // Decision: stay signed in. The session token stays valid (the person who just proved the
+      // current password is the account owner); next sign-in on any device needs the new password.
+      toast.push("Password changed. You're still signed in — use the new password next time.");
       await refresh();
-      router.replace(homeFor(me?.role));
+      router.replace(forced ? homeFor(me?.role) : "/account");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not change the password");
       setSaving(false);
@@ -84,26 +106,31 @@ export default function ChangePasswordPage() {
       <Card>
         <CardHead icon="key" title="New password" subtitle={me?.email ?? undefined} />
         <form onSubmit={submit} className="space-y-4 p-5">
-          {error && (
+          {error && !WRONG_CURRENT.test(error) && (
             <p className="flex items-start gap-2 rounded-xl bg-danger-soft px-3 py-2.5 text-[12.5px] text-danger" role="alert">
               <Icon name="alert" className="mt-0.5 h-4 w-4 shrink-0" />
               {error}
             </p>
           )}
 
-          <Field label={forced ? "Temporary / current password" : "Current password"} required>
-            <Input
-              type={show ? "text" : "password"}
+          <Field
+            label={forced ? "Temporary / current password" : "Current password"}
+            required
+            error={WRONG_CURRENT.test(error) ? "That isn't your current password — check it and try again." : undefined}
+          >
+            <PasswordInput
+              label="Current password"
               autoComplete="current-password"
               value={current}
-              onChange={(e) => setCurrent(e.target.value)}
+              onChange={(e) => { setCurrent(e.target.value); if (WRONG_CURRENT.test(error)) setError(""); }}
+              aria-invalid={WRONG_CURRENT.test(error) || undefined}
               required
             />
           </Field>
 
           <Field label="New password" required error={same ? "The new password must be different from the current one" : undefined}>
-            <Input
-              type={show ? "text" : "password"}
+            <PasswordInput
+              label="New password"
               autoComplete="new-password"
               value={next}
               maxLength={72}
@@ -141,8 +168,8 @@ export default function ChangePasswordPage() {
             required
             error={confirm && !matches ? "The two passwords don't match" : undefined}
           >
-            <Input
-              type={show ? "text" : "password"}
+            <PasswordInput
+              label="Confirm new password"
               autoComplete="new-password"
               value={confirm}
               maxLength={72}
@@ -151,10 +178,20 @@ export default function ChangePasswordPage() {
             />
           </Field>
 
-          <label className="flex items-center gap-2 text-[12.5px] text-ink-2">
-            <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} />
-            Show passwords
-          </label>
+          <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2" aria-label="Other checks">
+            <li className={`flex items-center gap-2 text-[12px] ${next && !same ? "text-ok-ink" : "text-ink-3"}`}>
+              <Icon name={next && !same ? "check" : "minus"} className="h-3.5 w-3.5 shrink-0" />
+              Different from the current password
+            </li>
+            <li className={`flex items-center gap-2 text-[12px] ${matches ? "text-ok-ink" : "text-ink-3"}`}>
+              <Icon name={matches ? "check" : "minus"} className="h-3.5 w-3.5 shrink-0" />
+              Both new passwords match
+            </li>
+          </ul>
+
+          <p className="text-[12px] leading-relaxed text-ink-3">
+            You stay signed in on this device after the change. Use the new password the next time you sign in.
+          </p>
 
           <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
             {!forced && (

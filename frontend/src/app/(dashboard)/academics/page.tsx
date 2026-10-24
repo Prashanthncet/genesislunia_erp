@@ -8,10 +8,12 @@ import {
 } from "@/components/ui";
 import { TableView } from "@/components/TableView";
 import { CardEmpty, CardGrid, Chip, RecordCard, toneClasses, toneFor, type Tone } from "@/components/RecordCard";
+import { LessonPlanPdfActions, checkLessonPdf, fmtSize, uploadLessonPdf } from "@/components/academics/LessonPlanPdf";
+import { NoticeComposer } from "@/components/notices/NoticeComposer";
 
 type Subject = { id: string; name: string; code: string; level: string };
 type Syllabus = { id: string; title: string; description: string | null; classId: string; subjectId: string; subject?: { name: string }; class?: { name: string; section: string | null }; _count?: { lessonPlans: number } };
-type LessonPlan = { id: string; topic: string; date: string; status: string; teacherId: string; syllabus?: { title: string; subject?: { name: string }; class?: { name: string; section: string | null } }; teacher?: { id: string; name: string } | null };
+type LessonPlan = { id: string; topic: string; date: string; status: string; teacherId: string; attachmentName?: string | null; attachmentSize?: number | null; syllabus?: { title: string; subject?: { name: string }; class?: { name: string; section: string | null } }; teacher?: { id: string; name: string } | null };
 type Assignment = { id: string; title: string; description: string | null; dueDate: string | null; teacherId: string; subject?: { name: string }; class?: { name: string; section: string | null }; teacher?: { id: string; name: string } | null };
 type ClassItem = { id: string; name: string; section: string | null };
 type Teacher = { id: string; name: string; subjects: string | null };
@@ -47,6 +49,9 @@ export default function AcademicsPage() {
   const [progress, setProgress] = useState<Progress | null>(null);
   const [progressClass, setProgressClass] = useState("");
   const [busy, setBusy] = useState(false);
+  const [lessonFile, setLessonFile] = useState<File | null>(null);
+  const [lessonFileKey, setLessonFileKey] = useState(0); // remounts the file input to clear it
+  const [notifyOpen, setNotifyOpen] = useState(false);
 
   const [subjectForm, setSubjectForm] = useState({ name: "", code: "", level: "Secondary" });
   const [syllabusForm, setSyllabusForm] = useState({ class_id: "", subject_id: "", title: "", description: "" });
@@ -118,8 +123,30 @@ export default function AcademicsPage() {
   const addLessonPlan = () => {
     if (!lessonForm.syllabus_id || !lessonForm.topic || !lessonForm.date) return toast.push("Syllabus unit, topic and date are required", "error");
     if (!lessonForm.teacher_id && !ownStaffId) return toast.push("Choose a teacher", "error");
-    send("/api/academics/lesson-plans", "POST", clean(lessonForm), "Lesson plan created",
-      () => setLessonForm((f) => ({ ...f, syllabus_id: "", topic: "", date: "", status: "Planned" })));
+    if (lessonFile) {
+      const err = checkLessonPdf(lessonFile);
+      if (err) return toast.push(err, "error");
+    }
+    void (async () => {
+      setBusy(true);
+      try {
+        const created = await apiFetch<{ id: string }>("/api/academics/lesson-plans", { method: "POST", body: JSON.stringify(clean(lessonForm)) });
+        let note = "Lesson plan created";
+        if (lessonFile) {
+          try {
+            await uploadLessonPdf(created.id, lessonFile);
+            note = "Lesson plan created with its PDF";
+          } catch (e) {
+            toast.push(`Plan saved, but the PDF was not attached: ${errText(e)}. Use "Attach PDF" on the plan to retry.`, "error");
+          }
+        }
+        setLessonForm((f) => ({ ...f, syllabus_id: "", topic: "", date: "", status: "Planned" }));
+        setLessonFile(null);
+        setLessonFileKey((k) => k + 1);
+        await loadAll();
+        ok(note);
+      } catch (e) { fail(e); } finally { setBusy(false); }
+    })();
   };
   const addAssignment = () => {
     if (!assignmentForm.class_id || !assignmentForm.subject_id || !assignmentForm.title || !assignmentForm.due_date) {
@@ -190,7 +217,16 @@ export default function AcademicsPage() {
   return (
     <div className="space-y-6">
       <Reveal>
-        <PageHeader icon="academics" title="Academics" subtitle={portal ? "Syllabus and assignments for your class" : "Subjects, syllabus, lesson plans, assignments and syllabus progress"} />
+        <PageHeader
+          icon="academics"
+          title="Academics"
+          subtitle={portal ? "Syllabus and assignments for your class" : "Subjects, syllabus, lesson plans, assignments and syllabus progress"}
+          actions={canTeach && !portal ? (
+            <Button type="button" variant="primary" onClick={() => setNotifyOpen(true)}>
+              <Icon name="bell" className="h-4 w-4" /> Notify class
+            </Button>
+          ) : undefined}
+        />
       </Reveal>
 
       <div className="flex items-center gap-2 overflow-x-auto" role="tablist">
@@ -288,6 +324,15 @@ export default function AcademicsPage() {
                 <Field label="Date" required><Input type="date" value={lessonForm.date} onChange={(e) => setLessonForm({ ...lessonForm, date: e.target.value })} /></Field>
                 <Field label="Status"><Select aria-label="Status" value={lessonForm.status} onChange={(e) => setLessonForm({ ...lessonForm, status: e.target.value })}>{STATUSES.map((s) => <option key={s}>{s}</option>)}</Select></Field>
               </div>
+              <Field label="Lesson plan PDF" hint={lessonFile ? `${lessonFile.name} · ${fmtSize(lessonFile.size)}` : "Optional · PDF only, up to 10 MB. You can also attach or replace it later."}>
+                <Input key={lessonFileKey} type="file" accept="application/pdf,.pdf" aria-label="Lesson plan PDF"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] ?? null;
+                    const err = f ? checkLessonPdf(f) : null;
+                    if (err) { toast.push(err, "error"); e.target.value = ""; setLessonFile(null); return; }
+                    setLessonFile(f);
+                  }} />
+              </Field>
               <Button variant="primary" onClick={addLessonPlan} loading={busy} className="w-full"><Icon name="clipboard" className="h-4 w-4" /> Create plan</Button>
             </>)}
             <div className="card max-h-[620px] overflow-y-auto">
@@ -302,6 +347,7 @@ export default function AcademicsPage() {
                       <p className="font-semibold text-ink">{p.topic}</p>
                       <p className="text-xs text-ink-2">{p.syllabus?.title} · {p.syllabus?.subject?.name} · {className(p.syllabus?.class)}</p>
                       <p className="mt-1 text-xs text-ink-3">{fmtDate(p.date)} · {p.teacher?.name ?? "—"}</p>
+                      <div className="mt-2"><LessonPlanPdfActions plan={p} editable={editable} onChanged={loadAll} /></div>
                     </div>
                     {editable ? (
                       <div className="flex shrink-0 items-center gap-1.5">
@@ -403,6 +449,7 @@ export default function AcademicsPage() {
           </div>
         )}
       </div>
+      {canTeach && !portal && <NoticeComposer open={notifyOpen} onClose={() => setNotifyOpen(false)} />}
     </div>
   );
 }

@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
-import { Badge, Button, Icon, PageHeader, Reveal, StatCard, useToast } from "@/components/ui";
+import { apiDownload, apiFetch } from "@/lib/api";
+import { Badge, Button, Icon, PageHeader, Reveal, StatCard, Tabs, useToast } from "@/components/ui";
+import { DayView } from "@/components/timetable/DayView";
 
 import { TableView } from "@/components/TableView";
-import { WeekGrid } from "@/components/WeekGrid";
+import { WeekGrid, orderPeriods } from "@/components/WeekGrid";
 import { R, ROLE, hasRole, isPortal, useMe } from "@/lib/auth";
 import { MyDayView } from "@/components/timetable/MyDayView";
 import { TeacherWeekView } from "@/components/timetable/TeacherWeekView";
@@ -59,6 +60,8 @@ export default function TimetablePage() {
   // The freshly generated week, shown right under the generator so the admin sees the result.
   const [preview, setPreview] = useState<MasterSlot[] | null>(null);
   const [subs, setSubs] = useState<Substitution[]>([]);
+  const [masterView, setMasterView] = useState<"week" | "day">("week");
+  const [downloading, setDownloading] = useState(false);
 
   const [periodsPerDay, setPeriodsPerDay] = useState(6);
   const [workingDays, setWorkingDays] = useState<string[]>(["Mon", "Tue", "Wed", "Thu", "Fri"]);
@@ -180,11 +183,24 @@ export default function TimetablePage() {
   const dayName = today.getUTCDay() === 0 ? "Sun" : DAYS[today.getUTCDay() - 1];
   const onError = useCallback((m: string) => setMessage(m), []);
 
-  // Live schedule rows: lessons plus configured breaks, in period order.
+  // Live schedule rows: lessons plus configured breaks, in bell order (by start time).
+  const bellOrder = new Map(orderPeriods(periods).map((p, i) => [p.periodNumber, i]));
   const liveRows: Array<{ n: number; slot: Slot | null }> = [
     ...schedule.map((s) => ({ n: s.period_number, slot: s })),
     ...periods.filter((p) => p.isBreak && !schedule.some((s) => s.period_number === p.periodNumber)).map((p) => ({ n: p.periodNumber, slot: null })),
-  ].sort((a, b) => a.n - b.n);
+  ].sort((a, b) => (bellOrder.get(a.n) ?? 100 + a.n) - (bellOrder.get(b.n) ?? 100 + b.n));
+
+  const downloadClassPdf = async () => {
+    if (!selectedClass) return;
+    setDownloading(true);
+    try {
+      await apiDownload(`/api/timetable/class/${selectedClass}/pdf`, `timetable-${selectedClassLabel || "class"}.pdf`);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Download failed");
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   /** Card view: a period card — the period number is the anchor, coloured by subject, so a week scans like a timetable. */
   const masterCards = (
@@ -365,6 +381,7 @@ export default function TimetablePage() {
               date={date}
               defaultTeacherId={hasRole(me, [ROLE.TEACHER, ROLE.HOD]) ? myStaffId : null}
               onError={onError}
+              canDownload={(id) => isAdmin || id === myStaffId}
             />
           )}
 
@@ -440,13 +457,27 @@ export default function TimetablePage() {
             <div className="rounded-xl border border-line bg-white p-4 shadow-sm">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h3 className="text-[16px] font-semibold text-ink">Week view</h3>
+                  <h3 className="text-[16px] font-semibold text-ink">{masterView === "week" ? "Week view" : "Day view"}</h3>
                   <p className="text-[12.5px] text-ink-3">
-                    {selectedClassLabel || "Selected class"} · {master.length} periods scheduled
+                    {selectedClassLabel || "Selected class"} · {master.length} periods scheduled · breaks shown in bell order
                   </p>
                 </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Tabs tabs={[{ id: "week", label: "Week" }, { id: "day", label: "Day view" }] as const} value={masterView} onChange={setMasterView} />
+                  <Button size="sm" variant="soft" onClick={downloadClassPdf} loading={downloading} disabled={!selectedClass}>
+                    <Icon name="download" className="h-4 w-4" /> Download PDF
+                  </Button>
+                </div>
               </div>
-              <WeekGrid slots={master} periods={periods} />
+              {masterView === "week" ? (
+                <WeekGrid slots={master} periods={periods} days={DAYS} />
+              ) : (
+                <DayView
+                  periods={periods}
+                  entries={master.map((m) => ({ day_of_week: m.day_of_week, period_number: m.period_number, subject: m.subject, secondary: m.teacher_name, room_name: m.room_name ?? null }))}
+                  emptyText="No timetable yet for this class."
+                />
+              )}
             </div>
             <div className="rounded-xl border border-line bg-white shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
