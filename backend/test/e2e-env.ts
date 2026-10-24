@@ -20,3 +20,9 @@ if (pgAdminUrl() && process.env.E2E_PG_TEMPLATE) {
 }
 process.env.NODE_ENV = 'test';
 process.env.LOGIN_RATE_LIMIT = process.env.LOGIN_RATE_LIMIT ?? '1000';
+
+// Tests always use the mock payment gateway: never create real orders even when a developer's
+// backend/.env holds Razorpay test keys (ConfigModule won't override variables already set).
+process.env.RAZORPAY_KEY_ID = '';
+process.env.RAZORPAY_KEY_SECRET = '';
+process.env.RAZORPAY_SECRET = '';

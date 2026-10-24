@@ -26,3 +26,24 @@ export function weekDates(dateStr: string): string[] {
 export function classLabel(c: { name: string; section: string | null } | null | undefined): string {
   return c ? `${c.name}${c.section ? ` ${c.section}` : ''}` : '';
 }
+
+export const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+type PeriodLike = { periodNumber: number; startTime: string; endTime: string; isBreak: boolean; breakName: string | null };
+
+/** Bell schedule in the order the day actually runs: by start time, then period number. */
+export function sortPeriods<T extends PeriodLike>(periods: T[]): T[] {
+  const key = (t: string) => (/^\d:\d{2}$/.test(t) ? `0${t}` : t); // "9:30" sorts as "09:30"
+  return [...periods].sort((a, b) => key(a.startTime).localeCompare(key(b.startTime)) || a.periodNumber - b.periodNumber);
+}
+
+/** API shape of one bell-schedule row (breaks included, flagged). */
+export function periodOut(p: PeriodLike) {
+  return {
+    period_number: p.periodNumber,
+    start_time: p.startTime,
+    end_time: p.endTime,
+    is_break: p.isBreak,
+    break_name: p.isBreak ? (p.breakName ?? 'Break') : null,
+  };
+}

@@ -13,7 +13,14 @@ import {
 const ISSUED = ["Approved", "Checked Out", "Returned"];
 
 /** Gate passes: request → Warden → Principal (either may reject with a reason) → printable pass with QR. */
-export function GatePassPanel({ me, students, refreshKey }: { me: Me; students: StudentOption[]; refreshKey?: number }) {
+export function GatePassPanel({
+  me, students, refreshKey, showRequest = true, onChanged,
+}: {
+  me: Me; students: StudentOption[]; refreshKey?: number;
+  /** false on the Gate Desk, which has its own "Issue pass" tab. */
+  showRequest?: boolean;
+  onChanged?: () => void;
+}) {
   const toast = useToast();
   const [rows, setRows] = useState<GatePass[]>([]);
   const [filter, setFilter] = useState<"action" | "all">("action");
@@ -51,6 +58,7 @@ export function GatePassPanel({ me, students, refreshKey }: { me: Me; students: 
       await apiFetch(`/api/gate-passes/${g.id}/${step}`, { method: "PUT" });
       toast.push(step === "approve-principal" ? "Pass issued — parent sent the exit OTP" : "Approved — sent to the Principal");
       await load();
+      onChanged?.();
     } catch (e) { toast.push(errMsg(e), "error"); } finally { setBusy(false); }
   };
 
@@ -62,6 +70,7 @@ export function GatePassPanel({ me, students, refreshKey }: { me: Me; students: 
       toast.push("Gate pass rejected");
       setRejecting(null);
       await load();
+      onChanged?.();
     } catch (e) { toast.push(errMsg(e), "error"); } finally { setBusy(false); }
   };
 
@@ -75,7 +84,7 @@ export function GatePassPanel({ me, students, refreshKey }: { me: Me; students: 
 
   return (
     <div className="space-y-4">
-      {hasRole(me, GATE_REQUEST) && (
+      {showRequest && hasRole(me, GATE_REQUEST) && (
         <Card>
           <CardHead title="Request a gate pass" icon="door" subtitle="The parent is notified with a one-time exit code only once the Principal issues the pass." />
           <div className="grid grid-cols-1 gap-3 p-4 text-sm sm:grid-cols-2">

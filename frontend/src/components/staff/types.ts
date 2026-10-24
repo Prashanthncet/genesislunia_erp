@@ -1,3 +1,5 @@
+import { inr as formatInr } from "@/lib/format";
+
 export type StaffRow = {
   id: string; name: string; email: string; role: string; department: string | null; phone: string | null;
   subjects: string | null; maxPeriodsPerDay: number; isActive: boolean;
@@ -18,9 +20,11 @@ export type Salary = {
   staff: { id: string; name: string; email: string; role: string; department: string | null };
 };
 
+/** Shared ₹ formatter (lib/format); paise only when the amount has them, so columns line up with `tnum`. */
 export const inr = (n: number | null | undefined) =>
-  n == null ? "—" : `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  n == null ? "—" : formatInr(n, { decimals: Number.isInteger(Math.round(n * 100) / 100) ? 0 : 2 });
 
+/** Payslip status → Badge tone (colour + text). */
 export const slipTone = (s: string) => (s === "Paid" ? "emerald" : s === "Generated" ? "sky" : "amber") as "emerald" | "sky" | "amber";
 
 /** All deductions on a slip (TDS + professional tax + EPF + unpaid leave). */

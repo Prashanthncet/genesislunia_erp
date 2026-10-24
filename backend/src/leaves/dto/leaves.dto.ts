@@ -1,4 +1,4 @@
-import { IsIn, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsBoolean, IsIn, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 // Gate-pass times are local "YYYY-MM-DDTHH:mm[:ss]" strings (no zone), as the UI's datetime-local sends them.
@@ -68,6 +68,10 @@ export class CreateGatePassDto {
 
   @IsOptional() @IsString() @Matches(LOCAL_DATETIME, { message: 'expected_in_time must be YYYY-MM-DDTHH:mm' })
   expected_in_time?: string;
+
+  /** Gate Desk "Issue pass": the warden step creates AND warden-approves in one action. */
+  @IsOptional() @IsBoolean()
+  issue?: boolean;
 }
 
 export class RejectGatePassDto {
@@ -78,4 +82,38 @@ export class RejectGatePassDto {
 export class GatePassOtpDto {
   @IsString() @Matches(/^\d{6}$/, { message: 'otp must be 6 digits' })
   otp!: string;
+}
+
+/** GET /gate-passes/records — Gate Desk pass register filters. */
+export class GatePassRecordsQueryDto {
+  @IsOptional() @IsIn(['Pending', 'Warden Approved', 'Approved', 'Checked Out', 'Returned', 'Rejected'], { message: 'unknown status' })
+  status?: string;
+
+  @IsOptional() @IsString() @Matches(ISO_DATE, { message: 'from must be YYYY-MM-DD' })
+  from?: string;
+
+  @IsOptional() @IsString() @Matches(ISO_DATE, { message: 'to must be YYYY-MM-DD' })
+  to?: string;
+
+  @IsOptional() @IsString() @MaxLength(64)
+  class_id?: string;
+
+  @IsOptional() @IsString() @MaxLength(64)
+  hostel_id?: string;
+
+  @IsOptional() @IsString() @MaxLength(64)
+  student_id?: string;
+
+  /** Student name or admission number (case-insensitive contains). */
+  @IsOptional() @IsString() @MaxLength(60)
+  q?: string;
+
+  @IsOptional() @IsIn(['1', 'true', '0', 'false'])
+  late?: string;
+
+  @IsOptional() @IsIn(['asc', 'desc'])
+  sort?: 'asc' | 'desc';
+
+  @IsOptional() @IsIn(['csv', 'json'])
+  format?: 'csv' | 'json';
 }

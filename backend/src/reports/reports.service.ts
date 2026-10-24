@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ReportCardService } from '../exams/report-card.service';
 import { bandFor, passThreshold } from '../exams/grading';
 import { dateRange, pct1, ReportFilters, Table } from './report-utils';
+import { AttendanceTally, addToTally, emptyTally, isSunday } from '../attendance/attendance-math';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const className = (c: { name: string; section: string | null } | null | undefined) =>
@@ -25,27 +26,32 @@ export class ReportsService {
 
   async attendanceByClass(branchId: string, f: ReportFilters) {
     const range = dateRange(f);
+    // Grouped by date too, so Sundays can be excluded (THE rule: attendance/attendance-math.ts).
     const grouped = await this.prisma.attendanceRecord.groupBy({
-      by: ['classId', 'status'],
+      by: ['classId', 'date', 'status'],
       where: { branchId, ...(f.classIds ? { classId: { in: f.classIds } } : {}), ...(range ? { date: range } : {}) },
       _count: { _all: true },
     });
-    const byClass = new Map<string, { present: number; total: number }>();
+    const byClass = new Map<string, AttendanceTally>();
     for (const g of grouped) {
-      const b = byClass.get(g.classId) ?? { present: 0, total: 0 };
-      b.total += g._count._all;
-      if (g.status === 'Present') b.present += g._count._all;
+      const b = byClass.get(g.classId) ?? emptyTally();
+      addToTally(b, g.status, g.date, g._count._all);
       byClass.set(g.classId, b);
     }
     const classes = await this.classes(branchId, f);
     return classes.map((c) => {
-      const b = byClass.get(c.id);
+      const b = byClass.get(c.id) ?? emptyTally();
       return {
         class_id: c.id, class_name: c.name, section: c.section,
-        attendance_pct: b ? pct1(b.present, b.total) : null,
-        present: b?.present ?? 0,
-        absent: (b?.total ?? 0) - (b?.present ?? 0),
-        total_records: b?.total ?? 0,
+        attendance_pct: b.percentage,
+        /** attended = Present + Late + OD */
+        present: b.attended,
+        absent: b.absent,
+        late: b.late,
+        od: b.od,
+        leave: b.leave,
+        /** the denominator: Present + Late + OD + Absent (Leave and Sundays excluded) */
+        total_records: b.counted,
       };
     });
   }
@@ -61,20 +67,20 @@ export class ReportsService {
     const dates = grouped.map((g) => g.date).sort();
     const span = dates.length ? (Date.parse(dates[dates.length - 1]) - Date.parse(dates[0])) / 86_400_000 : 0;
     const granularity: 'day' | 'month' = span <= 62 ? 'day' : 'month';
-    const buckets = new Map<string, { present: number; total: number }>();
+    const buckets = new Map<string, AttendanceTally>();
+    const overall = emptyTally();
     for (const g of grouped) {
+      if (isSunday(g.date)) continue;
       const k = granularity === 'day' ? g.date : g.date.slice(0, 7);
-      const b = buckets.get(k) ?? { present: 0, total: 0 };
-      b.total += g._count._all;
-      if (g.status === 'Present') b.present += g._count._all;
+      const b = buckets.get(k) ?? emptyTally();
+      addToTally(b, g.status, g.date, g._count._all);
       buckets.set(k, b);
+      addToTally(overall, g.status, g.date, g._count._all);
     }
     const points = [...buckets.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([period, b]) => ({
-      period, present: b.present, absent: b.total - b.present, total: b.total, pct: pct1(b.present, b.total),
+      period, present: b.attended, absent: b.absent, od: b.od, late: b.late, leave: b.leave, total: b.counted, pct: b.percentage,
     }));
-    const present = points.reduce((s, p) => s + p.present, 0);
-    const total = points.reduce((s, p) => s + p.total, 0);
-    return { granularity, overall_pct: pct1(present, total), present, total, points };
+    return { granularity, overall_pct: overall.percentage, present: overall.attended, total: overall.counted, od: overall.od, points };
   }
 
   /* ── Fees ─────────────────────────────────────────────────── */
@@ -301,11 +307,11 @@ export class ReportsService {
     };
     const enr = count(students);
     const cc = count(classes);
-    const att = new Map<string, { present: number; total: number }>();
+    const att = new Map<string, AttendanceTally>();
     for (const r of records) {
       const m = r.date.slice(0, 7);
-      const b = att.get(m) ?? { present: 0, total: 0 };
-      b.total += 1; if (r.status === 'Present') b.present += 1;
+      const b = att.get(m) ?? emptyTally();
+      addToTally(b, r.status, r.date);
       att.set(m, b);
     }
     return {
@@ -320,8 +326,8 @@ export class ReportsService {
           ...(includeFees ? { invoiced: fe?.invoiced ?? 0, collected: fe?.collected ?? 0, outstanding: fe?.outstanding ?? 0 } : {}),
           enrollments: enr.get(m) ?? 0,
           classes: cc.get(m) ?? 0,
-          attendance_pct: a ? pct1(a.present, a.total) : null,
-          attendance_records: a?.total ?? 0,
+          attendance_pct: a ? a.percentage : null,
+          attendance_records: a?.counted ?? 0,
         };
       }),
     };
@@ -417,18 +423,18 @@ export class ReportsService {
           orderBy: [{ date: 'desc' }, { studentId: 'asc' }],
           take: 20000,
         });
-        return { title: 'Attendance records', head: ['date', 'class', 'student', 'admission_no', 'status'],
-          rows: recs.map((r) => [r.date, className(r.class), r.student.fullName, r.student.admissionNo, r.status]) };
+        return { title: 'Attendance records', head: ['date', 'class', 'student', 'admission_no', 'status', 'note'],
+          rows: recs.map((r) => [r.date, className(r.class), r.student.fullName, r.student.admissionNo, r.status, r.note ?? '']) };
       }
       case 'attendance-summary': {
         const rows = await this.attendanceByClass(branchId, f);
-        return { title: 'Attendance by class', head: ['class', 'section', 'present', 'absent', 'records', 'attendance_pct'],
-          rows: rows.map((r) => [r.class_name, r.section, r.present, r.absent, r.total_records, r.attendance_pct]) };
+        return { title: 'Attendance by class', head: ['class', 'section', 'attended', 'absent', 'late', 'od', 'leave', 'counted_days', 'attendance_pct'],
+          rows: rows.map((r) => [r.class_name, r.section, r.present, r.absent, r.late, r.od, r.leave, r.total_records, r.attendance_pct]) };
       }
       case 'attendance-trend': {
         const t = await this.attendanceTrend(branchId, f);
-        return { title: `Attendance trend (by ${t.granularity})`, head: ['period', 'present', 'absent', 'total', 'attendance_pct'],
-          rows: t.points.map((p) => [p.period, p.present, p.absent, p.total, p.pct]) };
+        return { title: `Attendance trend (by ${t.granularity})`, head: ['period', 'attended', 'absent', 'od', 'counted_days', 'attendance_pct'],
+          rows: t.points.map((p) => [p.period, p.present, p.absent, p.od, p.total, p.pct]) };
       }
       case 'performance': {
         const p = await this.performance(branchId, f);

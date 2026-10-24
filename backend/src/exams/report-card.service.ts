@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PDFDocument } from 'pdf-lib';
 import { PrismaService } from '../prisma/prisma.service';
 import { buildPdf, PdfBlock } from '../common/pdf';
+import { AttendanceTally, addToTally, emptyTally } from '../attendance/attendance-math';
 import { Band, GradeSummary, MarkInput, passThreshold, rankMap, summarise } from './grading';
 
 export type CardFilters = { term?: string; academicYear?: string; from?: string; to?: string };
@@ -13,7 +14,7 @@ export type ReportCard = GradeSummary & {
   academic_year: string | null;
   rank: number | null;
   class_size: number;
-  attendance: { present: number; total: number; pct: number | null; from: string | null; to: string | null };
+  attendance: { present: number; total: number; od: number; pct: number | null; from: string | null; to: string | null };
   bands: { grade: string; min_percent: number; grade_point: number | null; remark: string | null }[];
   pass_mark: number;
   passed: boolean | null;
@@ -94,7 +95,8 @@ export class ReportCardService {
     const win = f.from || f.to ? { from: f.from ?? null, to: f.to ?? null } : academicYearWindow(f.academicYear) ?? { from: null, to: null };
     const rows = studentIds.length
       ? await this.prisma.attendanceRecord.groupBy({
-          by: ['studentId', 'status'],
+          // date in the key so Sundays can be excluded (THE rule: attendance/attendance-math.ts)
+          by: ['studentId', 'date', 'status'],
           where: {
             branchId, studentId: { in: studentIds },
             ...(win.from || win.to ? { date: { ...(win.from ? { gte: win.from } : {}), ...(win.to ? { lte: win.to } : {}) } } : {}),
@@ -102,14 +104,15 @@ export class ReportCardService {
           _count: { _all: true },
         })
       : [];
-    const out = new Map<string, { present: number; total: number }>();
+    const tallies = new Map<string, AttendanceTally>();
     for (const r of rows) {
-      const b = out.get(r.studentId) ?? { present: 0, total: 0 };
-      b.total += r._count._all;
-      // "Late" still means the student attended.
-      if (r.status === 'Present' || r.status === 'Late') b.present += r._count._all;
-      out.set(r.studentId, b);
+      const t = tallies.get(r.studentId) ?? emptyTally();
+      addToTally(t, r.status, r.date, r._count._all);
+      tallies.set(r.studentId, t);
     }
+    // present = attended (Present + Late + OD); total = counted days (… + Absent; Leave excluded).
+    const out = new Map<string, { present: number; total: number; od: number; leave: number; pct: number | null }>();
+    for (const [id, t] of tallies) out.set(id, { present: t.attended, total: t.counted, od: t.od, leave: t.leave, pct: t.percentage });
     return { win, byStudent: out };
   }
 
@@ -154,7 +157,7 @@ export class ReportCardService {
     const pass = passThreshold(bands);
     return students.map((s) => {
       const sum = summaries.get(s.id) as GradeSummary;
-      const a = att.byStudent.get(s.id) ?? { present: 0, total: 0 };
+      const a = att.byStudent.get(s.id) ?? { present: 0, total: 0, od: 0, leave: 0, pct: null };
       return {
         ...sum,
         student: { id: s.id, full_name: s.fullName, admission_no: s.admissionNo, roll_no: s.rollNo, class_id: s.classId, class_name: className },
@@ -164,8 +167,8 @@ export class ReportCardService {
         rank: ranks.get(s.id) ?? null,
         class_size: classSize,
         attendance: {
-          present: a.present, total: a.total,
-          pct: a.total > 0 ? Math.round((a.present / a.total) * 1000) / 10 : null,
+          present: a.present, total: a.total, od: a.od,
+          pct: a.pct,
           from: att.win.from, to: att.win.to,
         },
         bands: bands.map((b) => ({ grade: b.grade, min_percent: b.minPercent, grade_point: b.gradePoint, remark: b.remark ?? null })),
@@ -187,7 +190,7 @@ export class ReportCardService {
         ['Roll no', card.student.roll_no ?? '-'],
         ['Period', period],
         ['Issued', issued ? `Published ${issued}` : 'Provisional (live marks, not published)'],
-        ['Attendance', card.attendance.pct === null ? 'No records' : `${card.attendance.pct}% (${card.attendance.present}/${card.attendance.total} days)`],
+        ['Attendance', card.attendance.pct === null ? 'No records' : `${card.attendance.pct}% (${card.attendance.present}/${card.attendance.total} days${card.attendance.od ? `, incl. ${card.attendance.od} OD` : ''})`],
       ] },
       { kind: 'heading', text: 'Subject results (weighted across exams)' },
       card.subjects.length

@@ -18,7 +18,7 @@ import type { Request } from 'express';
 import { AuthGuard, Roles, RolesGuard } from '../auth/auth.guard';
 import { R, ROLE } from '../auth/roles';
 import { AuthUser } from '../common/access';
-import { PaymentPurpose, PaymentsService, hmacMatches } from './payments.service';
+import { PaymentPurpose, PaymentsService, hmacMatches, razorpayKeySecret } from './payments.service';
 
 export class CreateOrderDto {
   @IsIn(['admission', 'invoice'])
@@ -107,7 +107,7 @@ export class PaymentsController {
     const ok = hmacMatches(
       `${body.razorpay_order_id}|${body.razorpay_payment_id}`,
       body.razorpay_signature,
-      process.env.RAZORPAY_KEY_SECRET,
+      razorpayKeySecret(),
     );
     if (!ok) throw new UnauthorizedException('Invalid payment signature');
     return this.payments.markPaid(body.razorpay_order_id, body.razorpay_payment_id, 'razorpay');

@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { R, ROLE_LABEL, hasRole, useMe } from "@/lib/auth";
-import { Badge, Button, Card, CardHead, EmptyState, Field, Input, MailLink, Modal, PhoneLink, Select, useToast } from "@/components/ui";
+import { Badge, Button, Card, CardHead, EmptyState, Field, Input, MailLink, Modal, PhoneLink, Select, SkeletonRows, useToast } from "@/components/ui";
+import { CardBody, CardEmpty, CardFooter, CardGrid, CardTitle, Chip, Monogram, RecordCard, StatusPill, initials, toneFor } from "@/components/RecordCard";
 import { TableView } from "@/components/TableView";
 import { errMsg, inr, slipTone, type Payslip, type StaffRow } from "./types";
 
@@ -101,65 +102,109 @@ export function DirectoryPanel() {
 
   const grantable = useMemo(() => R.STAFF.filter((r) => r !== "admin" && !(me?.role === "hr" && (R.ADMINS as readonly string[]).includes(r)) && !(r === "super_admin" && me?.role !== "super_admin")), [me]);
 
+  const filtered = !!(q || role || dept || loginRole || active !== "true");
+  const clearFilters = () => { setQ(""); setRole(""); setDept(""); setLoginRole(""); setActive("true"); };
+
+  const rowActions = (s: StaffRow) => (
+    <>
+      <Button type="button" size="sm" onClick={() => openProfile(s.id)} aria-label={`Profile of ${s.name}`}>Profile</Button>
+      {canAdmin && <Button type="button" size="sm" onClick={() => edit(s)} aria-label={`Edit ${s.name}`}>Edit</Button>}
+      {canAdmin && !s.user && <Button type="button" size="sm" variant="accent" onClick={() => setLogin({ staff: s, email: s.email, password: "", role: "teacher" })}>Create login</Button>}
+    </>
+  );
+
+  const directoryCards = (
+    <CardGrid min="18rem" empty={<CardEmpty title="No staff match" hint="Try a different search or clear the filters." icon="staff" />}>
+      {rows.map((s) => (
+        <RecordCard key={s.id} rail={s.isActive ? undefined : "slate"}>
+          <CardBody>
+            <CardTitle
+              lead={<Monogram text={initials(s.name)} tone={toneFor(s.department)} shape="circle" />}
+              title={s.name}
+              subtitle={`${s.role}${s.department ? ` · ${s.department}` : ""}`}
+              aside={<StatusPill status={s.isActive ? "Active" : "Inactive"} />}
+            />
+            <div className="space-y-1 text-[12.5px]">
+              <MailLink value={s.email} />
+              {s.phone && <div><PhoneLink value={s.phone} /></div>}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {s.user ? <Chip icon="lock" tone="navy">{ROLE_LABEL[s.user.role] ?? s.user.role}</Chip> : <Chip icon="lock">No login</Chip>}
+              {s.subjects && <Chip icon="book">{s.subjects}</Chip>}
+            </div>
+          </CardBody>
+          <CardFooter>{rowActions(s)}</CardFooter>
+        </RecordCard>
+      ))}
+    </CardGrid>
+  );
+
   return (
     <Card className="p-4">
       <CardHead
         title="Staff directory"
         icon="staff"
-        subtitle={`${rows.length} staff`}
+        subtitle={loading ? "Loading…" : `${rows.length} staff${filtered ? " (filtered)" : ""}`}
         actions={canAdmin && <Button variant="primary" onClick={() => { setForm(EMPTY_FORM); setFormOpen(true); }}>Add staff</Button>}
       />
-      <div className="mb-3 flex flex-wrap gap-2">
-        <Input placeholder="Search name, email, phone" value={q} onChange={(e) => setQ(e.target.value)} className="field flex-1" />
-        <Select aria-label="Designation" className="field w-auto" value={role} onChange={(e) => setRole(e.target.value)}>
+      <div className="mb-3 flex flex-wrap items-end gap-2" role="search">
+        <Input aria-label="Search staff" placeholder="Search name, email, phone" value={q} onChange={(e) => setQ(e.target.value)} className="field min-w-[12rem] flex-1" />
+        <Select aria-label="Designation" className="field w-full sm:w-auto" value={role} onChange={(e) => setRole(e.target.value)}>
           <option value="">All designations</option>
           {filters.roles.map((r) => <option key={r}>{r}</option>)}
         </Select>
-        <Select aria-label="Department" className="field w-auto" value={dept} onChange={(e) => setDept(e.target.value)}>
+        <Select aria-label="Department" className="field w-full sm:w-auto" value={dept} onChange={(e) => setDept(e.target.value)}>
           <option value="">All departments</option>
           {filters.departments.map((d) => <option key={d}>{d}</option>)}
         </Select>
-        <Select aria-label="Login role" className="field w-auto" value={loginRole} onChange={(e) => setLoginRole(e.target.value)}>
+        <Select aria-label="Login role" className="field w-full sm:w-auto" value={loginRole} onChange={(e) => setLoginRole(e.target.value)}>
           <option value="">Any login role</option>
           {R.STAFF.map((r) => <option key={r} value={r}>{ROLE_LABEL[r] ?? r}</option>)}
         </Select>
-        <Select aria-label="Status" className="field w-auto" value={active} onChange={(e) => setActive(e.target.value)}>
+        <Select aria-label="Status" className="field w-full sm:w-auto" value={active} onChange={(e) => setActive(e.target.value)}>
           <option value="true">Active</option>
           <option value="false">Inactive</option>
           <option value="">All</option>
         </Select>
+        {filtered && <Button type="button" variant="ghost" onClick={clearFilters}>Clear</Button>}
       </div>
-      {loading ? <p className="py-6 text-center text-sm text-ink-3">Loading…</p> : rows.length === 0 ? <EmptyState title="No staff match" icon="staff" /> : (
-        <TableView id="staff-directory">
-          <table className="w-full text-sm">
-            <thead className="table-head">
+      <TableView id="staff-directory" cards={loading ? undefined : directoryCards}>
+        <div className="table-wrap max-h-[70vh] rounded-xl border border-line">
+          <table className="data-table min-w-[52rem]">
+            <thead>
               <tr>
-                <th className="px-3 py-2 text-left">Name</th><th className="px-3 py-2 text-left">Designation</th><th className="px-3 py-2 text-left">Department</th>
-                <th className="px-3 py-2 text-left">Contact</th><th className="px-3 py-2 text-left">Login</th><th className="px-3 py-2 text-left">Status</th><th className="px-3 py-2 text-left">Actions</th>
+                <th>Name</th><th>Designation</th><th>Department</th>
+                <th>Contact</th><th>Login</th><th>Status</th><th className="th-end">Actions</th>
               </tr>
             </thead>
-            <tbody>
-              {rows.map((s) => (
-                <tr key={s.id} className="border-t border-line">
-                  <td className="px-3 py-2 font-semibold">{s.name}</td>
-                  <td className="px-3 py-2">{s.role}</td>
-                  <td className="px-3 py-2">{s.department ?? "—"}</td>
-                  <td className="px-3 py-2 text-xs"><MailLink value={s.email} /><br /><PhoneLink value={s.phone} /></td>
-                  <td className="px-3 py-2">{s.user ? <Badge tone="brand">{ROLE_LABEL[s.user.role] ?? s.user.role}</Badge> : <span className="text-xs text-ink-3">No login</span>}</td>
-                  <td className="px-3 py-2"><Badge tone={s.isActive ? "emerald" : "slate"}>{s.isActive ? "Active" : "Inactive"}</Badge></td>
-                  <td className="px-3 py-2">
-                    <div className="flex flex-wrap gap-1">
-                      <Button size="sm" onClick={() => openProfile(s.id)}>Profile</Button>
-                      {canAdmin && <Button size="sm" onClick={() => edit(s)}>Edit</Button>}
-                      {canAdmin && !s.user && <Button size="sm" variant="accent" onClick={() => setLogin({ staff: s, email: s.email, password: "", role: "teacher" })}>Create login</Button>}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
+            {loading ? <SkeletonRows rows={6} cols={7} /> : (
+              <tbody>
+                {rows.map((s) => (
+                  <tr key={s.id}>
+                    <td>
+                      <div className="flex items-center gap-2.5">
+                        <Monogram text={initials(s.name)} tone={toneFor(s.department)} size="sm" shape="circle" />
+                        <span className="font-semibold text-ink">{s.name}</span>
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap">{s.role}</td>
+                    <td className="whitespace-nowrap">{s.department ?? "—"}</td>
+                    <td className="text-xs"><MailLink value={s.email} /><br /><PhoneLink value={s.phone} /></td>
+                    <td>{s.user ? <Badge tone="brand">{ROLE_LABEL[s.user.role] ?? s.user.role}</Badge> : <span className="text-xs text-ink-3">No login</span>}</td>
+                    <td><StatusPill status={s.isActive ? "Active" : "Inactive"} /></td>
+                    <td className="td-end">
+                      <div className="flex justify-end gap-1 whitespace-nowrap">{rowActions(s)}</div>
+                    </td>
+                  </tr>
+                ))}
+                {rows.length === 0 && (
+                  <tr><td colSpan={7}><EmptyState title="No staff match" hint="Try a different search or clear the filters." icon="staff" /></td></tr>
+                )}
+              </tbody>
+            )}
           </table>
-        </TableView>
-      )}
+        </div>
+      </TableView>
 
       <Modal open={!!profile} onClose={() => setProfile(null)} size="lg" title={profile?.name ?? ""} subtitle={profile ? `${profile.role} · ${profile.department ?? "No department"}` : ""}
         footer={profile && canAdmin && (

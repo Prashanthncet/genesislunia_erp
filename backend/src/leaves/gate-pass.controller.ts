@@ -1,5 +1,5 @@
 import {
-  BadRequestException, Body, Controller, ForbiddenException, Get, NotFoundException, Param, Post, Put, Query, Req, Res, UseGuards,
+  BadRequestException, Body, Controller, ForbiddenException, Get, NotFoundException, Param, Post, Put, Query, Req, Res, StreamableFile, UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import * as crypto from 'crypto';
@@ -11,7 +11,9 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { R, ROLE } from '../auth/roles';
 import { ReqWithUser, assertCanSeeStudent, assertInBranch, audit, portalStudentIds } from '../common/access';
 import { buildPdf, sendPdf } from '../common/pdf';
-import { CreateGatePassDto, GatePassOtpDto, RejectGatePassDto } from './dto/leaves.dto';
+import { textContains } from '../common/search';
+import { csvEscape } from '../reports/report-utils';
+import { CreateGatePassDto, GatePassOtpDto, GatePassRecordsQueryDto, RejectGatePassDto } from './dto/leaves.dto';
 import { actorNames, notifyParents, resolveActor } from './leave-helpers';
 
 /**
@@ -29,6 +31,9 @@ const WARDEN_STEP: string[] = [...R.ADMINS, ROLE.WARDEN];
 const PRINCIPAL_STEP: string[] = [...R.ADMINS, ROLE.PRINCIPAL];
 const PRINT_ROLES: string[] = [...new Set([...R.GATE_DESK, ...R.GATE_PASS_APPROVE, ROLE.PARENT])];
 const ISSUED = ['Approved', 'Checked Out', 'Returned'];
+/** Gate Desk "Issue pass" tab: warden + leadership (same people who approve passes). */
+const ISSUE_ROLES: string[] = [...R.GATE_PASS_APPROVE];
+const RECORDS_CAP = 2000;
 const MAX_OTP_FAILURES = 5;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I — read aloud / typed at the desk
 
@@ -55,6 +60,32 @@ const PASS_SELECT = {
 } satisfies Prisma.GatePassSelect;
 
 type PassRow = Prisma.GatePassGetPayload<{ select: typeof PASS_SELECT }>;
+
+/** Pass records (Gate Desk register / CSV): no passCode, no parentOtp — a register is not a key ring. */
+const RECORD_SELECT = {
+  id: true,
+  studentId: true,
+  type: true,
+  reason: true,
+  outTime: true,
+  expectedInTime: true,
+  actualOutTime: true,
+  actualInTime: true,
+  checkedOutBy: true,
+  checkedInBy: true,
+  rejectedReason: true,
+  status: true,
+  approvedByWarden: true,
+  approvedByPrincipal: true,
+  createdAt: true,
+  student: {
+    select: {
+      id: true, fullName: true, admissionNo: true,
+      class: { select: { id: true, name: true, section: true } },
+      hostelAllocation: { select: { room: { select: { roomNumber: true, hostel: { select: { id: true, name: true } } } } } },
+    },
+  },
+} satisfies Prisma.GatePassSelect;
 
 const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
 
@@ -122,6 +153,132 @@ export class GatePassController {
     return this.decorate(rows);
   }
 
+  /**
+   * Gate Desk pass register: every pass in the school with filters. JSON `{ total, truncated, rows }`,
+   * or `?format=csv` for a download (audited EXPORT). Never carries passCode or the OTP hash.
+   * Dates filter on the planned out time (local "YYYY-MM-DDTHH:mm" strings, so string compare is exact).
+   */
+  @Get('records')
+  @Roles(...R.GATE_DESK)
+  async records(@Req() req: ReqWithUser, @Query() q: GatePassRecordsQueryDto, @Res({ passthrough: true }) res: Response) {
+    const branchId = req.user.branch_id;
+    if (q.class_id) await assertInBranch(this.prisma, 'class', q.class_id, branchId);
+    if (q.hostel_id) await assertInBranch(this.prisma, 'hostel', q.hostel_id, branchId);
+    if (q.student_id) await assertInBranch(this.prisma, 'student', q.student_id, branchId);
+    if (q.from && q.to && q.from > q.to) throw new BadRequestException('from must be on or before to');
+    const search = q.q?.trim();
+    const where: Prisma.GatePassWhereInput = {
+      branchId,
+      ...(q.status ? { status: q.status } : {}),
+      ...(q.from || q.to ? { outTime: { ...(q.from ? { gte: q.from } : {}), ...(q.to ? { lte: `${q.to}T23:59:59` } : {}) } } : {}),
+      ...(q.student_id ? { studentId: q.student_id } : {}),
+      student: {
+        ...(q.class_id ? { classId: q.class_id } : {}),
+        ...(q.hostel_id ? { hostelAllocation: { room: { hostelId: q.hostel_id } } } : {}),
+        ...(search ? { OR: [{ fullName: textContains(search) }, { admissionNo: textContains(search) }] } : {}),
+      },
+    };
+    const found = await this.prisma.gatePass.findMany({
+      where,
+      select: RECORD_SELECT,
+      orderBy: [{ outTime: q.sort === 'asc' ? 'asc' : 'desc' }, { createdAt: 'desc' }],
+      take: RECORDS_CAP + 1,
+    });
+    const truncated = found.length > RECORDS_CAP;
+    const names = await actorNames(this.prisma, found.flatMap((r) => [r.approvedByWarden, r.approvedByPrincipal, r.checkedOutBy, r.checkedInBy]));
+    const name = (ref: string | null) => (ref ? names[ref] ?? null : null);
+    let rows = found.slice(0, RECORDS_CAP).map((r) => {
+      const alloc = r.student.hostelAllocation;
+      return {
+        id: r.id,
+        studentId: r.studentId,
+        type: r.type,
+        reason: r.reason,
+        outTime: r.outTime,
+        expectedInTime: r.expectedInTime,
+        actualOutTime: r.actualOutTime,
+        actualInTime: r.actualInTime,
+        status: r.status,
+        rejectedReason: r.rejectedReason,
+        createdAt: r.createdAt,
+        late: isLate(r),
+        approvedByWardenName: name(r.approvedByWarden),
+        approvedByPrincipalName: name(r.approvedByPrincipal),
+        checkedOutByName: name(r.checkedOutBy),
+        checkedInByName: name(r.checkedInBy),
+        student: { id: r.student.id, fullName: r.student.fullName, admissionNo: r.student.admissionNo, class: r.student.class },
+        hostel: alloc ? { id: alloc.room.hostel.id, name: alloc.room.hostel.name, room: alloc.room.roomNumber } : null,
+      };
+    });
+    if (q.late === '1' || q.late === 'true') rows = rows.filter((r) => r.late);
+
+    if (q.format === 'csv') {
+      const head = ['Student', 'Admission No', 'Class', 'Hostel', 'Type', 'Reason', 'Out (planned)', 'Expected in',
+        'Actual out', 'Actual in', 'Status', 'Late', 'Warden approval', 'Principal approval', 'Checked out by', 'Checked in by'];
+      const cls = (c: { name: string; section: string | null } | null) => (c ? [c.name, c.section].filter(Boolean).join(' ') : '');
+      const lines = [head, ...rows.map((r) => [
+        r.student.fullName, r.student.admissionNo, cls(r.student.class), r.hostel ? `${r.hostel.name} ${r.hostel.room}` : '',
+        r.type, r.reason, r.outTime.replace('T', ' '), r.expectedInTime?.replace('T', ' ') ?? '',
+        r.actualOutTime ?? '', r.actualInTime ?? '', r.status, r.late ? 'Yes' : 'No',
+        r.approvedByWardenName ?? '', r.approvedByPrincipalName ?? '', r.checkedOutByName ?? '', r.checkedInByName ?? '',
+      ])].map((line) => line.map(csvEscape).join(','));
+      const filters = Object.entries(q).filter(([k, v]) => v && k !== 'format').map(([k, v]) => `${k}=${String(v)}`).join('&');
+      await audit(this.prisma, req.user, 'EXPORT', 'gate_pass', 'records', `pass records csv (${rows.length} rows)${filters ? ` ${filters}` : ''}`);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="gate-pass-records-${new Date().toISOString().slice(0, 10)}.csv"`);
+      // BOM so Excel opens UTF-8 names correctly; CRLF like every other CSV export.
+      return new StreamableFile(Buffer.from(`﻿${lines.join('\r\n')}\r\n`, 'utf8'));
+    }
+    return { total: rows.length, truncated, rows };
+  }
+
+  /**
+   * Options for the pass-register filter bar (class + hostel pickers). Warden and Security
+   * can't read /api/classes or hostel rooms, so the Gate Desk gets just the names it needs.
+   */
+  @Get('filters')
+  @Roles(...R.GATE_DESK)
+  async filterOptions(@Req() req: ReqWithUser) {
+    const [classes, hostels] = await Promise.all([
+      this.prisma.class.findMany({ where: { branchId: req.user.branch_id }, select: { id: true, name: true, section: true }, orderBy: [{ name: 'asc' }, { section: 'asc' }] }),
+      this.prisma.hostel.findMany({ where: { branchId: req.user.branch_id }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+    ]);
+    return { classes, hostels };
+  }
+
+  /**
+   * Student picker for the Gate Desk "Issue pass" form: active students of this school,
+   * hostel residents first, matched on name or admission number.
+   */
+  @Get('students')
+  @Roles(...ISSUE_ROLES)
+  async pickStudents(@Req() req: ReqWithUser, @Query('q') q?: string) {
+    const search = (q ?? '').trim().slice(0, 60);
+    const rows = await this.prisma.student.findMany({
+      where: {
+        branchId: req.user.branch_id,
+        status: 'Active',
+        ...(search ? { OR: [{ fullName: textContains(search) }, { admissionNo: textContains(search) }] } : {}),
+      },
+      select: {
+        id: true, fullName: true, admissionNo: true,
+        class: { select: { id: true, name: true, section: true } },
+        hostelAllocation: { select: { bedLabel: true, room: { select: { roomNumber: true, hostel: { select: { name: true } } } } } },
+      },
+      orderBy: { fullName: 'asc' },
+      take: 300,
+    });
+    return rows
+      .map((s) => ({
+        id: s.id, fullName: s.fullName, admissionNo: s.admissionNo, class: s.class,
+        hostel: s.hostelAllocation
+          ? { name: s.hostelAllocation.room.hostel.name, room: s.hostelAllocation.room.roomNumber, bed: s.hostelAllocation.bedLabel }
+          : null,
+      }))
+      .sort((a, b) => Number(!!b.hostel) - Number(!!a.hostel))
+      .slice(0, 30);
+  }
+
   @Get('by-code/:code')
   @Roles(...R.GATE_DESK)
   async byCode(@Req() req: ReqWithUser, @Param('code') code: string) {
@@ -183,6 +340,14 @@ export class GatePassController {
     if (body.expected_in_time && body.expected_in_time < body.out_time) {
       throw new BadRequestException('expected_in_time must be after out_time');
     }
+    // Gate Desk "Issue pass" (`issue: true`) by the warden-approval step (warden, or an admin standing
+    // in) records the warden approval in the same action — they ARE that step. The Principal's approval
+    // (which generates the pass code + parent OTP) still follows. Without `issue` it is a plain request.
+    if (body.issue && !WARDEN_STEP.includes(req.user.role)) {
+      throw new ForbiddenException('Only the warden can issue a pass directly — request it instead');
+    }
+    const wardenIssued = !!body.issue;
+    const actor = wardenIssued ? await resolveActor(this.prisma, req.user) : null;
     // No parent notification here: the parent hears when the pass is ISSUED, not when it is requested.
     const pass = await this.prisma.gatePass.create({
       data: {
@@ -192,12 +357,14 @@ export class GatePassController {
         reason: body.reason,
         outTime: body.out_time,
         expectedInTime: body.expected_in_time ?? null,
-        status: 'Pending',
+        status: wardenIssued ? 'Warden Approved' : 'Pending',
+        approvedByWarden: actor?.ref ?? null,
       },
       select: { id: true, status: true },
     });
-    await audit(this.prisma, req.user, 'CREATE', 'gate_pass', pass.id);
-    return pass;
+    await audit(this.prisma, req.user, 'CREATE', 'gate_pass', pass.id, wardenIssued ? 'issued at the gate desk (warden step)' : undefined);
+    if (wardenIssued) await audit(this.prisma, req.user, 'APPROVE', 'gate_pass', pass.id, 'warden');
+    return { ...pass, next_step: wardenIssued ? 'principal_approval' : 'warden_approval' };
   }
 
   @Put(':id/approve-warden')

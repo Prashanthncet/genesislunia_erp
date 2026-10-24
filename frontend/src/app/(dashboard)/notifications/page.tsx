@@ -8,8 +8,9 @@ import { CardBody, CardEmpty, CardGrid, Chip, IconTile, RecordCard, StatusPill, 
 import { relativeTime } from "@/lib/format";
 import {
   Badge, Button, Card, CardHead, EmptyState, Field, Icon, IconButton,
-  Input, Modal, PageHeader, Select, SkeletonRows, StatCard, Textarea, useToast,
+  Input, Modal, PageHeader, Select, SkeletonRows, StatCard, Tabs, Textarea, useToast,
 } from "@/components/ui";
+import { NoticeHistory } from "@/components/notices/NoticeHistory";
 
 /** A row of `notification_logs` — an outbound delivery attempt, not an inbox item. */
 type NotificationLog = {
@@ -100,6 +101,9 @@ export default function NotificationsPage() {
   const portal = isPortal(me);
   const canLog = hasRole(me, R.NOTIFICATION_LOG);
   const canBroadcast = hasRole(me, R.BROADCAST);
+  // Student notices: anyone who can open this page and post notices (teachers use Academics).
+  const canNotice = !portal && hasRole(me, [...R.BROADCAST, ...R.TEACHING]);
+  const [view, setView] = useState<"log" | "notices">("log");
 
   useEffect(() => {
     if (!message) return;
@@ -283,13 +287,23 @@ export default function NotificationsPage() {
         icon="bell"
         eyebrow="Insights"
         title={portal ? "Messages" : "Notifications"}
-        subtitle={portal ? "Messages the school has sent to you or about your child." : "Outbound SMS and email delivery log, with a composer for announcements."}
-        actions={canBroadcast &&
+        subtitle={portal ? "Messages the school has sent to you or about your child." : "Outbound SMS and email delivery log, announcements, and student notices for the portal."}
+        actions={canBroadcast && view === "log" &&
           <Button variant="primary" onClick={() => setShowComposer(true)}>
             <Icon name="upload" className="h-4 w-4" /> New broadcast
           </Button>
         }
       />
+
+      {canNotice && (
+        <Tabs
+          value={view}
+          onChange={setView}
+          tabs={[{ id: "log", label: "Delivery log" }, { id: "notices", label: "Student notices" }] as const}
+        />
+      )}
+
+      {view === "notices" && canNotice ? <NoticeHistory /> : (<>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Total logged" value={logs.length} icon="list" tone="brand" delay={0} />
@@ -522,6 +536,7 @@ export default function NotificationsPage() {
           )}
         </div>
       </Modal>
+      </>)}
     </div>
   );
 }

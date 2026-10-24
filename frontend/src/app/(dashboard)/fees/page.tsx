@@ -217,19 +217,26 @@ export default function FeesPage() {
                 {className && <Chip icon="layers">{className}</Chip>}
                 <Chip icon="calendar">{inv.term}</Chip>
                 {inv.dueDate && <Chip icon="clock" tone={inv.overdue ? "danger" : "slate"}>{inv.overdue ? "Overdue · " : "Due "}{formatDate(inv.dueDate)}</Chip>}
-                {(inv.payments?.length ?? 0) > 0 && <Chip icon="receipt" tone="navy">{inv.payments!.length} receipt{inv.payments!.length === 1 ? "" : "s"}</Chip>}
               </div>
             </CardBody>
-            <CardFooter>
-              <span className="mr-auto font-mono text-[11.5px] text-ink-3">{inv.invoiceNo ?? ""}</span>
-              <Button size="sm" variant="ghost" loading={busy === `inv-${inv.id}`} onClick={() => invoicePdf(inv.id, inv.invoiceNo)}>
-                <Icon name="download" className="h-3.5 w-3.5" /> Invoice
-              </Button>
-              {canWrite && !settled && (
-                <Button size="sm" variant="primary" onClick={() => { setPayInvoice(inv.id); setPayAmount(String(inv.balance)); setMessage(`Ready to collect ${fmt(inv.balance)} from ${inv.student.fullName}`); }}>
-                  <Icon name="fees" className="h-3.5 w-3.5" /> Collect
+            <CardFooter className="!justify-between">
+              <span className="font-mono text-[11.5px] text-ink-3">{inv.invoiceNo ?? ""}</span>
+              {/* z-[2]: the card's hover glow/border layers sit at z-index 1 — keep the actions above them. */}
+              <div className="relative z-[2] flex flex-wrap items-center justify-end gap-1.5">
+                <Button type="button" size="sm" variant="ghost" loading={busy === `inv-${inv.id}`} onClick={() => invoicePdf(inv.id, inv.invoiceNo)} aria-label={`Download invoice ${inv.invoiceNo ?? ""} PDF`}>
+                  <Icon name="download" className="h-3.5 w-3.5" /> Invoice PDF
                 </Button>
-              )}
+                {(inv.payments ?? []).slice(-2).map((p) => (
+                  <Button key={p.id} type="button" size="sm" variant="ghost" loading={busy === `rc-${p.id}`} onClick={() => receipt(p.id, p.receiptNo)} aria-label={`Download receipt ${p.receiptNo ?? ""} PDF`} title={`${p.receiptNo ?? "Receipt"} · ${fmt(p.amountPaid)}`}>
+                    <Icon name="receipt" className="h-3.5 w-3.5" /> Receipt{(inv.payments?.length ?? 0) > 1 ? ` ${formatDate(p.paymentDate)}` : ""}
+                  </Button>
+                ))}
+                {canWrite && !settled && (
+                  <Button type="button" size="sm" variant="primary" onClick={() => { setPayInvoice(inv.id); setPayAmount(String(inv.balance)); setMessage(`Ready to collect ${fmt(inv.balance)} from ${inv.student.fullName}`); }}>
+                    <Icon name="fees" className="h-3.5 w-3.5" /> Collect
+                  </Button>
+                )}
+              </div>
             </CardFooter>
           </RecordCard>
           </StaggerItem>
@@ -400,7 +407,7 @@ export default function FeesPage() {
                   <thead className="bg-surface-2/70 border-b border-line">
                     <tr className="text-[11px] font-bold text-ink-2 uppercase tracking-wider">
                       <th className="px-5 py-3">Receipt</th><th className="px-4 py-3">Date</th><th className="px-4 py-3">Student</th>
-                      <th className="px-4 py-3">Invoice</th><th className="px-4 py-3">Mode</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3 text-right">Receipt</th>
+                      <th className="px-4 py-3">Invoice</th><th className="px-4 py-3">Mode</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
@@ -413,7 +420,7 @@ export default function FeesPage() {
                         <td className="px-4 py-3">{p.online ? <Badge tone="sky"><Icon name="spark" className="h-3 w-3" /> Online</Badge> : <span className="text-xs text-ink-2">{p.paymentMode}{p.collector ? ` · ${p.collector.name}` : ""}</span>}</td>
                         <td className="px-4 py-3 text-right font-mono text-xs font-semibold">{fmt(p.amountPaid)}</td>
                         <td className="px-4 py-3 text-right">
-                          <Button size="sm" variant="ghost" loading={busy === `rc-${p.id}`} onClick={() => receipt(p.id, p.receiptNo)}><Icon name="download" className="h-3.5 w-3.5" /> PDF</Button>
+                          <Button type="button" size="sm" variant="ghost" loading={busy === `rc-${p.id}`} onClick={() => receipt(p.id, p.receiptNo)} aria-label={`Download receipt ${p.receiptNo ?? ""} PDF`}><Icon name="download" className="h-3.5 w-3.5" /> Receipt PDF</Button>
                         </td>
                       </tr>
                     ))}

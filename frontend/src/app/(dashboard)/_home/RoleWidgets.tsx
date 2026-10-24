@@ -111,7 +111,7 @@ export function ApprovalsWidget({ me }: { me: Me }) {
   if (Array.isArray(studentLeaves)) items.push({ href: "/leaves", icon: "students", label: "Student leave pending", value: studentLeaves.length });
   if (Array.isArray(passes)) {
     const waiting = me.role === ROLE.PRINCIPAL ? ["Warden Approved"] : me.role === ROLE.WARDEN ? ["Pending"] : ["Pending", "Warden Approved"];
-    items.push({ href: "/leaves", icon: "door", label: "Gate passes awaiting approval", value: passes.filter((p) => waiting.includes(p.status)).length });
+    items.push({ href: "/gate", icon: "door", label: "Gate passes awaiting approval", value: passes.filter((p) => waiting.includes(p.status)).length });
   }
   if (Array.isArray(incidents)) items.push({ href: "/discipline", icon: "shield", label: "Escalated safeguarding cases", value: incidents.filter((i) => i.status === "Escalated").length });
 
@@ -251,38 +251,123 @@ export function LessonPlansWidget({ me }: { me: Me }) {
   );
 }
 
-/* ── Welfare: gate desk, visitors, student leave ─────────────── */
+/* ── Welfare: gate desk, visitors, hostel ────────────────────── */
 
 type OutPass = { id: string; type: string; outTime: string; expectedInTime: string | null; late?: boolean; student?: { fullName: string } | null };
 type Visitor = { id: string; visitorName: string; whomToMeet: string; inTime: string; outTime: string | null };
+type RecordsLite = { total: number; rows: { id: string; late: boolean }[] };
 
+const hhmm = (s: string | null | undefined) => (s ? s.slice(11, 16) || s : "—");
+
+/**
+ * Gate desk at a glance (warden + security): who is out and due back, passes issued but not
+ * yet used, late returns and visitors on campus. Everything links to the Gate Desk.
+ */
 export function GateDeskWidget({ me }: { me: Me }) {
-  const out = useSafe<OutPass[]>(hasRole(me, R.GATE_DESK) ? "/api/gate-passes/out" : null);
-  const visitors = useSafe<Visitor[]>(hasRole(me, R.HOSTEL_DESK) ? `/api/hostel/visitors?date=${todayIso()}` : null);
+  const desk = hasRole(me, R.GATE_DESK);
+  const today = todayIso();
+  const out = useSafe<OutPass[]>(desk ? "/api/gate-passes/out" : null);
+  const issued = useSafe<OutPass[]>(desk ? "/api/gate-passes?status=Approved" : null);
+  const lateBack = useSafe<RecordsLite>(desk ? `/api/gate-passes/records?status=Returned&late=1&from=${today}&to=${today}` : null);
+  const visitors = useSafe<Visitor[]>(hasRole(me, R.HOSTEL_DESK) ? `/api/hostel/visitors?date=${today}` : null);
   if (out === null && visitors === null) return null;
   const inside = Array.isArray(visitors) ? visitors.filter((v) => !v.outTime) : [];
+  const overdue = Array.isArray(out) ? out.filter((p) => p.late) : [];
+  const loading = out === undefined && visitors === undefined;
+  return (
+    <Card className="lg:col-span-2">
+      <CardHead icon="door" title="Gate desk" subtitle="Who is out, who is due back and who is visiting — right now."
+        actions={<Link href="/gate" className="btn-soft">Open Gate Desk<Icon name="chevronRight" className="h-3.5 w-3.5" /></Link>} />
+      {loading ? <Loading /> : (
+        <div className="grid grid-cols-1 md:grid-cols-2">
+          <div className="divide-y divide-line border-line md:border-r">
+            {Array.isArray(out) && <CountRow href="/gate" icon="door" label="Students out — awaiting check-in" value={out.length} tone={out.length ? "warn" : "ok"} />}
+            {Array.isArray(out) && <CountRow href="/gate" icon="alert" label="Overdue (past expected return)" value={overdue.length} tone={overdue.length ? "danger" : "ok"} />}
+            {lateBack && <CountRow href="/gate" icon="clock" label="Returned late today" value={lateBack.total} tone={lateBack.total ? "danger" : "ok"} />}
+            {Array.isArray(issued) && <CountRow href="/gate" icon="key" label="Passes issued, not yet used" value={issued.length} />}
+            {Array.isArray(visitors) && <CountRow href="/gate" icon="user" label="Visitors on campus" value={inside.length} tone={inside.length ? "warn" : "ok"} />}
+          </div>
+          <div className="border-t border-line md:border-t-0">
+            <p className="px-5 pt-3 text-[11px] font-semibold uppercase tracking-wide text-ink-3">Out now</p>
+            {!Array.isArray(out) || out.length === 0 ? (
+              <EmptyState icon="check" title="Everyone is on campus" />
+            ) : (
+              <ul className="px-5 py-2 text-[12.5px]">
+                {[...out].sort((a, b) => Number(!!b.late) - Number(!!a.late)).slice(0, 7).map((p) => (
+                  <li key={p.id} className="flex items-center justify-between gap-3 py-1.5">
+                    <span className="min-w-0 truncate text-ink">{p.student?.fullName ?? p.type}</span>
+                    {p.late
+                      ? <Badge tone="rose">Late · due {hhmm(p.expectedInTime)}</Badge>
+                      : <span className="shrink-0 tnum text-ink-3">due {hhmm(p.expectedInTime)}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+type HostelLite = { id: string; name: string; capacity: number; occupied: number; free: number };
+type Roster = { already_marked: boolean; roster: { status: string }[] };
+
+/** Warden: passes waiting for their approval, hostel occupancy and tonight's roll call. */
+export function WardenHostelWidget({ me }: { me: Me }) {
+  const pending = useSafe<{ id: string }[]>(hasRole(me, R.GATE_PASS_APPROVE) ? "/api/gate-passes?status=Pending" : null);
+  const hostels = useSafe<HostelLite[]>(hasRole(me, R.HOSTEL_ADMIN) ? "/api/hostel" : null);
+  const [roll, setRoll] = useState<Record<string, Roster | null>>({});
+  useEffect(() => {
+    if (!Array.isArray(hostels)) return;
+    const date = todayIso();
+    hostels.forEach((h) => {
+      apiFetch<Roster>(`/api/hostel/roll-call?hostel_id=${encodeURIComponent(h.id)}&date=${date}&session=Night`)
+        .then((r) => setRoll((s) => ({ ...s, [h.id]: r })))
+        .catch(() => setRoll((s) => ({ ...s, [h.id]: null })));
+    });
+  }, [hostels]);
+  if (pending === null && hostels === null) return null;
+  const cap = Array.isArray(hostels) ? hostels.reduce((a, h) => a + h.capacity, 0) : 0;
+  const occ = Array.isArray(hostels) ? hostels.reduce((a, h) => a + h.occupied, 0) : 0;
   return (
     <Card>
-      <CardHead icon="door" title="Gate desk" subtitle="Who is out and who is in, right now."
-        actions={<Link href="/leaves" className="btn-soft">Passes</Link>} />
-      {out === undefined && visitors === undefined ? <Loading /> : (
+      <CardHead icon="hostel" title="Hostel tonight" subtitle={cap ? `${occ} of ${cap} beds occupied (${Math.round((occ / cap) * 100)}%)` : undefined}
+        actions={<Link href="/hostel" className="btn-soft">Hostel</Link>} />
+      {pending === undefined && hostels === undefined ? <Loading /> : (
         <>
-          <div className="divide-y divide-line">
-            {Array.isArray(out) && <CountRow href="/leaves" icon="door" label="Students out on a gate pass" value={out.length} tone={out.some((p) => p.late) ? "danger" : out.length ? "warn" : "ok"} />}
-            {Array.isArray(visitors) && <CountRow href="/hostel" icon="user" label="Visitors on campus" value={inside.length} tone={inside.length ? "warn" : "ok"} />}
-          </div>
-          {Array.isArray(out) && out.length > 0 && (
-            <ul className="border-t border-line px-5 py-3 text-[12.5px]">
-              {out.slice(0, 6).map((p) => (
-                <li key={p.id} className="flex justify-between gap-3 py-1">
-                  <span className="truncate text-ink">{p.student?.fullName ?? p.type}</span>
-                  <span className={`shrink-0 tnum ${p.late ? "font-semibold text-danger" : "text-ink-3"}`}>
-                    {p.late ? "Late · " : "due "}{p.expectedInTime ?? "—"}
-                  </span>
-                </li>
-              ))}
-            </ul>
+          {Array.isArray(pending) && (
+            <div className="border-b border-line">
+              <CountRow href="/gate" icon="door" label="Gate passes waiting for your approval" value={pending.length} tone={pending.length ? "warn" : "ok"} />
+            </div>
           )}
+          {Array.isArray(hostels) && (hostels.length === 0 ? <EmptyState icon="hostel" title="No hostels set up" /> : (
+            <ul className="divide-y divide-line">
+              {hostels.map((h) => {
+                const r = roll[h.id];
+                const pct = h.capacity ? Math.round((h.occupied / h.capacity) * 100) : 0;
+                const absent = r?.roster.filter((x) => x.status === "Absent").length ?? 0;
+                return (
+                  <li key={h.id} className="px-5 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="min-w-0 truncate text-[13px] font-semibold text-ink">{h.name}</span>
+                      {r === undefined ? <Skeleton className="h-5 w-24" />
+                        : r === null ? <Badge tone="slate">Roll call n/a</Badge>
+                        : r.already_marked
+                          ? <Badge tone={absent ? "rose" : "emerald"}>Night roll call done{absent ? ` · ${absent} absent` : ""}</Badge>
+                          : <Badge tone="amber">Night roll call due</Badge>}
+                    </div>
+                    <div className="mt-2 flex items-center gap-3">
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-line" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`${h.name} occupancy`}>
+                        <div className="h-full rounded-full bg-brand-700" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="w-20 shrink-0 text-right text-[11.5px] tnum text-ink-3">{h.occupied}/{h.capacity} beds</span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ))}
         </>
       )}
     </Card>

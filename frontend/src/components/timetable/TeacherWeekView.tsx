@@ -1,23 +1,39 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
-import { Select } from "@/components/ui";
+import { apiDownload, apiFetch } from "@/lib/api";
+import { Button, Icon, Select, Tabs } from "@/components/ui";
 import { WeekGrid, type WeekSlot } from "@/components/WeekGrid";
+import { DayView } from "./DayView";
 import { type TeacherWeekResponse, type TtPeriod, type TtTeacher, errMsg } from "./types";
 
 /** One teacher's week: regular lessons, covers they take and lessons handed to substitutes. */
 export function TeacherWeekView({
-  teachers, periods, date, defaultTeacherId, onError,
+  teachers, periods, date, defaultTeacherId, onError, canDownload,
 }: {
   teachers: TtTeacher[];
   periods: TtPeriod[];
   date: string;
   defaultTeacherId: string | null;
   onError: (m: string) => void;
+  /** Teachers may download their own week; timetable admins anyone's. */
+  canDownload?: (teacherId: string) => boolean;
 }) {
   const [teacherId, setTeacherId] = useState(defaultTeacherId ?? "");
   const [data, setData] = useState<TeacherWeekResponse | null>(null);
+  const [view, setView] = useState<"week" | "day">("week");
+  const [downloading, setDownloading] = useState(false);
+  const download = async () => {
+    if (!data) return;
+    setDownloading(true);
+    try {
+      await apiDownload(`/api/timetable/teacher/${data.teacher.id}/pdf`, `timetable-${data.teacher.name}.pdf`);
+    } catch (e) {
+      onError(errMsg(e, "Download failed"));
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   useEffect(() => {
     if (!teacherId && (defaultTeacherId || teachers[0])) setTeacherId(defaultTeacherId ?? teachers[0].id);
@@ -55,6 +71,7 @@ export function TeacherWeekView({
     })),
   ];
   const lessons = data?.slots.length ?? 0;
+  const roomAt = new Map((data?.slots ?? []).map((x) => [`${x.day_of_week}|${x.period_number}`, x.room_name]));
 
   // Teacher list for the picker: include the default even if its designation isn't "Teacher" (e.g. HOD/VP).
   const options = teachers.some((t) => t.id === teacherId) || !data
@@ -71,16 +88,42 @@ export function TeacherWeekView({
             {data && data.covers.length ? ` · ${data.covers.length} cover${data.covers.length === 1 ? "" : "s"} this week` : ""}
           </p>
         </div>
-        <Select aria-label="Teacher" value={teacherId} onChange={(e) => setTeacherId(e.target.value)} className="w-auto">
-          {options.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </Select>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select aria-label="Teacher" value={teacherId} onChange={(e) => setTeacherId(e.target.value)} className="w-auto">
+            {options.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </Select>
+          {data && canDownload?.(data.teacher.id) && (
+            <Button size="sm" variant="soft" onClick={download} loading={downloading}>
+              <Icon name="download" className="h-4 w-4" /> Download PDF
+            </Button>
+          )}
+        </div>
       </div>
-      <WeekGrid
-        slots={slots}
-        periods={periods}
-        days={["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]}
-        emptyText="This teacher has no lessons or covers this week."
-      />
+      <Tabs tabs={[{ id: "week", label: "Week" }, { id: "day", label: "Day view" }] as const} value={view} onChange={setView} />
+      {view === "week" ? (
+        <WeekGrid
+          slots={slots}
+          periods={periods}
+          days={["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]}
+          emptyText="This teacher has no lessons or covers this week."
+        />
+      ) : (
+        <DayView
+          periods={periods}
+          secondaryLabel="Class"
+          emptyText="This teacher has no lessons this week."
+          entries={slots.map((s) => ({
+            day_of_week: s.day_of_week,
+            period_number: s.period_number,
+            subject: s.subject,
+            secondary: s.secondary,
+            room_name: s.variant === "cover" ? null : roomAt.get(`${s.day_of_week}|${s.period_number}`) ?? null,
+            note: s.note,
+            strike: s.variant === "relieved",
+            badge: s.variant === "cover" ? { label: "Cover", tone: "amber" as const } : s.variant === "relieved" ? { label: "Covered", tone: "slate" as const } : undefined,
+          }))}
+        />
+      )}
     </div>
   );
 }

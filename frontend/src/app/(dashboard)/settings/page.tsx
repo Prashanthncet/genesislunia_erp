@@ -10,6 +10,7 @@ import {
 } from "@/components/ui";
 import type { Notice } from "@/components/NotificationStackPopover";
 import { UserManagement } from "./UserManagement";
+import { confirmLogout } from "@/components/DashboardShell";
 
 const ROLE_SCOPE: Record<string, string> = {
   super_admin: "Full access to every module in the school, including money and safeguarding records.",
@@ -23,8 +24,8 @@ const ROLE_SCOPE: Record<string, string> = {
   hr: "Staff records, leave approvals, payroll and user logins (non-admin).",
   hod: "Department academics, timetable, lesson plans, attendance and leave approvals.",
   teacher: "Classroom access — attendance, marks, lesson plans, CBT and their own timetable.",
-  warden: "Hostel rooms and beds, gate-pass approval and checkout, visitors.",
-  security: "Gate desk: gate-pass checkout/check-in and the visitor log.",
+  warden: "Hostel rooms, beds and roll-call; Gate Desk (issue and approve passes, pass records); student list; visitors.",
+  security: "Gate Desk only: verify passes, check students out and in, pass records and the visitor log.",
   discipline_officer: "Safeguarding case log, escalations and confidential notes.",
 };
 
@@ -62,7 +63,8 @@ export default function SettingsPage() {
     toast.push(next ? "Motion reduced across the app" : "Full motion restored", "info");
   }
 
-  function signOut() {
+  async function signOut() {
+    if (!(await confirmLogout())) return;
     clearSession();
     router.push("/login");
   }

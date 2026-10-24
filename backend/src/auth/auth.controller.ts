@@ -23,6 +23,9 @@ import { AuthGuard, Roles, RolesGuard } from './auth.guard';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto, CreateUserDto, UpdateUserDto } from './dto/users.dto';
 import { ROLE, R } from './roles';
+import { audit } from '../common/access';
+
+const PASSWORD_CHANGED = 'password changed';
 
 type ReqWithUser = { user: { sub: string; role: string; branch_id: string } };
 
@@ -82,6 +85,11 @@ export class AuthController {
       },
     });
     if (!user || !user.isActive) throw new UnauthorizedException('Account disabled');
+    const lastChange = await this.prisma.auditLog.findFirst({
+      where: { branchId: user.branchId, entity: 'user', entityId: user.id, action: 'UPDATE', detail: PASSWORD_CHANGED },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
     return {
       id: user.id,
       email: user.email,
@@ -90,6 +98,8 @@ export class AuthController {
       branch_id: user.branchId,
       branch_name: user.branch.name,
       must_change_password: user.mustChangePassword,
+      /** Last self-service password change (null = never, or before this was recorded). */
+      password_changed_at: lastChange?.createdAt ?? null,
       staff: user.staff,
       student: user.student,
       children: user.parentLinks.map((l) => ({ ...l.student, relation: l.relation })),
@@ -113,6 +123,8 @@ export class AuthController {
       where: { id: user.id },
       data: { password: await bcrypt.hash(body.new_password, 10), mustChangePassword: false },
     });
+    // Recorded so the account page can show "last changed"; the password itself is never logged.
+    await audit(this.prisma, req.user, 'UPDATE', 'user', user.id, PASSWORD_CHANGED);
     return { message: 'Password changed' };
   }
 

@@ -5,8 +5,8 @@ import { apiFetch } from "@/lib/api";
 import { hasRole, R, ROLE, useMe } from "@/lib/auth";
 import { Badge, Button, CardHead, EmptyState, Field, Icon, Input, PageHeader, ProgressBar, Reveal, Select, StatCard, useToast } from "@/components/ui";
 import { TableView } from "@/components/TableView";
-import { ExportButtons } from "@/components/reports/ExportButtons";
-import { inr, inrCompact } from "@/lib/format";
+import { ExportBar, ExportButtons, type ExportSpec } from "@/components/reports/ExportButtons";
+import { formatDate, inr, inrCompact } from "@/lib/format";
 
 type ClassItem = { id: string; name: string; section: string | null };
 type Dashboard = {
@@ -37,14 +37,40 @@ const EMPTY: Filters = { class_id: "", section: "", from: "", to: "" };
 const pctText = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v}%`);
 const tone = (v: number | null, good = 85, ok = 70) => (v === null ? "slate" : v >= good ? "emerald" : v >= ok ? "amber" : "rose") as "slate" | "emerald" | "amber" | "rose";
 
-function Section({ title, subtitle, icon, actions, children }: { title: string; subtitle?: string; icon: string; actions?: ReactNode; children: ReactNode }) {
+/**
+ * One report card: head, export strip (same place on every card), body. `min-w-0`
+ * so a wide table scrolls inside its card instead of widening the page.
+ */
+function Section({ title, subtitle, icon, exports, query, children }: {
+  title: string; subtitle?: string; icon: string; exports?: ExportSpec[]; query?: string; children: ReactNode;
+}) {
   return (
-    <Reveal>
-      <div className="card overflow-hidden">
-        <CardHead title={title} subtitle={subtitle} icon={icon} actions={actions} />
-        {children}
+    <Reveal className="min-w-0">
+      <div className="card flex h-full min-w-0 flex-col overflow-hidden">
+        <CardHead title={title} subtitle={subtitle} icon={icon} />
+        {exports && <ExportBar exports={exports} query={query} />}
+        <div className="min-w-0 flex-1">{children}</div>
       </div>
     </Reveal>
+  );
+}
+
+/** Empty row spanning the whole table. */
+const NoRows = ({ cols, text }: { cols: number; text: string }) => (
+  <tr><td colSpan={cols} className="!py-10 text-center text-ink-3">{text}</td></tr>
+);
+
+/** Labelled figure for the fee summary strip — equal height, label top, value bottom. */
+function Figure({ label, value, hint, tone: t }: { label: string; value: string; hint?: string; tone?: "ok" | "danger" | "warn" }) {
+  const color = t === "ok" ? "text-ok-ink" : t === "danger" ? "text-danger-ink" : t === "warn" ? "text-warn-ink" : "text-ink";
+  return (
+    <div className="flex h-full min-w-0 flex-col justify-between rounded-xl border border-line bg-surface px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">{label}</p>
+      <div className="mt-1.5">
+        <p className={`tnum truncate text-[18px] font-bold leading-tight ${color}`}>{value}</p>
+        {hint && <p className="mt-0.5 truncate text-[11.5px] text-ink-3">{hint}</p>}
+      </div>
+    </div>
   );
 }
 
@@ -121,206 +147,271 @@ export default function ReportsPage() {
   }
 
 
+  const filtersActive = Object.values(applied).some(Boolean);
+  const rateTone = (v: number | null) => (v === null ? "brand" : v >= 85 ? "emerald" : v >= 70 ? "amber" : "rose") as "brand" | "emerald" | "amber" | "rose";
+
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <Reveal>
         <PageHeader
           icon="reports" title="Reports & Analytics"
           subtitle="Live aggregates from attendance, fees, marks and payroll — filter, then export any view."
-          actions={<Button variant="primary" onClick={() => load(true)} loading={loading}><Icon name="refresh" className="h-4 w-4" /> Refresh</Button>}
+          actions={<Button type="button" variant="primary" onClick={() => load(true)} loading={loading}><Icon name="refresh" className="h-4 w-4" /> Refresh</Button>}
         />
       </Reveal>
 
       {canReports && (
         <Reveal delay={40}>
-          <div className="card grid grid-cols-1 items-end gap-3 p-4 sm:grid-cols-2 lg:grid-cols-[1fr_10rem_10rem_10rem_auto]">
-            <Field label="Class">
-              <Select aria-label="Class filter" value={draft.class_id} onChange={(e) => setDraft({ ...draft, class_id: e.target.value })}>
-                <option value="">All classes</option>
-                {classes.map((c) => <option key={c.id} value={c.id}>{c.name}{c.section ? ` ${c.section}` : ""}</option>)}
-              </Select>
-            </Field>
-            <Field label="Section">
-              <Select aria-label="Section filter" value={draft.section} onChange={(e) => setDraft({ ...draft, section: e.target.value })}>
-                <option value="">All sections</option>
-                {sections.map((s) => <option key={s} value={s}>{s}</option>)}
-              </Select>
-            </Field>
-            <Field label="From"><Input type="date" aria-label="From date" value={draft.from} onChange={(e) => setDraft({ ...draft, from: e.target.value })} /></Field>
-            <Field label="To"><Input type="date" aria-label="To date" value={draft.to} onChange={(e) => setDraft({ ...draft, to: e.target.value })} /></Field>
-            <div className="flex gap-2">
-              <Button variant="primary" onClick={apply}><Icon name="filter" className="h-4 w-4" /> Apply</Button>
-              <Button variant="ghost" onClick={() => { setDraft(EMPTY); setApplied(EMPTY); }}>Clear</Button>
+          <form
+            className="card p-4"
+            role="search"
+            aria-label="Report filters"
+            onSubmit={(e) => { e.preventDefault(); apply(); }}
+          >
+            <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,10rem)_minmax(0,10rem)_minmax(0,10rem)_auto]">
+              <div className="min-w-0">
+                <Field label="Class">
+                  <Select aria-label="Class filter" value={draft.class_id} onChange={(e) => setDraft({ ...draft, class_id: e.target.value })}>
+                    <option value="">All classes</option>
+                    {classes.map((c) => <option key={c.id} value={c.id}>{c.name}{c.section ? ` ${c.section}` : ""}</option>)}
+                  </Select>
+                </Field>
+              </div>
+              <div className="min-w-0">
+                <Field label="Section">
+                  <Select aria-label="Section filter" value={draft.section} onChange={(e) => setDraft({ ...draft, section: e.target.value })}>
+                    <option value="">All sections</option>
+                    {sections.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </Select>
+                </Field>
+              </div>
+              <div className="min-w-0"><Field label="From"><Input type="date" aria-label="From date" value={draft.from} onChange={(e) => setDraft({ ...draft, from: e.target.value })} /></Field></div>
+              <div className="min-w-0"><Field label="To"><Input type="date" aria-label="To date" value={draft.to} onChange={(e) => setDraft({ ...draft, to: e.target.value })} /></Field></div>
+              <div className="flex gap-2 sm:col-span-2 lg:col-span-1">
+                <Button type="submit" variant="primary" className="flex-1 lg:flex-none"><Icon name="filter" className="h-4 w-4" /> Apply</Button>
+                <Button type="button" variant="ghost" className="flex-1 lg:flex-none" disabled={!filtersActive && draft === EMPTY} onClick={() => { setDraft(EMPTY); setApplied(EMPTY); }}>Clear</Button>
+              </div>
             </div>
-            <p className="text-[11.5px] text-ink-3 sm:col-span-2 lg:col-span-5">
-              Dates filter attendance by day, fees by invoice due date, marks by exam date and payroll by payslip month. {cacheNote}
-            </p>
-          </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-[11.5px] text-ink-3">
+              <p className="min-w-0">Dates filter attendance by day, fees by invoice due date, marks by exam date and payroll by payslip month.</p>
+              <p className="flex items-center gap-2">
+                {filtersActive && <Badge tone="brand">Filtered</Badge>}
+                <span>{cacheNote}</span>
+              </p>
+            </div>
+          </form>
         </Reveal>
       )}
 
       {dash && (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <StatCard label="Active students" value={dash.students_active} icon="students" hint={`${dash.classes} classes in view`} />
-          <StatCard label="Attendance" value={trend?.overall_pct ?? null} suffix="%" decimals={1} icon="attendance" tone="emerald" hint={trend ? `${trend.present} of ${trend.total} marks present` : undefined} />
-          <StatCard label="Average score" value={perf?.overall.avg_pct ?? null} suffix="%" decimals={1} icon="exams" tone="sky" hint={perf ? `Pass rate ${pctText(perf.overall.pass_rate)} (pass mark ${perf.pass_mark}%)` : undefined} />
+        <div className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard className="h-full" label="Active students" value={dash.students_active} icon="students" hint={`${dash.classes} classes in view`} />
+          <StatCard className="h-full" label="Attendance" value={trend?.overall_pct ?? null} suffix="%" decimals={1} icon="attendance" tone="emerald" hint={trend ? `${trend.present} of ${trend.total} marks present` : "No attendance in view"} />
+          <StatCard className="h-full" label="Average score" value={perf?.overall.avg_pct ?? null} suffix="%" decimals={1} icon="exams" tone="sky" hint={perf ? `Pass rate ${pctText(perf.overall.pass_rate)} (pass mark ${perf.pass_mark}%)` : "No marks in view"} />
           {dash.fees
-            ? <StatCard label="Fees collected" value={dash.fees.collection_pct} suffix="%" decimals={1} icon="wallet" tone="amber" hint={`${inrCompact(dash.fees.collected)} of ${inrCompact(dash.fees.invoiced)}`} />
-            : <StatCard label="Open incidents" value={dash.incidents_open} icon="discipline" tone="rose" hint={`${dash.staff_leaves_pending} staff leaves pending`} />}
+            ? <StatCard className="h-full" label="Fees collected" value={dash.fees.collection_pct} suffix="%" decimals={1} icon="wallet" tone="amber" hint={`${inrCompact(dash.fees.collected)} of ${inrCompact(dash.fees.invoiced)}`} />
+            : <StatCard className="h-full" label="Open incidents" value={dash.incidents_open} icon="discipline" tone="rose" hint={`${dash.staff_leaves_pending} staff leaves pending`} />}
         </div>
       )}
 
       {canStudentExport && (
-        <div className="card flex flex-wrap items-center justify-between gap-3 p-4">
-          <div><p className="font-semibold text-ink">Student list</p><p className="text-[12.5px] text-ink-3">Names, classes and contact numbers for the selected classes (audited).</p></div>
+        <div className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-2.5">
+            <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700"><Icon name="students" className="h-4 w-4" /></span>
+            <div className="min-w-0">
+              <p className="font-semibold text-ink">Student list</p>
+              <p className="text-[12.5px] text-ink-3">Names, classes and contact numbers for the selected classes (audited).</p>
+            </div>
+          </div>
           <ExportButtons report="students" query={query} label="Student list" />
         </div>
       )}
 
       {canReports && (
-        <Section title="Attendance by class" subtitle="Present ÷ marked, per class" icon="attendance" actions={<ExportButtons report="attendance-summary" query={query} label="Attendance by class" />}>
-          <TableView id="attendance" title="Class">
-            <table className="w-full text-sm">
-              <thead className="table-head"><tr><th className="px-4 py-3">Class</th><th className="px-4 py-3">Present</th><th className="px-4 py-3">Absent</th><th className="px-4 py-3">Records</th><th className="px-4 py-3">Rate</th></tr></thead>
-              <tbody>
-                {att.map((r) => (
-                  <tr key={r.class_id} className="row-hover border-t border-line">
-                    <td className="px-4 py-3 font-semibold">{r.class_name} {r.section ?? ""}</td>
-                    <td className="tnum px-4 py-3">{r.present}</td>
-                    <td className="tnum px-4 py-3">{r.absent}</td>
-                    <td className="tnum px-4 py-3">{r.total_records}</td>
-                    <td className="px-4 py-3"><div className="flex items-center gap-2"><ProgressBar value={r.attendance_pct ?? 0} tone={r.attendance_pct === null ? "brand" : r.attendance_pct >= 85 ? "emerald" : r.attendance_pct >= 70 ? "amber" : "rose"} className="w-24" label={`${r.class_name} attendance`} /><span className="tnum text-xs">{r.attendance_pct === null ? "No data" : `${r.attendance_pct}%`}</span></div></td>
-                  </tr>
-                ))}
-                {att.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-ink-3">No classes match these filters</td></tr>}
-              </tbody>
-            </table>
-          </TableView>
-        </Section>
-      )}
-
-      {canReports && trend && (
-        <Section title="Attendance trend" subtitle={`By ${trend.granularity}`} icon="activity" actions={<div className="flex flex-wrap gap-2"><ExportButtons report="attendance-trend" query={query} label="Attendance trend" /><ExportButtons report="attendance" query={query} label="Attendance records" /></div>}>
-          <div className="space-y-1.5 p-5">
-            {trend.points.length === 0 && <p className="py-6 text-center text-sm text-ink-3">No attendance marked in this window</p>}
-            {trend.points.map((p) => (
-              <div key={p.period} className="grid grid-cols-[6.5rem_1fr_4rem] items-center gap-3 text-xs">
-                <span className="tnum text-ink-2">{p.period}</span>
-                <div className="h-2.5 overflow-hidden rounded-full bg-line" role="img" aria-label={`${p.period}: ${p.pct ?? 0}% of ${p.total}`}>
-                  <div className="h-full rounded-full bg-ok" style={{ width: `${p.pct ?? 0}%` }} />
-                </div>
-                <span className="tnum text-right font-semibold">{pctText(p.pct)}</span>
+        <div className={`grid grid-cols-1 items-stretch gap-6 ${trend ? "xl:grid-cols-2" : ""}`}>
+          <Section title="Attendance by class" subtitle="Present ÷ marked, per class" icon="attendance" query={query} exports={[{ report: "attendance-summary", label: "Attendance by class" }]}>
+            <TableView id="attendance" title="Class">
+              <div className="table-wrap max-h-[28rem]">
+                <table className="data-table min-w-[34rem]">
+                  <thead><tr><th>Class</th><th className="th-end">Present</th><th className="th-end">Absent</th><th className="th-end">Records</th><th className="th-end">Rate</th></tr></thead>
+                  <tbody>
+                    {att.map((r) => (
+                      <tr key={r.class_id}>
+                        <td className="whitespace-nowrap font-semibold">{r.class_name} {r.section ?? ""}</td>
+                        <td className="td-end tnum">{r.present}</td>
+                        <td className="td-end tnum">{r.absent}</td>
+                        <td className="td-end tnum">{r.total_records}</td>
+                        <td className="td-end">
+                          <div className="flex items-center justify-end gap-2">
+                            <ProgressBar value={r.attendance_pct ?? 0} tone={rateTone(r.attendance_pct)} className="w-20" label={`${r.class_name} attendance`} />
+                            <span className="tnum w-14 text-right text-xs font-semibold">{r.attendance_pct === null ? "No data" : `${r.attendance_pct}%`}</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {att.length === 0 && <NoRows cols={5} text="No classes match these filters" />}
+                  </tbody>
+                </table>
               </div>
-            ))}
-          </div>
-        </Section>
+            </TableView>
+          </Section>
+
+          {trend && (
+            <Section
+              title="Attendance trend" subtitle={`Share of marks present, by ${trend.granularity}`} icon="activity" query={query}
+              exports={[{ report: "attendance-trend", label: "Trend" }, { report: "attendance", label: "Records" }]}
+            >
+              <div className="max-h-[28rem] space-y-2 overflow-y-auto p-5">
+                {trend.points.length === 0 && <p className="py-6 text-center text-sm text-ink-3">No attendance marked in this window</p>}
+                {trend.points.map((p) => (
+                  <div key={p.period} className="grid grid-cols-[5.5rem_minmax(0,1fr)_3.5rem] items-center gap-3 text-xs sm:grid-cols-[6.5rem_minmax(0,1fr)_4rem]">
+                    <span className="tnum truncate text-ink-2">{p.period}</span>
+                    <div className="h-2.5 overflow-hidden rounded-full bg-line" role="img" aria-label={`${p.period}: ${p.pct ?? 0}% of ${p.total}`}>
+                      <div className="h-full rounded-full bg-ok" style={{ width: `${p.pct ?? 0}%` }} />
+                    </div>
+                    <span className="tnum text-right font-semibold">{pctText(p.pct)}</span>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+        </div>
       )}
 
       {canFees && fees && (
-        <Section title="Fee collection" subtitle={`${fees.invoice_count} invoices · collected vs due by class and term`} icon="fees" actions={<div className="flex flex-wrap gap-2"><ExportButtons report="fee-summary" query={query} label="Fee summary" /><ExportButtons report="fees" query={query} label="Fee invoices" /></div>}>
-          <div className="grid grid-cols-2 gap-3 border-b border-line p-5 md:grid-cols-4">
-            {[["Invoiced", inr(fees.invoiced)], ["Collected", `${inr(fees.collected)} (${pctText(fees.collection_pct)})`], ["Outstanding", inr(fees.outstanding)], ["Overdue", `${inr(fees.overdue)} · ${fees.defaulter_count} students`]].map(([k, v]) => (
-              <div key={k}><p className="text-[11.5px] uppercase tracking-wide text-ink-3">{k}</p><p className="tnum font-semibold text-ink">{v}</p></div>
-            ))}
+        <Section
+          title="Fee collection" subtitle={`${fees.invoice_count} invoices · collected vs due by class and term`} icon="fees" query={query}
+          exports={[{ report: "fee-summary", label: "Fee summary" }, { report: "fees", label: "Fee invoices" }]}
+        >
+          <div className="grid grid-cols-1 items-stretch gap-3 border-b border-line p-5 sm:grid-cols-2 lg:grid-cols-4">
+            <Figure label="Invoiced" value={inr(fees.invoiced)} hint={`${fees.invoice_count} invoices`} />
+            <Figure label="Collected" value={inr(fees.collected)} hint={`${pctText(fees.collection_pct)} of invoiced`} tone="ok" />
+            <Figure label="Outstanding" value={inr(fees.outstanding)} tone="warn" />
+            <Figure label="Overdue" value={inr(fees.overdue)} hint={`${fees.defaulter_count} students`} tone="danger" />
           </div>
-          <TableView id="fees-class" title="Class">
-            <table className="w-full text-sm">
-              <thead className="table-head"><tr><th className="px-4 py-3">Class / term</th><th className="px-4 py-3 text-right">Invoices</th><th className="px-4 py-3 text-right">Billed</th><th className="px-4 py-3 text-right">Collected</th><th className="px-4 py-3 text-right">Pending</th><th className="px-4 py-3">Rate</th></tr></thead>
-              <tbody>
-                {[...fees.by_class.map((r) => ({ key: `c${r.class_id}`, label: r.class_name, r })), ...fees.by_term.map((r) => ({ key: `t${r.term}`, label: `Term: ${r.term}`, r }))].map(({ key, label, r }) => (
-                  <tr key={key} className="row-hover border-t border-line">
-                    <td className="px-4 py-3 font-medium">{label}</td>
-                    <td className="tnum px-4 py-3 text-right">{r.invoices}</td>
-                    <td className="tnum px-4 py-3 text-right">{inr(r.invoiced)}</td>
-                    <td className="tnum px-4 py-3 text-right text-ok">{inr(r.collected)}</td>
-                    <td className="tnum px-4 py-3 text-right text-danger">{inr(r.outstanding)}</td>
-                    <td className="px-4 py-3"><Badge tone={tone(r.collection_pct, 90, 70)}>{pctText(r.collection_pct)}</Badge></td>
-                  </tr>
-                ))}
-                {fees.invoice_count === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-ink-3">No invoices match these filters</td></tr>}
-              </tbody>
-            </table>
+          <TableView id="fees-class" title="Class / term">
+            <div className="table-wrap max-h-[32rem]">
+              <table className="data-table min-w-[44rem]">
+                <thead><tr><th>Class / term</th><th className="th-end">Invoices</th><th className="th-end">Billed</th><th className="th-end">Collected</th><th className="th-end">Pending</th><th className="th-end">Rate</th></tr></thead>
+                <tbody>
+                  {[...fees.by_class.map((r) => ({ key: `c${r.class_id}`, label: r.class_name, r })), ...fees.by_term.map((r) => ({ key: `t${r.term}`, label: `Term: ${r.term}`, r }))].map(({ key, label, r }) => (
+                    <tr key={key}>
+                      <td className="whitespace-nowrap font-medium">{label}</td>
+                      <td className="td-end tnum">{r.invoices}</td>
+                      <td className="td-end tnum whitespace-nowrap">{inr(r.invoiced)}</td>
+                      <td className="td-end tnum whitespace-nowrap text-ok-ink">{inr(r.collected)}</td>
+                      <td className="td-end tnum whitespace-nowrap text-danger-ink">{inr(r.outstanding)}</td>
+                      <td className="td-end"><Badge tone={tone(r.collection_pct, 90, 70)}>{pctText(r.collection_pct)}</Badge></td>
+                    </tr>
+                  ))}
+                  {fees.invoice_count === 0 && <NoRows cols={6} text="No invoices match these filters" />}
+                </tbody>
+              </table>
+            </div>
           </TableView>
         </Section>
       )}
 
       {canFees && (
-        <Section title="Fee defaulters" subtitle="Unpaid balance on an invoice past its due date" icon="alert" actions={<ExportButtons report="defaulters" query={query} label="Defaulters" />}>
+        <Section title="Fee defaulters" subtitle="Unpaid balance on an invoice past its due date" icon="alert" query={query} exports={[{ report: "defaulters", label: "Defaulters" }]}>
           <TableView id="defaulters" title="Student">
-            <table className="w-full text-sm">
-              <thead className="table-head"><tr><th className="px-4 py-3">Student</th><th className="px-4 py-3">Class</th><th className="px-4 py-3 text-right">Overdue invoices</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3">Oldest due</th></tr></thead>
-              <tbody>
-                {defaulters.slice(0, 50).map((d) => (
-                  <tr key={d.student_id} className="row-hover border-t border-line">
-                    <td className="px-4 py-3"><span className="font-semibold">{d.full_name}</span><span className="block text-xs text-ink-3">{d.admission_no}</span></td>
-                    <td className="px-4 py-3">{d.class_name || "—"}</td>
-                    <td className="tnum px-4 py-3 text-right">{d.overdue_invoices}</td>
-                    <td className="tnum px-4 py-3 text-right text-danger">{inr(d.overdue_amount)}</td>
-                    <td className="px-4 py-3 text-xs">{d.oldest_due}</td>
-                  </tr>
-                ))}
-                {defaulters.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-ink-3">No defaulters for these filters</td></tr>}
-                {defaulters.length > 50 && <tr><td colSpan={5} className="px-4 py-3 text-center text-xs text-ink-3">Showing 50 of {defaulters.length} — export for the full list</td></tr>}
-              </tbody>
-            </table>
+            <div className="table-wrap max-h-[32rem]">
+              <table className="data-table min-w-[40rem]">
+                <thead><tr><th>Student</th><th>Class</th><th className="th-end">Overdue invoices</th><th className="th-end">Amount</th><th className="th-end">Oldest due</th></tr></thead>
+                <tbody>
+                  {defaulters.slice(0, 50).map((d) => (
+                    <tr key={d.student_id}>
+                      <td><span className="font-semibold">{d.full_name}</span><span className="block font-mono text-xs text-ink-3">{d.admission_no}</span></td>
+                      <td className="whitespace-nowrap">{d.class_name || "—"}</td>
+                      <td className="td-end tnum">{d.overdue_invoices}</td>
+                      <td className="td-end tnum whitespace-nowrap font-semibold text-danger-ink">{inr(d.overdue_amount)}</td>
+                      <td className="td-end tnum whitespace-nowrap text-xs">{formatDate(d.oldest_due)}</td>
+                    </tr>
+                  ))}
+                  {defaulters.length === 0 && <NoRows cols={5} text="No defaulters for these filters" />}
+                  {defaulters.length > 50 && <tr><td colSpan={5} className="text-center text-xs text-ink-3">Showing 50 of {defaulters.length} — export for the full list</td></tr>}
+                </tbody>
+              </table>
+            </div>
           </TableView>
         </Section>
       )}
 
       {canReports && perf && (
-        <Section title="Academic performance" subtitle={`Weighted averages from the grade engine · pass mark ${perf.pass_mark}%`} icon="exams" actions={<div className="flex flex-wrap gap-2"><ExportButtons report="performance" query={query} label="Performance" /><ExportButtons report="exams" query={query} label="Exam averages" /></div>}>
-          <div className="flex flex-wrap gap-2 border-b border-line p-4 text-xs">
-            {Object.entries(perf.overall.grade_distribution).map(([g, n]) => <Badge key={g} tone="slate">{g}: {n}</Badge>)}
-          </div>
+        <Section
+          title="Academic performance" subtitle={`Weighted averages from the grade engine · pass mark ${perf.pass_mark}%`} icon="exams" query={query}
+          exports={[{ report: "performance", label: "Performance" }, { report: "exams", label: "Exam averages" }]}
+        >
+          {Object.keys(perf.overall.grade_distribution).length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3 text-xs">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">Grades</span>
+              {Object.entries(perf.overall.grade_distribution).map(([g, n]) => <Badge key={g} tone="slate"><span className="tnum">{g}: {n}</span></Badge>)}
+            </div>
+          )}
           <TableView id="performance" title="Class">
-            <table className="w-full text-sm">
-              <thead className="table-head"><tr><th className="px-4 py-3">Class</th><th className="px-4 py-3">Students graded</th><th className="px-4 py-3">Average</th><th className="px-4 py-3">Pass rate</th><th className="px-4 py-3">By subject</th></tr></thead>
-              <tbody>
-                {perf.by_class.map((c) => (
-                  <tr key={c.class_id} className="row-hover border-t border-line align-top">
-                    <td className="px-4 py-3 font-semibold">{c.class_name}</td>
-                    <td className="tnum px-4 py-3">{c.students_with_marks} / {c.students}</td>
-                    <td className="tnum px-4 py-3">{pctText(c.avg_pct)}</td>
-                    <td className="px-4 py-3"><Badge tone={tone(c.pass_rate, 90, 75)}>{pctText(c.pass_rate)}</Badge></td>
-                    <td className="px-4 py-3 text-xs text-ink-2">{c.subjects.length ? c.subjects.map((s) => `${s.subject_name} ${pctText(s.avg_pct)}`).join(" · ") : "No marks"}</td>
-                  </tr>
-                ))}
-                {perf.by_class.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-ink-3">No classes match these filters</td></tr>}
-              </tbody>
-            </table>
+            <div className="table-wrap max-h-[32rem]">
+              <table className="data-table min-w-[48rem]">
+                <thead><tr><th>Class</th><th className="th-end">Students graded</th><th className="th-end">Average</th><th className="th-end">Pass rate</th><th>By subject</th></tr></thead>
+                <tbody>
+                  {perf.by_class.map((c) => (
+                    <tr key={c.class_id} className="align-top">
+                      <td className="whitespace-nowrap font-semibold">{c.class_name}</td>
+                      <td className="td-end tnum whitespace-nowrap">{c.students_with_marks} / {c.students}</td>
+                      <td className="td-end tnum">{pctText(c.avg_pct)}</td>
+                      <td className="td-end"><Badge tone={tone(c.pass_rate, 90, 75)}>{pctText(c.pass_rate)}</Badge></td>
+                      <td className="text-xs text-ink-2">
+                        {c.subjects.length
+                          ? <div className="flex flex-wrap gap-1">{c.subjects.map((s) => <span key={s.subject_id} className="tnum whitespace-nowrap rounded-md bg-surface-2 px-1.5 py-0.5">{s.subject_name} {pctText(s.avg_pct)}</span>)}</div>
+                          : "No marks"}
+                      </td>
+                    </tr>
+                  ))}
+                  {perf.by_class.length === 0 && <NoRows cols={5} text="No classes match these filters" />}
+                </tbody>
+              </table>
+            </div>
           </TableView>
         </Section>
       )}
 
-      {canPayroll && payroll && (
-        <Section title="Payroll" subtitle={`${payroll.payslip_count} payslips · net ${inr(payroll.payroll_total_net)}`} icon="wallet" actions={<ExportButtons report="payroll" query={query} label="Payroll" />}>
-          <TableView id="payroll" title="Month">
-            <table className="w-full text-sm">
-              <thead className="table-head"><tr><th className="px-4 py-3">Month</th><th className="px-4 py-3 text-right">Payslips</th><th className="px-4 py-3 text-right">Paid</th><th className="px-4 py-3 text-right">Gross</th><th className="px-4 py-3 text-right">Net</th></tr></thead>
-              <tbody>
-                {payroll.by_month.map((m) => (
-                  <tr key={m.month} className="row-hover border-t border-line">
-                    <td className="px-4 py-3 font-medium">{m.month}</td>
-                    <td className="tnum px-4 py-3 text-right">{m.payslips}</td>
-                    <td className="tnum px-4 py-3 text-right">{m.paid}</td>
-                    <td className="tnum px-4 py-3 text-right">{inr(m.gross)}</td>
-                    <td className="tnum px-4 py-3 text-right">{inr(m.net)}</td>
-                  </tr>
-                ))}
-                {payroll.by_month.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-ink-3">No payslips in this window</td></tr>}
-              </tbody>
-            </table>
-          </TableView>
-        </Section>
-      )}
+      {((canPayroll && payroll) || (canReports && summary)) && (
+        <div className={`grid grid-cols-1 items-stretch gap-6 ${canPayroll && payroll && canReports && summary ? "xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]" : ""}`}>
+          {canPayroll && payroll && (
+            <Section title="Payroll" subtitle={`${payroll.payslip_count} payslips · net ${inr(payroll.payroll_total_net)}`} icon="wallet" query={query} exports={[{ report: "payroll", label: "Payroll" }]}>
+              <TableView id="payroll" title="Month">
+                <div className="table-wrap max-h-[28rem]">
+                  <table className="data-table min-w-[34rem]">
+                    <thead><tr><th>Month</th><th className="th-end">Payslips</th><th className="th-end">Paid</th><th className="th-end">Gross</th><th className="th-end">Net</th></tr></thead>
+                    <tbody>
+                      {payroll.by_month.map((m) => (
+                        <tr key={m.month}>
+                          <td className="tnum whitespace-nowrap font-medium">{m.month}</td>
+                          <td className="td-end tnum">{m.payslips}</td>
+                          <td className="td-end tnum">{m.paid}</td>
+                          <td className="td-end tnum whitespace-nowrap">{inr(m.gross)}</td>
+                          <td className="td-end tnum whitespace-nowrap font-semibold">{inr(m.net)}</td>
+                        </tr>
+                      ))}
+                      {payroll.by_month.length === 0 && <NoRows cols={5} text="No payslips in this window" />}
+                    </tbody>
+                  </table>
+                </div>
+              </TableView>
+            </Section>
+          )}
 
-      {canReports && summary && (
-        <Section title="Hostel occupancy" icon="hostel">
-          <div className="flex items-center gap-4 p-5">
-            <ProgressBar value={summary.hostel.occupancy_pct ?? 0} className="flex-1" label="Hostel occupancy" />
-            <span className="tnum text-sm font-semibold">{summary.hostel.allocated} / {summary.hostel.capacity} beds · {pctText(summary.hostel.occupancy_pct)}</span>
-          </div>
-        </Section>
+          {canReports && summary && (
+            <Section title="Hostel occupancy" subtitle="Beds allocated across all hostels" icon="hostel">
+              <div className="flex h-full flex-col justify-center gap-3 p-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="tnum font-display text-[28px] font-bold leading-none text-ink">{pctText(summary.hostel.occupancy_pct)}</span>
+                  <span className="tnum text-sm text-ink-2">{summary.hostel.allocated} / {summary.hostel.capacity} beds</span>
+                </div>
+                <ProgressBar value={summary.hostel.occupancy_pct ?? 0} label="Hostel occupancy" />
+              </div>
+            </Section>
+          )}
+        </div>
       )}
     </div>
   );

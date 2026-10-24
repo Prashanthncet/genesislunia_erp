@@ -15,8 +15,13 @@ import { nextDocNo, withDocNoRetry } from '../fees/doc-no';
 
 export type PaymentPurpose = 'admission' | 'invoice';
 
+/** Razorpay key secret. `RAZORPAY_SECRET` is accepted as an alias (that is how the dashboard labels it). */
+export function razorpayKeySecret(): string | undefined {
+  return process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_SECRET || undefined;
+}
+
 export function razorpayConfigured(): boolean {
-  return Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET);
+  return Boolean(process.env.RAZORPAY_KEY_ID && razorpayKeySecret());
 }
 
 export function defaultAdmissionFee(): number {
@@ -64,7 +69,7 @@ export class PaymentsService {
     let gatewayOrderId = `mock_order_${crypto.randomBytes(10).toString('hex')}`;
     if (razorpayConfigured()) {
       gateway = 'razorpay';
-      const auth = Buffer.from(`${process.env.RAZORPAY_KEY_ID}:${process.env.RAZORPAY_KEY_SECRET}`).toString('base64');
+      const auth = Buffer.from(`${process.env.RAZORPAY_KEY_ID}:${razorpayKeySecret()}`).toString('base64');
       let res: Response;
       try {
         res = await fetch('https://api.razorpay.com/v1/orders', {

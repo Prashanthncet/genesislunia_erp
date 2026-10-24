@@ -20,7 +20,7 @@ type Req_ = { user: AuthUser };
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 /** Staff + portal: portal callers are narrowed to their own child inside the handler. */
-const READ_ALL = [...R.STAFF, ROLE.PARENT, ROLE.STUDENT];
+const READ_ALL = [...R.ACADEMIC_STAFF, ROLE.PARENT, ROLE.STUDENT];
 /** Marks entry: every teaching role; plain teachers are additionally scoped by the timetable. */
 const MARKS_WRITE = [...new Set([...R.TEACHING, ...R.ACADEMIC_SETUP])];
 /** Roles that may enter marks for any class/subject without a timetable slot. */
@@ -546,7 +546,7 @@ export class ExamsController {
   // ─── Single exam (declared after literal routes) ───────────
 
   @Get(':id')
-  @Roles(...R.STAFF)
+  @Roles(...R.ACADEMIC_STAFF)
   async one(@Req() req: Req_, @Param('id') id: string) {
     const exam = await this.prisma.exam.findFirst({
       where: { id, branchId: req.user.branch_id },

@@ -41,10 +41,19 @@ export const STAFF_ROLES: Role[] = ALL_ROLES.filter((r) => !PORTAL_ROLES.include
 const ADMINS: Role[] = [SUPER_ADMIN, BRANCH_ADMIN, ADMIN];
 const LEADERSHIP: Role[] = [...ADMINS, PRINCIPAL, VICE_PRINCIPAL];
 
+/**
+ * Staff who work with classes and teaching. Warden and Security are deliberately left out
+ * (school decision 2026-10-24): Warden = hostel + gate desk + pass records + student list;
+ * Security = gate desk + visitors. Both keep staff self-service (own leave, own payslips)
+ * and can still report a safeguarding incident.
+ */
+const ACADEMIC_STAFF: Role[] = STAFF_ROLES.filter((r) => r !== WARDEN && r !== SECURITY);
+
 export const R = {
   ADMINS,
   LEADERSHIP,
   STAFF: STAFF_ROLES,
+  ACADEMIC_STAFF,
 
   // Admissions workflow — one role per step, as in the plan's status table.
   ADMISSION_SETUP: [...ADMINS, ADMISSION_OFFICER], // field builder, send links, validate docs
@@ -55,7 +64,7 @@ export const R = {
   ADMISSION_READ: [...LEADERSHIP, ADMISSION_OFFICER, OFFICE_SUPERINTENDENT, ACCOUNTS],
 
   // Student information
-  STUDENT_READ: [...LEADERSHIP, OFFICE_SUPERINTENDENT, ADMISSION_OFFICER, ACCOUNTS, HOD, TEACHER, WARDEN, DISCIPLINE_OFFICER, SECURITY],
+  STUDENT_READ: [...LEADERSHIP, OFFICE_SUPERINTENDENT, ADMISSION_OFFICER, ACCOUNTS, HOD, TEACHER, WARDEN, DISCIPLINE_OFFICER],
   STUDENT_WRITE: [...ADMINS, PRINCIPAL, OFFICE_SUPERINTENDENT],
 
   // Fees

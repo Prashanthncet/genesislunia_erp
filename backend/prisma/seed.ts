@@ -41,8 +41,8 @@ const SESSION = '2026-27';
 
 /** Mon–Sat. Sunday is a holiday and is deliberately absent. */
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-/** Teaching periods. Period 3 is the short break, so it carries no lesson. */
-const PERIODS = [1, 2, 4, 5, 6, 7];
+/** Teaching periods. Period 3 is the short break and 7 is lunch, so they carry no lesson. */
+const PERIODS = [1, 2, 4, 5, 6, 8];
 
 /**
  * Timetable slots the e2e suite writes to. Generating lessons here would make
@@ -556,8 +556,10 @@ async function main() {
     [4, '10:45', '11:30', false, null],
     [5, '11:30', '12:15', false, null],
     [6, '12:15', '13:00', false, null],
-    [7, '14:00', '14:45', false, null],
-    [8, '14:45', '15:30', false, null],
+    // Lunch is a real row in the bell schedule so every timetable view can show it.
+    [7, '13:00', '14:00', true, 'Lunch Break'],
+    [8, '14:00', '14:45', false, null],
+    [9, '14:45', '15:30', false, null],
   ];
   for (const [n, start, end, isBreak, breakName] of periodTimes) {
     await prisma.periodConfig.create({

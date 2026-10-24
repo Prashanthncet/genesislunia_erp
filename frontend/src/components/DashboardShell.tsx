@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import Swal from "sweetalert2";
 import { Button, Icon, IconButton, ToastHost } from "@/components/ui";
 import { useRouteMeta } from "@/components/RouteMeta";
 import { NotificationStackPopover, recentCount, type Notice } from "@/components/NotificationStackPopover";
@@ -19,6 +20,37 @@ type PortalOverview = {
     messages: { id: string; channel: string; subject: string | null; body: string; ref_type: string | null; status: string; created_at: string }[];
   }[];
 };
+
+/**
+ * Logout confirmation used everywhere a "Log out" button lives (user menu, mobile drawer,
+ * Settings). Navy theme via the app's own button classes; focus starts on "Stay" and
+ * Escape / backdrop click cancel. Resolves true only when the user confirms.
+ */
+export async function confirmLogout(): Promise<boolean> {
+  const res = await Swal.fire({
+    title: "Log out?",
+    text: "You'll need to sign in again to continue.",
+    icon: "question",
+    showCancelButton: true,
+    confirmButtonText: "Log out",
+    cancelButtonText: "Stay",
+    focusCancel: true,
+    reverseButtons: true,
+    allowEscapeKey: true,
+    allowOutsideClick: true,
+    buttonsStyling: false,
+    iconColor: "var(--color-brand-700)",
+    customClass: {
+      popup: "!rounded-panel !border !border-line !bg-surface !shadow-pop",
+      title: "!font-display !text-[20px] !font-bold !text-ink",
+      htmlContainer: "!text-[13.5px] !text-ink-2",
+      actions: "!gap-2",
+      confirmButton: "btn-primary",
+      cancelButton: "btn-soft",
+    },
+  });
+  return res.isConfirmed;
+}
 
 /** Shown while the session/role resolves or a redirect is pending — never the page itself. */
 function ShellStatus({ text }: { text: string }) {
@@ -152,10 +184,30 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     };
   }, [userMenu]);
 
-  const handleLogout = () => {
+  // Only a confirmed logout clears the session.
+  const handleLogout = async () => {
+    setUserMenu(false);
+    setMobileOpen(false);
+    if (!(await confirmLogout())) return;
     clearSession();
     router.push("/login");
   };
+
+  // Portal: unread school notices badge on "Notices & messages" (GET /api/notices/unread-count,
+  // built by the notices module). Any error — incl. 404 before it exists — just hides the badge.
+  const [unreadNotices, setUnreadNotices] = useState<number | null>(null);
+  useEffect(() => {
+    if (!me || !portal) { setUnreadNotices(null); return; }
+    let live = true;
+    const refresh = () =>
+      apiFetch<{ count: number }>("/api/notices/unread-count")
+        .then((r) => { if (live) setUnreadNotices(typeof r?.count === "number" ? r.count : null); })
+        .catch(() => { if (live) setUnreadNotices(null); });
+    void refresh();
+    // The notices page fires this after marking a notice read, so the badge drops immediately.
+    window.addEventListener("notices:changed", refresh);
+    return () => { live = false; window.removeEventListener("notices:changed", refresh); };
+  }, [me, portal, pathname]);
 
   const newNotices = recentCount(notices);
   const showBell = hasRole(me, R.NOTIFICATION_LOG) || me?.role === ROLE.PARENT;
@@ -241,8 +293,10 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                 <ul className="space-y-0.5">
                   {group.items.map((item) => {
                     const active = current?.href === item.href;
-                    const badge =
-                      item.href === bellHref && newNotices > 0 ? newNotices : undefined;
+                    const count = item.href === "/portal/messages" && unreadNotices !== null
+                      ? unreadNotices
+                      : item.href === bellHref ? newNotices : 0;
+                    const badge = count > 0 ? (count > 99 ? "99+" : count) : undefined;
                     return (
                       <li key={`${item.href}-${item.name}`}>
                         <Link
@@ -272,7 +326,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                           />
                           <span className={`flex-1 truncate ${railHide}`}>{item.name}</span>
                           {badge !== undefined && (
-                            <span className={`grid h-5 min-w-5 place-items-center rounded-full bg-danger px-1 text-[10px] font-bold text-white shadow-sm ${
+                            <span aria-label={`${badge} unread`} className={`grid h-5 min-w-5 place-items-center rounded-full bg-danger px-1 text-[10px] font-bold text-white shadow-sm ${
                               collapsed ? "lg:absolute lg:right-1 lg:top-0.5 lg:h-4 lg:min-w-4 lg:text-[9px]" : ""
                             }`}>
                               {badge}
@@ -286,6 +340,17 @@ export default function DashboardShell({ children }: { children: React.ReactNode
               </div>
             ))}
           </nav>
+
+          <div className="border-t border-white/10 px-3 py-2 lg:hidden">
+            <button
+              type="button"
+              onClick={() => void handleLogout()}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13.5px] font-medium text-white/75 transition-colors hover:bg-white/[0.07] hover:text-white"
+            >
+              <Icon name="logout" className="h-[18px] w-[18px] shrink-0 text-white/55" />
+              Log out
+            </button>
+          </div>
 
           <div className={`relative border-t border-white/10 p-3 ${collapsed ? "lg:px-2" : ""}`}>
             <div
@@ -393,7 +458,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                         </Link>
                       ))}
                       <button
-                        onClick={handleLogout}
+                        onClick={() => void handleLogout()}
                         role="menuitem"
                         className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[12.5px] font-medium text-danger transition-colors hover:bg-danger-soft"
                       >

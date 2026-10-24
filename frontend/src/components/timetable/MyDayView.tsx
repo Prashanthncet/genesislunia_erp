@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { Badge, EmptyState } from "@/components/ui";
+import { Badge, EmptyState, Icon } from "@/components/ui";
 import { type MyDay, errMsg } from "./types";
 
 const KIND: Record<string, { label: string; tone: "brand" | "amber" | "slate" | "sky" | "emerald" }> = {
@@ -52,8 +52,10 @@ export function MyDayView({ date, onError }: { date: string; onError: (m: string
           const k = KIND[e.kind];
           if (e.kind === "break") {
             return (
-              <li key={i} className="bg-surface-2 px-5 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3">
-                {e.note ?? "Break"} {e.start_time ? `· ${e.start_time}–${e.end_time}` : ""}
+              <li key={i} className="grid grid-cols-[3.5rem_6.5rem_1fr] items-center gap-3 bg-surface-2 px-5 py-2">
+                <Icon name="clock" className="h-4 w-4 text-ink-3" />
+                <span className="tnum font-mono text-xs text-ink-2">{e.start_time ? `${e.start_time}–${e.end_time}` : "--:--"}</span>
+                <span className="text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-2">{e.note ?? "Break"}</span>
               </li>
             );
           }

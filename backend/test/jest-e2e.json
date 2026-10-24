@@ -1,11 +1,22 @@
 {
-  "moduleFileExtensions": ["js", "json", "ts"],
+  "moduleFileExtensions": [
+    "js",
+    "json",
+    "ts"
+  ],
   "rootDir": ".",
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "globalSetup": "<rootDir>/e2e-global-setup.ts",
   "globalTeardown": "<rootDir>/e2e-global-teardown.ts",
-  "setupFiles": ["<rootDir>/e2e-env.ts"],
-  "transform": { "^.+\\.(t|j)s$": "ts-jest" },
-  "transformIgnorePatterns": ["node_modules/(?!(@nestjs|ms)/)"]
+  "setupFiles": [
+    "<rootDir>/e2e-env.ts"
+  ],
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "transformIgnorePatterns": [
+    "node_modules/(?!(@nestjs|ms)/)"
+  ],
+  "testTimeout": 60000
 }
