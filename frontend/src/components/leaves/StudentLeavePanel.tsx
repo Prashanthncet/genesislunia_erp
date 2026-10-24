@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { formatDate } from "@/lib/format";
 import { hasRole, R, type Me } from "@/lib/auth";
 import { Badge, Button, Card, CardHead, EmptyState, Field, Icon, Input, Select, Tabs, useToast } from "@/components/ui";
+import { confirmAction } from "@/components/confirm";
 import { ReasonModal } from "./ReasonModal";
 import { STUDENT_LEAVE_FILE, STUDENT_LEAVE_TYPES, classLabel, errMsg, statusBadge, type StudentLeave, type StudentOption } from "./shared";
 
@@ -42,14 +44,22 @@ export function StudentLeavePanel({ me, students }: { me: Me; students: StudentO
       await apiFetch(`/api/student-leaves/${pending.leave.id}/decision`, {
         method: "PUT", body: JSON.stringify({ decision: pending.decision, remarks: remarks || undefined }),
       });
-      toast.push(`Leave ${pending.decision.toLowerCase()} — parent notified`);
+      toast.push(`Leave ${pending.decision.toLowerCase()} for ${pending.leave.student.fullName} — parent notified`);
       setPending(null);
       await load();
     } catch (e) { toast.push(errMsg(e), "error"); } finally { setBusy(false); }
   };
 
   const cancel = async (id: string) => {
-    try { await apiFetch(`/api/student-leaves/${id}/cancel`, { method: "PUT" }); toast.push("Request cancelled"); await load(); }
+    const l = rows.find((x) => x.id === id);
+    if (!(await confirmAction({
+      title: l ? `Cancel leave request for ${l.student.fullName}?` : "Cancel this leave request?",
+      text: l ? `${l.leaveType} · ${l.startDate} → ${l.endDate}. The request will be withdrawn.` : "The request will be withdrawn.",
+      confirmText: "Cancel request",
+      cancelText: "Keep",
+      tone: "danger",
+    }))) return;
+    try { await apiFetch(`/api/student-leaves/${id}/cancel`, { method: "PUT" }); toast.push(l ? `Leave request cancelled for ${l.student.fullName}` : "Request cancelled"); await load(); }
     catch (e) { toast.push(errMsg(e), "error"); }
   };
 
@@ -76,7 +86,7 @@ export function StudentLeavePanel({ me, students }: { me: Me; students: StudentO
             <Field label="To" required><Input type="date" value={form.end_date} min={form.start_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} /></Field>
             <div className="sm:col-span-2"><Field label="Reason"><Input value={form.reason} maxLength={500} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></Field></div>
           </div>
-          <div className="px-4 pb-4"><Button variant="primary" onClick={file} loading={busy}><Icon name="check" className="h-4 w-4" /> Submit</Button></div>
+          <div className="px-4 pb-4"><Button variant="primary" onClick={file} loading={busy} className="max-md:w-full"><Icon name="check" className="h-4 w-4" /> Submit</Button></div>
         </Card>
       )}
 
@@ -89,23 +99,23 @@ export function StudentLeavePanel({ me, students }: { me: Me; students: StudentO
         />
         <ul className="divide-y divide-line">
           {shown.map((l) => (
-            <li key={l.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
-              <span className="font-semibold text-ink">{l.student.fullName}</span>
+            <li key={l.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm max-md:gap-x-2 max-md:gap-y-1.5">
+              <span className="font-semibold text-ink max-md:min-w-0 max-md:break-words">{l.student.fullName}</span>
               <span className="text-[12px] text-ink-3">{classLabel(l.student.class)}</span>
               <Badge tone="slate">{l.leaveType}</Badge>
-              <span className="tnum text-ink-2">{l.startDate} → {l.endDate}</span>
-              {l.reason && <span className="text-ink-3">{l.reason}</span>}
-              {l.remarks && <span className="text-[12px] italic text-ink-3">“{l.remarks}”</span>}
-              <span className="ml-auto flex items-center gap-2">
+              <span className="tnum text-ink-2 max-md:hidden">{l.startDate} → {l.endDate}</span><span className="tnum text-ink-2 md:hidden">{formatDate(l.startDate)} → {formatDate(l.endDate)}</span>
+              {l.reason && <span className="text-ink-3 max-md:w-full max-md:break-words">{l.reason}</span>}
+              {l.remarks && <span className="text-[12px] italic text-ink-3 max-md:w-full max-md:break-words">“{l.remarks}”</span>}
+              <span className="ml-auto flex items-center gap-2 max-md:ml-0 max-md:mt-1 max-md:w-full max-md:flex-wrap">
                 <Badge tone={statusBadge(l.status)}>{l.status}</Badge>
                 {l.status === "Pending" && canDecide && (
                   <>
-                    <Button size="sm" variant="soft" onClick={() => setPending({ leave: l, decision: "Approved" })}>Approve</Button>
-                    <Button size="sm" variant="danger" onClick={() => setPending({ leave: l, decision: "Rejected" })}>Reject</Button>
+                    <Button size="sm" variant="soft" onClick={() => setPending({ leave: l, decision: "Approved" })} className="max-md:flex-1">Approve</Button>
+                    <Button size="sm" variant="danger" onClick={() => setPending({ leave: l, decision: "Rejected" })} className="max-md:flex-1">Reject</Button>
                   </>
                 )}
                 {l.status === "Pending" && l.requestedBy === me.id && (
-                  <Button size="sm" variant="ghost" onClick={() => cancel(l.id)}>Cancel</Button>
+                  <Button size="sm" variant="ghost" onClick={() => cancel(l.id)} className="max-md:flex-1">Cancel</Button>
                 )}
               </span>
             </li>

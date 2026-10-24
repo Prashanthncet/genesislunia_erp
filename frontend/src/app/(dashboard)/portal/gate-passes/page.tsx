@@ -20,7 +20,7 @@ function GatePassBody({ child }: { child: PortalChild }) {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-[13.5px] font-semibold text-ink">{g.type}</p>
-                  <p className="mt-0.5 text-[12.5px] text-ink-2">{g.reason}</p>
+                  <p className="mt-0.5 text-[12.5px] text-ink-2 max-md:break-words">{g.reason}</p>
                 </div>
                 <StatusBadge status={g.status} />
               </div>

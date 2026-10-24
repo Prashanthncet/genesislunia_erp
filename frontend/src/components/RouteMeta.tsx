@@ -184,8 +184,59 @@ const PREFIX_ROUTES: { prefix: string; title: string; description: string; crumb
   },
 ];
 
+/**
+ * One short line for the phone app bar (the document description is too long to sit under a
+ * 19px title). Desktop never shows it, so this map only affects <768px.
+ */
+const TAGLINES: Record<string, string> = {
+  "/": "Your day at a glance",
+  "/students": "Manage and view all students",
+  "/classes": "Classes, sections and class teachers",
+  "/admissions": "Applications from enquiry to enrolment",
+  "/timetable": "Schedules, substitutions and the week grid",
+  "/academics": "Syllabus, lesson plans and assignments",
+  "/exams": "Exams, marks and report cards",
+  "/cbt": "Tests, question bank and grading",
+  "/attendance": "Mark and review daily attendance",
+  "/fees": "Invoices, payments and receipts",
+  "/leaves": "Leave requests and approvals",
+  "/gate": "Passes, exits, returns and visitors",
+  "/hostel": "Rooms, beds and hostel attendance",
+  "/staff": "Manage staff and payroll records",
+  "/discipline": "Incidents and safeguarding",
+  "/reports": "Cross-module analytics and exports",
+  "/notifications": "SMS, email and notice log",
+  "/settings": "School profile and preferences",
+  "/account": "Your profile and sign-in details",
+  "/account/password": "Set a new sign-in password",
+  "/portal": "Your child's school day",
+  "/portal/attendance": "Month-by-month attendance",
+  "/portal/fees": "Invoices, payments and receipts",
+  "/portal/results": "Marks and the report card",
+  "/portal/timetable": "The class week and substitutions",
+  "/portal/leaves": "Request leave and follow approval",
+  "/portal/gate-passes": "Pass history and status",
+  "/portal/messages": "Notices from the school",
+  "/portal/admission": "Your application progress",
+};
+
+/** Dynamic routes get their own short line. */
+const PREFIX_TAGLINES: { prefix: string; tagline: string }[] = [
+  { prefix: "/students/", tagline: "Student master profile" },
+  { prefix: "/cbt/take", tagline: "Timed online test" },
+];
+
 export function routeMeta(pathname: string) {
   return ROUTES[pathname] ?? PREFIX_ROUTES.find((r) => pathname.startsWith(r.prefix));
+}
+
+/** Short phone-app-bar subtitle for a route (exact, then by prefix). */
+export function routeTagline(pathname: string): string {
+  return (
+    TAGLINES[pathname] ??
+    PREFIX_TAGLINES.find((r) => pathname.startsWith(r.prefix))?.tagline ??
+    ""
+  );
 }
 
 const SUFFIX = " · Genesis Lumia ERP";

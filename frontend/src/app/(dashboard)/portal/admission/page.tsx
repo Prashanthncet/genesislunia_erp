@@ -76,10 +76,10 @@ function Confirmed({ app }: { app: Application }) {
         <div><dt className="label">Class</dt><dd className="text-[14px] font-semibold text-ink">{app.class ? `${app.class.name}${app.class.section ? ` ${app.class.section}` : ""}` : "—"}</dd></div>
         <div><dt className="label">Roll number</dt><dd className="text-[14px] font-semibold tnum text-ink">{app.roll_no ?? "—"}</dd></div>
         <div><dt className="label">House</dt><dd className="text-[14px] font-semibold text-ink">{app.house ?? "—"}</dd></div>
-        <div><dt className="label">Fee receipt</dt><dd className="text-[14px] font-semibold text-ink">{app.receipt_no ?? "—"}</dd></div>
+        <div className="min-w-0"><dt className="label">Fee receipt</dt><dd className="text-[14px] font-semibold text-ink max-md:break-all">{app.receipt_no ?? "—"}</dd></div>
       </dl>
       <div className="flex flex-wrap gap-2 border-t border-line px-5 py-4">
-        <Link href="/portal" className="btn-primary">
+        <Link href="/portal" className="btn-primary max-md:w-full max-md:justify-center">
           <Icon name="home" className="h-4 w-4" />
           Go to my child&apos;s dashboard
         </Link>

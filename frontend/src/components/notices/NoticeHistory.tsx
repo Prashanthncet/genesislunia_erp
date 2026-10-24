@@ -4,10 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatDate, relativeTime } from "@/lib/format";
 import { TableView } from "@/components/TableView";
+import { MobileFilters } from "@/components/mobile/MobileFilters";
 import { CardBody, CardEmpty, CardFooter, CardGrid, Chip, Meter, RecordCard, StatusPill } from "@/components/RecordCard";
 import { Badge, Button, Card, CardHead, EmptyState, Field, Icon, Input, Select, SkeletonRows, useToast } from "@/components/ui";
 import { NoticeComposer } from "./NoticeComposer";
-import { AUDIENCE_LABEL, confirmAction, type NoticeTargets, type StaffNotice } from "./types";
+import { AUDIENCE_LABEL, type NoticeTargets, type StaffNotice } from "./types";
+import { confirmAction } from "@/components/confirm";
 
 const target = (n: StaffNotice) =>
   n.audience === "all_students" ? "All students"
@@ -49,11 +51,11 @@ export function NoticeHistory() {
   }, []);
 
   const expire = async (n: StaffNotice) => {
-    if (!(await confirmAction({ title: "Hide this notice?", text: `"${n.title}" will no longer show on the portal. It stays in this history.`, confirm: "Hide notice" }))) return;
+    if (!(await confirmAction({ title: `Hide "${n.title}"?`, text: "Students will no longer see it on the portal. It stays in this history.", confirmText: "Hide notice", tone: "danger" }))) return;
     setBusy(n.id);
     try {
       await apiFetch(`/api/notices/${n.id}/expire`, { method: "POST" });
-      toast.push("Notice hidden from the portal", "success");
+      toast.push(`"${n.title}" hidden from the portal`, "success");
       await load();
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "Could not hide the notice", "error");
@@ -61,11 +63,11 @@ export function NoticeHistory() {
   };
 
   const remove = async (n: StaffNotice) => {
-    if (!(await confirmAction({ title: "Delete this notice?", text: `"${n.title}" and its read receipts will be removed permanently.`, confirm: "Delete", danger: true }))) return;
+    if (!(await confirmAction({ title: `Delete "${n.title}"?`, text: "The notice and its read receipts will be removed permanently. This cannot be undone.", confirmText: "Delete", tone: "danger" }))) return;
     setBusy(n.id);
     try {
       await apiFetch(`/api/notices/${n.id}`, { method: "DELETE" });
-      toast.push("Notice deleted", "success");
+      toast.push(`"${n.title}" deleted`, "success");
       await load();
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "Could not delete the notice", "error");
@@ -96,7 +98,7 @@ export function NoticeHistory() {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h3 className="truncate text-[14px] font-semibold text-ink">{n.title}</h3>
-                <p className="mt-0.5 text-[12px] text-ink-3">{target(n)}</p>
+                <p className="mt-0.5 text-[12px] text-ink-3 max-md:[overflow-wrap:anywhere]">{target(n)}</p>
               </div>
               <StatusPill status={n.expired ? "Expired" : "Active"} tone={n.expired ? "slate" : "ok"} />
             </div>
@@ -128,7 +130,8 @@ export function NoticeHistory() {
             </Button>
           }
         />
-        <div className="flex flex-wrap items-end gap-3 border-b border-line px-5 py-3.5">
+        <div className="flex flex-wrap items-end gap-3 border-b border-line px-5 py-3.5 max-md:px-4">
+          <MobileFilters active={[audience, classId, from, to].filter(Boolean).length} onClear={clear}>
           <div className="w-full min-w-0 sm:w-44">
             <Field label="Audience">
               <Select value={audience} onChange={(e) => setAudience(e.target.value)} aria-label="Filter by audience">
@@ -160,6 +163,7 @@ export function NoticeHistory() {
               <Icon name="x" className="h-4 w-4" /> Clear
             </Button>
           )}
+          </MobileFilters>
         </div>
         <TableView id="student-notices" cards={cards} badge="Status">
           <div className="table-wrap">

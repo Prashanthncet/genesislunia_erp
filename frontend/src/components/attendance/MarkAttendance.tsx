@@ -11,9 +11,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { apiFetch } from "@/lib/api";
+import { confirmAction } from "@/components/confirm";
 import { formatDate } from "@/lib/format";
 import { Button, EmptyState, Icon, Input, Select, SkeletonRows } from "@/components/ui";
-import { Monogram, initials, toneFor } from "@/components/RecordCard";
+import { CardEmpty, Monogram, initials, toneFor } from "@/components/RecordCard";
+import { MAvatar, MLabel } from "@/components/mobile/MobileCard";
 import { TableView } from "@/components/TableView";
 import { ClassSectionSelect, resolveClass, selFor, type ClassOpt, type ClassSel } from "./ClassSectionSelect";
 import { ATT_STATUSES, AttendanceLegend, STATUS_LONG, STATUS_META, StatusTag, todayLocal, type AttStatus } from "./status";
@@ -107,6 +109,13 @@ export function MarkAttendance({
 
   const save = async () => {
     if (!cls || !students.length || missingOd.length) return;
+    // Re-saving an already-marked register overwrites it — confirm first. First-time save needs none.
+    if (sheet?.already_marked && !(await confirmAction({
+      title: `Update attendance for ${cls.name}${cls.section ? ` ${cls.section}` : ""}?`,
+      text: `${changed} change${changed === 1 ? "" : "s"} to the saved register for ${formatDate(date)}.${smsOut > 0 ? ` ${smsOut} parent absence notice${smsOut === 1 ? "" : "s"} will go out.` : ""}`,
+      confirmText: "Update attendance",
+      tone: "primary",
+    }))) return;
     setSaving(true);
     try {
       const res = await apiFetch<{ count: number; notified: number; notify_skipped: number; notify_failed: number }>("/api/attendance", {
@@ -134,6 +143,12 @@ export function MarkAttendance({
 
   const resend = async () => {
     if (!cls) return;
+    if (!(await confirmAction({
+      title: `Resend absence notices for ${cls.name}${cls.section ? ` ${cls.section}` : ""}?`,
+      text: `Parents of absent students who have not been notified for ${formatDate(date)} will get an SMS / e-mail.`,
+      confirmText: "Send notices",
+      tone: "primary",
+    }))) return;
     setResending(true);
     try {
       const r = await apiFetch<{ notified: number; skipped: number; failed: number }>("/api/attendance/notify-absent", {
@@ -164,6 +179,90 @@ export function MarkAttendance({
       rowRefs.current[index + (e.key === "ArrowDown" ? 1 : -1)]?.focus();
     }
   };
+
+  /** Phones: one card per student — avatar, name/roll, Status label, 5 segments. */
+  const mobileCards = visible.length === 0 ? (
+    <CardEmpty icon="students" title={students.length ? "No students match" : "No active students in this class"} />
+  ) : visible.map((s) => {
+    const e = entries[s.id] ?? { status: "Present" as AttStatus, reason: "" };
+    const idx = students.indexOf(s);
+    const odMissing = e.status === "OD" && !e.reason.trim();
+    return (
+      <article key={s.id} className="rounded-2xl border border-line bg-surface p-4 shadow-soft">
+        <div className="flex items-start gap-3">
+          <MAvatar name={s.full_name} tone={toneFor(s.full_name)} size={56} variant="soft" />
+          <div className="min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={() => onOpenStudent({ id: s.id, name: s.full_name })}
+              title="Open attendance calendar"
+              className="block max-w-full truncate text-left text-[17px] font-bold leading-snug text-ink active:text-brand-700"
+            >
+              {s.full_name}
+            </button>
+            <p className="mt-0.5 text-[13px] text-ink-3"><span className="tnum">Roll {s.roll_no ?? "—"}</span></p>
+            {s.on_leave && (
+              <p className="mt-1 text-[12px] text-ink-2">On approved {s.on_leave.leave_type.toLowerCase()} leave</p>
+            )}
+          </div>
+        </div>
+
+        <div className="my-3 border-t border-line" />
+        <MLabel>Status</MLabel>
+        <div
+          ref={(el) => { rowRefs.current[idx] = el; }}
+          role="radiogroup"
+          aria-label={`Status for ${s.full_name}`}
+          tabIndex={canMark ? 0 : -1}
+          onKeyDown={(ev) => onRowKey(ev, s.id, idx)}
+          className="mt-2 flex items-stretch gap-0.5 rounded-xl border border-line bg-surface-2 p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+        >
+          {ATT_STATUSES.map((st) => {
+            const on = e.status === st;
+            return (
+              <button
+                key={st}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                tabIndex={-1}
+                disabled={!canMark}
+                title={`${STATUS_LONG[st]} (key ${STATUS_META[st].key.toUpperCase()})`}
+                onClick={() => setStatus(s.id, st)}
+                className={`flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg px-1 text-[13px] font-bold transition disabled:cursor-not-allowed ${on ? STATUS_META[st].on : "text-ink-2"}`}
+              >
+                {on && st === "Present" && <Icon name="check" className="h-4 w-4 shrink-0" />}
+                <span className="truncate">{STATUS_META[st].short === "Lv" ? "Leave" : STATUS_META[st].short}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {(e.status === "OD" || e.status === "Leave") && (
+          <div className="mt-2">
+            <Input
+              aria-label={e.status === "OD" ? `OD reason for ${s.full_name}` : `Leave remark for ${s.full_name}`}
+              placeholder={e.status === "OD" ? "OD reason (required) — e.g. NCC camp" : "Remark (optional)"}
+              value={e.reason}
+              maxLength={300}
+              disabled={!canMark}
+              onChange={(ev) => setReason(s.id, ev.target.value)}
+              className={`!text-[13px] ${odMissing ? "border-danger" : ""}`}
+              aria-invalid={odMissing}
+            />
+            {odMissing && <p className="mt-1 text-[11.5px] font-medium text-danger">A reason is required for OD.</p>}
+          </div>
+        )}
+
+        {s.status && (
+          <p className="mt-2 text-[12px] text-ink-3">
+            Saved: {STATUS_META[s.status].label}
+            {s.status === "Absent" ? (s.notified ? " · parent notified" : " · notice pending") : ""}
+          </p>
+        )}
+      </article>
+    );
+  });
 
   const today = todayLocal();
   return (
@@ -231,12 +330,12 @@ export function MarkAttendance({
       </div>
 
       {/* Roster */}
-      <div className="card overflow-hidden">
+      <div className="card overflow-hidden max-md:contents">
         {!cls ? (
           <EmptyState icon="check" title="Choose a class and section" hint="Pick the class, then its section, to load the roster." />
         ) : (
-          <div className="table-wrap">
-            <TableView id="att-mark">
+          <div className="table-wrap max-md:contents">
+            <TableView id="att-mark" title="Student" mobileHide={["Saved"]} mobileCards={loading && !sheet ? undefined : mobileCards}>
               <table className="data-table">
                 <thead>
                   <tr>
@@ -256,15 +355,15 @@ export function MarkAttendance({
                       const odMissing = e.status === "OD" && !e.reason.trim();
                       return (
                         <tr key={s.id} className="align-top">
-                          <td className="td-end tnum font-semibold text-ink-2">{s.roll_no ?? "—"}</td>
+                          <td className="td-end tnum font-semibold text-ink-2"><span className="max-md:text-left">{s.roll_no ?? "—"}</span></td>
                           <td>
                             <div className="flex items-center gap-3">
                               <Monogram text={initials(s.full_name)} tone={toneFor(s.full_name)} shape="circle" />
                               <div className="min-w-0">
-                                <button type="button" onClick={() => onOpenStudent({ id: s.id, name: s.full_name })} className="truncate text-left font-semibold text-ink hover:text-brand-700 hover:underline" title="Open attendance calendar">
-                                  {s.full_name}
+                                <button type="button" onClick={() => onOpenStudent({ id: s.id, name: s.full_name })} className="truncate text-left font-semibold text-ink hover:text-brand-700 hover:underline max-md:min-h-10 max-md:inline-flex max-md:items-center max-md:max-w-full" title="Open attendance calendar">
+                                  <span className="max-md:truncate">{s.full_name}</span>
                                 </button>
-                                <p className="font-mono text-[11px] text-ink-3">{s.admission_no}</p>
+                                <p className="font-mono text-[11px] text-ink-3 max-md:hidden">{s.admission_no}</p>
                                 {s.on_leave && (
                                   <p className="mt-0.5 text-[11.5px] text-ink-2">On approved {s.on_leave.leave_type.toLowerCase()} leave ({formatDate(s.on_leave.from)} – {formatDate(s.on_leave.to)})</p>
                                 )}
@@ -278,7 +377,7 @@ export function MarkAttendance({
                               aria-label={`Status for ${s.full_name}`}
                               tabIndex={canMark ? 0 : -1}
                               onKeyDown={(ev) => onRowKey(ev, s.id, idx)}
-                              className="inline-flex flex-wrap gap-1 rounded-lg border border-line bg-surface-2 p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                              className="inline-flex flex-wrap gap-1 max-md:flex max-md:w-full max-md:flex-nowrap rounded-lg border border-line bg-surface-2 p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                             >
                               {ATT_STATUSES.map((st) => {
                                 const on = e.status === st;
@@ -292,7 +391,7 @@ export function MarkAttendance({
                                     disabled={!canMark}
                                     title={`${STATUS_LONG[st]} (key ${STATUS_META[st].key.toUpperCase()})`}
                                     onClick={() => setStatus(s.id, st)}
-                                    className={`min-w-9 rounded-md px-2.5 py-1.5 text-[12px] font-bold transition ${on ? STATUS_META[st].on : "text-ink-2 hover:bg-surface"} disabled:cursor-not-allowed`}
+                                    className={`min-w-9 rounded-md px-2.5 py-1.5 text-[12px] font-bold transition max-md:min-h-11 max-md:flex-1 max-md:px-1 max-md:text-[13px] ${on ? STATUS_META[st].on : "text-ink-2 hover:bg-surface"} disabled:cursor-not-allowed`}
                                   >
                                     {STATUS_META[st].short === "Lv" ? "Leave" : STATUS_META[st].short}
                                   </button>
@@ -338,27 +437,27 @@ export function MarkAttendance({
 
       {/* Sticky save bar */}
       {canMark && cls && students.length > 0 && (
-        <div className="sticky bottom-0 z-20 -mx-1 rounded-t-xl border border-line bg-surface/95 px-4 py-3 shadow-pop backdrop-blur">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <p className="tnum text-[13px] text-ink-2">
-              <span className="font-semibold text-ink">{cls.name} {cls.section ?? ""}</span> · {formatDate(date)} ·{" "}
+        <div className="m-above-nav sticky bottom-0 z-20 -mx-1 rounded-t-xl border border-line bg-surface/95 px-4 py-3 shadow-pop backdrop-blur max-md:px-3 max-md:py-2.5">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 max-md:gap-y-1.5">
+            <p className="tnum text-[13px] text-ink-2 max-md:text-[12px] max-md:leading-snug">
+              <span className="max-md:block"><span className="font-semibold text-ink">{cls.name} {cls.section ?? ""}</span> · {formatDate(date)}<span className="max-md:hidden"> ·{" "}</span></span>
               <span className="font-semibold text-ok-ink">{counts.Present} P</span> ·{" "}
               <span className="font-semibold text-danger-ink">{counts.Absent} A</span> ·{" "}
               <span className="font-semibold text-warn-ink">{counts.Late} L</span> ·{" "}
               <span className="font-semibold text-info-ink">{counts.OD} OD</span> ·{" "}
               <span className="font-semibold text-ink-2">{counts.Leave} Leave</span>
             </p>
-            <p className="text-[12.5px] text-ink-3">
+            <p className="text-[12.5px] text-ink-3 max-md:text-[11.5px] max-md:leading-snug">
               {smsOut > 0 ? `${smsOut} parent absence SMS/e-mail will go out` : "No parent notices will be sent"}
               {noContact > 0 ? ` · ${noContact} absent without contact details` : ""}
               {sheet?.already_marked ? ` · ${changed} change${changed === 1 ? "" : "s"}` : ""}
             </p>
-            <Button variant="primary" className="ml-auto" onClick={save} loading={saving} disabled={missingOd.length > 0}>
+            <Button variant="primary" className="ml-auto max-md:ml-0 max-md:w-full" onClick={save} loading={saving} disabled={missingOd.length > 0}>
               <Icon name="check" className="h-4 w-4" /> {sheet?.already_marked ? "Update attendance" : "Save attendance"}
             </Button>
           </div>
           {missingOd.length > 0 && (
-            <p className="mt-1.5 text-[12px] font-medium text-danger">Add an OD reason for {missingOd.map((s) => s.full_name).join(", ")}.</p>
+            <p className="mt-1.5 text-[12px] max-md:text-[11.5px] font-medium text-danger">Add an OD reason for {missingOd.map((s) => s.full_name).join(", ")}.</p>
           )}
         </div>
       )}

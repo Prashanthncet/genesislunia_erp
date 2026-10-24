@@ -5,6 +5,8 @@ import { apiFetch } from "@/lib/api";
 import { hasRole, isPortal, R, useMe } from "@/lib/auth";
 import { Badge, Button, Card, CardHead, EmptyState, Icon, Modal, PageHeader, Reveal, Select, Skeleton, StatCard, Tabs, useToast } from "@/components/ui";
 import { TableView } from "@/components/TableView";
+import { MobileFilters } from "@/components/mobile/MobileFilters";
+import { formatDate } from "@/lib/format";
 import { ReportIncidentForm } from "@/components/discipline/ReportIncidentForm";
 import { IncidentDrawer } from "@/components/discipline/IncidentDrawer";
 import { SEVERITIES, STATUSES, classLabel, errMsg, severityTone, statusTone, type AuditEntry, type IncidentRow } from "@/components/discipline/shared";
@@ -89,7 +91,7 @@ export default function DisciplinePage() {
       </Reveal>
 
       {caseTeam ? (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 max-md:gap-3">
           <Reveal delay={40}><StatCard label="Open" value={count("Open")} tone="rose" icon="alert" /></Reveal>
           <Reveal delay={80}><StatCard label="Under Review" value={count("Under Review")} tone="amber" icon="eye" /></Reveal>
           <Reveal delay={120}><StatCard label="Escalated" value={count("Escalated")} tone="violet" icon="flag" /></Reveal>
@@ -97,7 +99,7 @@ export default function DisciplinePage() {
         </div>
       ) : (
         <Reveal delay={40}>
-          <div className="flex gap-3 rounded-xl border border-line bg-surface-2 p-4 text-[13px] text-ink-2">
+          <div className="flex gap-3 rounded-xl border border-line bg-surface-2 p-4 text-[13px] text-ink-2 max-md:gap-2.5">
             <Icon name="lock" className="h-5 w-5 shrink-0 text-brand-700" />
             <p>
               Safeguarding records are restricted. You can report incidents and follow the status of the reports <em>you</em> filed;
@@ -122,7 +124,8 @@ export default function DisciplinePage() {
               icon="clipboard"
               subtitle={caseTeam ? "Open a case to see confidential notes and its access history." : "Status updates on incidents you reported."}
               actions={
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 max-md:w-full">
+                  <MobileFilters active={(statusFilter !== "active" ? 1 : 0) + (severityFilter ? 1 : 0)}>
                   <Select aria-label="Filter by status" className="field w-auto" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
                     <option value="active">Not closed</option>
                     <option value="all">All statuses</option>
@@ -132,10 +135,11 @@ export default function DisciplinePage() {
                     <option value="">All severities</option>
                     {SEVERITIES.map((s) => <option key={s}>{s}</option>)}
                   </Select>
+                  </MobileFilters>
                 </div>
               }
             />
-            <TableView id="incidents" title="Student">
+            <TableView id="incidents" title="Student" mobileHide={["Description", "Reported by"]}>
               <table className="w-full text-sm">
                 <thead className="table-head">
                   <tr>
@@ -148,7 +152,7 @@ export default function DisciplinePage() {
                 <tbody>
                   {shown.map((i) => (
                     <tr key={i.id} className="row-hover border-t border-line">
-                      <td className="tnum px-4 py-3 text-xs">{i.incidentDate}</td>
+                      <td className="tnum px-4 py-3 text-xs"><span className="max-md:hidden">{i.incidentDate}</span><span className="md:hidden">{formatDate(i.incidentDate)}</span></td>
                       <td className="px-4 py-3">
                         <span className="font-semibold">{i.student.fullName}</span>
                         <span className="block text-[11.5px] text-ink-3">{classLabel(i.student.class)}</span>
@@ -158,7 +162,7 @@ export default function DisciplinePage() {
                       <td className="px-4 py-3"><Badge tone={statusTone(i.status)}>{i.status}</Badge></td>
                       {caseTeam && <td className="px-4 py-3 text-xs text-ink-3">{i.reporter?.name ?? "—"}</td>}
                       <td className="px-4 py-3 text-right">
-                        <Button size="sm" variant="soft" onClick={() => setOpenId(i.id)}>
+                        <Button size="sm" variant="soft" onClick={() => setOpenId(i.id)} className="max-md:w-full">
                           {caseTeam && <Icon name="lock" className="h-3.5 w-3.5" />} View
                         </Button>
                       </td>
@@ -183,9 +187,9 @@ export default function DisciplinePage() {
           {(audit ?? []).map((a) => (
             <li key={a.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-2/70 px-3 py-2">
               <Badge tone={a.action === "VIEW" || a.action === "LIST" ? "sky" : a.action === "DELETE" || a.action === "ESCALATE" ? "rose" : "emerald"}>{a.action}</Badge>
-              <span className="font-medium text-ink">{a.actorName}</span>
+              <span className="font-medium text-ink max-md:min-w-0 max-md:break-words">{a.actorName}</span>
               <span className="font-mono text-xs text-ink-3">{a.entityId === "*" ? "list" : `#${a.entityId.slice(0, 8)}`}</span>
-              {a.detail && <span className="line-clamp-1 max-w-md text-xs text-ink-2">{a.detail}</span>}
+              {a.detail && <span className="line-clamp-1 max-w-md text-xs text-ink-2 max-md:w-full max-md:line-clamp-2 max-md:break-words">{a.detail}</span>}
               <span className="ml-auto text-xs text-ink-3">{new Date(a.createdAt).toLocaleString("en-IN")}</span>
             </li>
           ))}

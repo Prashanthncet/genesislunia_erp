@@ -72,12 +72,12 @@ function ResultsBody({ child }: { child: PortalChild }) {
                     <p className="font-semibold text-ink">{c.term} · {c.academic_year}</p>
                     <p className="text-[12.5px] text-ink-3">Published {fmtDay(c.published_at.slice(0, 10))}</p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[13px] font-bold tnum text-ink">{c.overall_pct == null ? "—" : `${c.overall_pct.toFixed(1)}%`}</span>
+                  <div className="flex flex-wrap items-center gap-2 max-md:w-full">
+                    <span className="text-[13px] font-bold tnum text-ink max-md:text-[18px]">{c.overall_pct == null ? "—" : `${c.overall_pct.toFixed(1)}%`}</span>
                     {c.overall_grade && <Badge tone="brand">{c.overall_grade}</Badge>}
                     {c.rank != null && <Badge tone="sky">Rank {c.rank}{c.class_size ? ` of ${c.class_size}` : ""}</Badge>}
                     {c.passed != null && <Badge tone={c.passed ? "emerald" : "rose"}>{c.passed ? "Pass" : "Below pass mark"}</Badge>}
-                    <Button size="sm" variant="primary" onClick={() => download(c)} loading={downloading === c.pdf_url}>
+                    <Button size="sm" variant="primary" className="max-md:ml-auto" onClick={() => download(c)} loading={downloading === c.pdf_url}>
                       <Icon name="download" className="h-3.5 w-3.5" />
                       PDF
                     </Button>
@@ -99,7 +99,7 @@ function ResultsBody({ child }: { child: PortalChild }) {
             subtitle={[fmtDay(e.date), e.term, e.academic_year].filter(Boolean).join(" · ")}
             actions={
               <span className="flex items-center gap-2">
-                <span className="text-[13px] font-bold tnum text-ink">{e.pct == null ? "—" : `${e.pct.toFixed(1)}%`}</span>
+                <span className="text-[13px] font-bold tnum text-ink max-md:text-[20px]">{e.pct == null ? "—" : `${e.pct.toFixed(1)}%`}</span>
                 {e.grade && <Badge tone="brand">{e.grade}</Badge>}
               </span>
             }
@@ -117,7 +117,7 @@ function ResultsBody({ child }: { child: PortalChild }) {
               <tbody className="divide-y divide-line">
                 {e.subjects.map((s) => (
                   <tr key={s.code}>
-                    <td className="px-4 py-2.5 font-medium text-ink sm:px-5">{s.subject}</td>
+                    <td className="px-4 py-2.5 font-medium text-ink sm:px-5 max-md:break-words">{s.subject}</td>
                     <td className="px-3 py-2.5 text-right tnum text-ink-2">{s.score}/{s.max_score}</td>
                     <td className="px-3 py-2.5 text-right tnum text-ink-2">{s.pct == null ? "—" : s.pct.toFixed(0)}</td>
                     <td className="px-4 py-2.5 text-right font-semibold text-ink sm:px-5">{s.grade ?? "—"}</td>

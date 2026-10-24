@@ -10,6 +10,7 @@
 
 import type { ReactNode } from "react";
 import { R, ROLE } from "@/lib/auth";
+import { Icon } from "@/components/ui";
 
 export type AttStatus = "Present" | "Absent" | "Late" | "OD" | "Leave";
 export const ATT_STATUSES: AttStatus[] = ["Present", "Absent", "Late", "OD", "Leave"];
@@ -85,23 +86,62 @@ export function StatusTag({ status, title }: { status: string; title?: string })
   );
 }
 
-/** Legend: colour + code + meaning, and the % rule. */
+/** Legend: colour + code + meaning, and the % rule. Phones get the card design. */
 export function AttendanceLegend({ showRule = true, extra }: { showRule?: boolean; extra?: ReactNode }) {
   return (
-    <div className="space-y-1.5 text-[12px] text-ink-2">
-      <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5" aria-label="Attendance legend">
-        {ATT_STATUSES.map((s) => (
-          <li key={s} className="flex items-center gap-1.5">
-            <span className={`grid h-5 min-w-5 place-items-center rounded px-1 text-[10px] font-bold ring-1 ${STATUS_META[s].cell}`} aria-hidden>
-              {STATUS_META[s].short}
-            </span>
-            {STATUS_LONG[s]}
-          </li>
-        ))}
-        {extra}
-      </ul>
-      {showRule && <p className="text-[11.5px] text-ink-3">{ATTENDANCE_RULE_TEXT}</p>}
-    </div>
+    <>
+      {/* Phones: "Attendance Legend & Calculation" card. */}
+      <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-soft md:hidden">
+        <div className="flex items-center gap-3.5 p-4 pb-2">
+          <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-700">
+            <Icon name="book" className="h-7 w-7" />
+          </span>
+          <h2 className="text-[20px] font-bold leading-tight text-brand-900">Attendance Legend &amp; Calculation</h2>
+        </div>
+        <ul className="px-4" aria-label="Attendance legend">
+          {ATT_STATUSES.map((s) => (
+            <li key={s} className="flex items-center gap-3 border-b border-line py-3 last:border-0">
+              <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl text-[15px] font-bold ${STATUS_META[s].cell} ring-1 ring-inset`} aria-hidden>
+                {STATUS_META[s].short}
+              </span>
+              <span className="min-w-0 text-[15px] text-ink">{STATUS_LONG[s]}</span>
+            </li>
+          ))}
+          {extra}
+        </ul>
+        {showRule && (
+          <div className="m-3 rounded-2xl bg-brand-50/70 p-3">
+            <p className="flex items-center gap-2 text-[15px] font-bold text-ink">
+              <span className="grid h-8 w-8 place-items-center rounded-lg bg-white text-brand-700"><Icon name="reports" className="h-4 w-4" /></span>
+              Attendance %
+            </p>
+            <p className="mt-2 rounded-xl bg-white px-3 py-3 text-center text-[14.5px] font-semibold leading-relaxed text-ink">
+              Attendance % = (Present + Late + OD)<br />÷ (Present + Late + OD + Absent)
+            </p>
+          </div>
+        )}
+        <div className="mx-3 mb-3 flex items-start gap-2.5 rounded-2xl bg-info-soft/60 px-3 py-3">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/70 text-info-ink"><Icon name="info" className="h-4 w-4" /></span>
+          <p className="border-l-2 border-info-line pl-2.5 text-[14px] leading-relaxed text-ink-2">Approved leave and Sundays are not counted.</p>
+        </div>
+      </section>
+
+      {/* Tablets / desktop: the compact inline legend (unchanged). */}
+      <div className="hidden space-y-1.5 text-[12px] text-ink-2 md:block">
+        <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5" aria-label="Attendance legend">
+          {ATT_STATUSES.map((s) => (
+            <li key={s} className="flex items-center gap-1.5">
+              <span className={`grid h-5 min-w-5 place-items-center rounded px-1 text-[10px] font-bold ring-1 ${STATUS_META[s].cell}`} aria-hidden>
+                {STATUS_META[s].short}
+              </span>
+              {STATUS_LONG[s]}
+            </li>
+          ))}
+          {extra}
+        </ul>
+        {showRule && <p className="text-[11.5px] text-ink-3">{ATTENDANCE_RULE_TEXT}</p>}
+      </div>
+    </>
   );
 }
 

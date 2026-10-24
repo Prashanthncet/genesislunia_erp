@@ -32,9 +32,9 @@ function useOptional<T>(path: string | null): T | null | undefined {
   return data;
 }
 
-function Detail({ label, children }: { label: string; children: React.ReactNode }) {
+function Detail({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className="min-w-0">
+    <div className={`min-w-0 ${className}`}>
       <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">{label}</dt>
       <dd className="mt-0.5 text-[13.5px] text-ink">{children}</dd>
     </div>
@@ -59,14 +59,14 @@ function ProfileHeader({ name, lines, me, chips }: { name: string; lines: React.
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-[11.5px] font-semibold uppercase tracking-[0.14em] text-brand-300">{me.branch_name}</p>
-          <h1 className="mt-1 truncate font-display text-[24px] font-extrabold leading-tight tracking-tight sm:text-[28px]">{name}</h1>
+          <h1 className="mt-1 truncate font-display text-[24px] font-extrabold leading-tight tracking-tight sm:text-[28px] max-md:whitespace-normal max-md:[overflow-wrap:anywhere]">{name}</h1>
           {lines.filter(Boolean).map((l, i) => <p key={i} className="mt-0.5 text-[13px] text-white/70">{l}</p>)}
           <div className="mt-2.5 flex flex-wrap gap-2">
             <span className="badge badge-brand">{ROLE_LABEL[me.role] ?? me.role}</span>
             {chips}
           </div>
         </div>
-        <Link href="/account/password" className="btn-soft shrink-0">
+        <Link href="/account/password" className="btn-soft shrink-0 max-md:!hidden">
           <Icon name="lock" className="h-4 w-4" />
           Change password
         </Link>
@@ -80,7 +80,7 @@ function LoginCard({ me }: { me: MeWithPassword }) {
   return (
     <Card>
       <CardHead icon="key" title="Sign-in" subtitle="How you log in to the ERP." />
-      <dl className="grid grid-cols-1 gap-x-6 gap-y-4 p-5 sm:grid-cols-2">
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-4 p-5 sm:grid-cols-2 max-md:p-4">
         <Detail label="Login ID / email"><span className="break-all">{me.email}</span></Detail>
         <Detail label="Login role"><Badge tone="brand">{ROLE_LABEL[me.role] ?? me.role}</Badge></Detail>
         <Detail label="School">{me.branch_name}</Detail>
@@ -88,10 +88,16 @@ function LoginCard({ me }: { me: MeWithPassword }) {
           {changed ? <span title={new Date(changed).toLocaleString("en-IN")}>{formatDate(changed)} <span className="text-ink-3">({relativeTime(changed)})</span></span> : <span className="text-ink-3">Not recorded</span>}
         </Detail>
       </dl>
-      <p className="mx-5 mb-5 flex items-start gap-2 rounded-xl border border-line bg-surface-2 px-3.5 py-3 text-[12px] leading-relaxed text-ink-2">
+      <p className="mx-5 mb-5 max-md:mx-4 max-md:mb-4 flex items-start gap-2 rounded-xl border border-line bg-surface-2 px-3.5 py-3 text-[12px] leading-relaxed text-ink-2">
         <Icon name="info" className="mt-0.5 h-4 w-4 shrink-0 text-ink-3" />
         Your name, email, role and employment details are managed by the school. Ask the office or HR if anything here is wrong.
       </p>
+      <div className="px-4 pb-4 md:hidden">
+        <Link href="/account/password" className="btn-primary w-full justify-center">
+          <Icon name="lock" className="h-4 w-4" />
+          Change password
+        </Link>
+      </div>
     </Card>
   );
 }
@@ -102,7 +108,7 @@ function QuickLinks({ me, links }: { me: Me; links: { href: string; icon: string
   return (
     <Card>
       <CardHead icon="sparkles" title="Quick links" />
-      <div className="grid grid-cols-1 gap-2 p-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2 p-4 sm:grid-cols-2 max-md:gap-3">
         {shown.map((l) => (
           <Link key={`${l.href}-${l.label}`} href={l.href} className="flex items-center gap-3 rounded-xl border border-line px-3.5 py-3 transition-colors hover:bg-surface-2">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700"><Icon name={l.icon} className="h-4 w-4" /></span>
@@ -155,22 +161,32 @@ function StaffProfile({ me }: { me: MeWithPassword }) {
         chips={classTeacherOf.map((c) => <span key={c.id} className="badge badge-sky">Class teacher · {cls(c)}</span>)}
       />
 
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2 max-md:gap-4">
+        {hasStaff && staff && (
+          <Card className="md:hidden">
+            <CardHead icon="phone" title="Contact" />
+            <dl className="grid grid-cols-1 gap-y-4 p-4">
+              <Detail label="Work email"><MailLink value={staff.email} className="break-all" /></Detail>
+              <Detail label="Phone"><PhoneLink value={staff.phone} /></Detail>
+            </dl>
+          </Card>
+        )}
+
         <Card>
           <CardHead icon="staff" title="Employee details" subtitle={hasStaff ? "From your staff record." : undefined} />
           {!hasStaff ? (
             <EmptyState icon="staff" title="No staff record linked" hint="This login isn't linked to a staff record, so there are no employment details or payslips. Ask HR to link it." />
           ) : staff === undefined ? (
-            <div className="grid grid-cols-2 gap-4 p-5">{[0, 1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+            <div className="grid grid-cols-2 gap-4 p-5 max-md:p-4">{[0, 1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
           ) : (
-            <dl className="grid grid-cols-1 gap-x-6 gap-y-4 p-5 sm:grid-cols-2">
-              <Detail label="Name">{name}</Detail>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-4 p-5 sm:grid-cols-2 max-md:!grid-cols-2 max-md:gap-x-4 max-md:p-4">
+              <Detail label="Name" className="max-md:hidden">{name}</Detail>
               <Detail label="Designation">{designation ?? "—"}</Detail>
               <Detail label="Department">{department ?? "—"}</Detail>
-              <Detail label="Employee ID"><span className="font-mono text-[12.5px]">{me.staff?.id}</span></Detail>
-              <Detail label="Work email"><MailLink value={staff?.email ?? null} /></Detail>
-              <Detail label="Phone"><PhoneLink value={staff?.phone ?? null} /></Detail>
-              {staff?.subjects && <Detail label="Subjects (record)">{staff.subjects}</Detail>}
+              <Detail label="Employee ID" className="max-md:col-span-2"><span className="font-mono text-[12.5px] max-md:break-all">{me.staff?.id}</span></Detail>
+              <Detail label="Work email" className={staff ? "max-md:hidden" : ""}><MailLink value={staff?.email ?? null} className="max-md:break-all" /></Detail>
+              <Detail label="Phone" className={staff ? "max-md:hidden" : ""}><PhoneLink value={staff?.phone ?? null} /></Detail>
+              {staff?.subjects && <Detail label="Subjects (record)" className="max-md:col-span-2">{staff.subjects}</Detail>}
               {teaches && staff && <Detail label="Max periods / day"><span className="tnum">{staff.maxPeriodsPerDay}</span></Detail>}
               {staff && <Detail label="Status"><Badge tone={staff.isActive ? "emerald" : "slate"}>{staff.isActive ? "Active" : "Inactive"}</Badge></Detail>}
             </dl>
@@ -182,7 +198,7 @@ function StaffProfile({ me }: { me: MeWithPassword }) {
         {teaches && hasStaff && (
           <Card className="lg:col-span-2">
             <CardHead icon="book" title="Classes & subjects" subtitle="Class-teacher duty and what you teach, from the timetable." />
-            <div className="grid grid-cols-1 gap-5 p-5 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-5 p-5 md:grid-cols-3 max-md:p-4">
               <div>
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">Class teacher of</p>
                 {myClasses === undefined ? <Skeleton className="h-8 w-40" />
@@ -208,8 +224,8 @@ function StaffProfile({ me }: { me: MeWithPassword }) {
                     <ul className="divide-y divide-line rounded-xl border border-line">
                       {teaching.map((t) => (
                         <li key={t.subject} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5">
-                          <span className="min-w-[8rem] text-[13px] font-semibold text-ink">{t.subject}</span>
-                          <span className="flex flex-1 flex-wrap gap-1.5">
+                          <span className="min-w-[8rem] text-[13px] font-semibold text-ink max-md:min-w-0 max-md:flex-1">{t.subject}</span>
+                          <span className="flex flex-1 flex-wrap gap-1.5 max-md:order-last max-md:basis-full">
                             {t.classes.map(([c, n]) => <Chip key={c} tone={toneFor(c)}>{c} <span className="tnum opacity-70">×{n}</span></Chip>)}
                           </span>
                           <span className="shrink-0 text-[12px] text-ink-3 tnum">{t.periods} periods / week</span>
@@ -254,7 +270,7 @@ function PortalProfile({ me }: { me: MeWithPassword }) {
         lines={[student && me.student ? `Admission no. ${me.student.admissionNo}` : me.children.length ? `Parent of ${me.children.map((c) => c.fullName.split(" ")[0]).join(", ")}` : null]}
       />
 
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2 max-md:gap-4">
         <LoginCard me={me} />
 
         {me.role === ROLE.PARENT && (
@@ -265,7 +281,7 @@ function PortalProfile({ me }: { me: MeWithPassword }) {
             ) : (
               <ul className="divide-y divide-line">
                 {me.children.map((c) => (
-                  <li key={c.id} className="flex items-center gap-3 px-5 py-3.5">
+                  <li key={c.id} className="flex items-center gap-3 px-5 py-3.5 max-md:px-4">
                     <Monogram text={initials(c.fullName)} tone={toneFor(c.fullName)} shape="circle" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[13.5px] font-semibold text-ink">{c.fullName}</p>
@@ -286,7 +302,7 @@ function PortalProfile({ me }: { me: MeWithPassword }) {
           <Card>
             <CardHead icon="user" title="Student record" />
             {me.student ? (
-              <dl className="grid grid-cols-1 gap-x-6 gap-y-4 p-5 sm:grid-cols-2">
+              <dl className="grid grid-cols-1 gap-x-6 gap-y-4 p-5 sm:grid-cols-2 max-md:p-4">
                 <Detail label="Name">{me.student.fullName}</Detail>
                 <Detail label="Admission no"><span className="font-mono">{me.student.admissionNo}</span></Detail>
               </dl>

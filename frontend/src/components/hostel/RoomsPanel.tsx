@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { hasRole, R, useMe } from "@/lib/auth";
 import { Badge, Button, Card, CardHead, EmptyState, Field, IconButton, Input, Modal, ProgressBar, Select, StatCard, useToast } from "@/components/ui";
+import { confirmAction } from "@/components/confirm";
 import { classLabel, type Bed, type Hostel, type Room, type StudentLite } from "./types";
 
 type Staff = { id: string; name: string };
@@ -86,15 +87,20 @@ export function RoomsPanel({ canAdmin }: { canAdmin: boolean }) {
     setOutReason("");
   };
 
-  const setBedActive = (bed: Bed, isActive: boolean) =>
-    run(() => post(`/api/hostel/beds/${bed.id}`, { is_active: isActive, reason: outReason.trim() || undefined }, "PUT"),
+  const setBedActive = async (bed: Bed, isActive: boolean) => {
+    const roomNo = action?.room.roomNumber;
+    if (!(await confirmAction(isActive
+      ? { title: `Put bed ${bed.label}${roomNo ? ` in ${roomNo}` : ""} back in service?`, text: "It will be offered for allocation again.", confirmText: "Back in service", tone: "primary" }
+      : { title: `Mark bed ${bed.label}${roomNo ? ` in ${roomNo}` : ""} out of service?`, text: "It will not be offered for allocation until brought back.", confirmText: "Mark out of service", tone: "danger" }))) return;
+    return run(() => post(`/api/hostel/beds/${bed.id}`, { is_active: isActive, reason: outReason.trim() || undefined }, "PUT"),
       isActive ? `Bed ${bed.label} back in service` : `Bed ${bed.label} marked out of service`);
+  };
 
   const moveTarget = rooms.find((r) => r.id === moveRoom);
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 max-md:gap-3">
         <StatCard label="Hostels" value={hostels.length} tone="brand" icon="hostel" />
         <StatCard label="Rooms" value={shown.length} tone="teal" icon="timetable" />
         <StatCard label="Bed capacity" value={totals.capacity} hint="active beds across rooms" tone="violet" icon="students" />
@@ -111,7 +117,7 @@ export function RoomsPanel({ canAdmin }: { canAdmin: boolean }) {
 
       {canAdmin && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <Card className="p-4">
+          <Card className="p-4 max-md:[&>.card-head]:!px-0 max-md:[&>.card-head]:!pt-0 max-md:[&>.card-head]:mb-3">
             <CardHead title="Add hostel" icon="hostel" />
             <div className="space-y-2">
               <Input placeholder="Hostel name" value={hForm.name} onChange={(e) => setHForm({ ...hForm, name: e.target.value })} />
@@ -119,40 +125,50 @@ export function RoomsPanel({ canAdmin }: { canAdmin: boolean }) {
                 <option value="">No warden</option>
                 {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </Select>
-              <Button variant="primary" loading={busy} disabled={!hForm.name.trim()}
+              <Button variant="primary" loading={busy} disabled={!hForm.name.trim()} className="max-md:w-full"
                 onClick={() => run(() => post("/api/hostel", { name: hForm.name, warden_id: hForm.warden_id || undefined }), "Hostel created").then(() => setHForm({ name: "", warden_id: "" }))}>
                 Add hostel
               </Button>
             </div>
           </Card>
-          <Card className="p-4">
+          <Card className="p-4 max-md:[&>.card-head]:!px-0 max-md:[&>.card-head]:!pt-0 max-md:[&>.card-head]:mb-3">
             <CardHead title="Add room" icon="timetable" subtitle="Beds are numbered B1..Bn" />
             <div className="space-y-2">
               <Select aria-label="Hostel for new room" value={rForm.hostel_id} onChange={(e) => setRForm({ ...rForm, hostel_id: e.target.value })}>
                 {hostels.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
               </Select>
               <div className="flex gap-2">
-                <Input placeholder="Room no" value={rForm.room_number} onChange={(e) => setRForm({ ...rForm, room_number: e.target.value })} />
+                <Input placeholder="Room no" className="max-md:min-w-0" value={rForm.room_number} onChange={(e) => setRForm({ ...rForm, room_number: e.target.value })} />
                 <Input type="number" min={1} max={50} aria-label="Beds" value={rForm.capacity} onChange={(e) => setRForm({ ...rForm, capacity: e.target.value })} className="field w-24" />
               </div>
-              <Button variant="primary" loading={busy} disabled={!rForm.hostel_id || !rForm.room_number.trim()}
+              <Button variant="primary" loading={busy} disabled={!rForm.hostel_id || !rForm.room_number.trim()} className="max-md:w-full"
                 onClick={() => run(() => post("/api/hostel/rooms", { ...rForm, capacity: Number(rForm.capacity) }), "Room created").then(() => setRForm({ ...rForm, room_number: "" }))}>
                 Add room
               </Button>
             </div>
           </Card>
-          <Card className="p-4">
+          <Card className="p-4 max-md:[&>.card-head]:!px-0 max-md:[&>.card-head]:!pt-0 max-md:[&>.card-head]:mb-3">
             <CardHead title="Auto-assign" icon="sparkles" subtitle="First free bed in the least-full room" />
             <div className="space-y-2">
               <Select aria-label="Student to auto-assign" value={autoStudent} onChange={(e) => setAutoStudent(e.target.value)}>
                 <option value="">Select student without a bed…</option>
                 {unallocated.map((s) => <option key={s.id} value={s.id}>{s.fullName} ({s.admissionNo}) {classLabel(s)}</option>)}
               </Select>
-              <Button variant="accent" loading={busy} disabled={!autoStudent}
-                onClick={() => run(async () => {
+              <Button variant="accent" loading={busy} disabled={!autoStudent} className="max-md:w-full"
+                onClick={async () => {
+                  const s = unallocated.find((x) => x.id === autoStudent);
+                  const where = filter ? hostels.find((h) => h.id === filter)?.name : undefined;
+                  if (!(await confirmAction({
+                    title: `Auto-assign a bed to ${s?.fullName ?? "this student"}?`,
+                    text: `The first free bed in the least-full room${where ? ` of ${where}` : ""} will be allocated.`,
+                    confirmText: "Auto-assign",
+                    tone: "primary",
+                  }))) return;
+                  await run(async () => {
                   const r = await post("/api/hostel/allocations/auto", { student_id: autoStudent, hostel_id: filter || undefined }) as { room_number: string; bed_label: string };
                   toast.push(`Placed in ${r.room_number} / ${r.bed_label}`, "success");
-                }, "Auto-assigned").then(() => setAutoStudent(""))}>
+                }, "Auto-assigned").then(() => setAutoStudent(""));
+                }}>
                 Auto-assign{filter ? " in this hostel" : ""}
               </Button>
             </div>
@@ -160,13 +176,13 @@ export function RoomsPanel({ canAdmin }: { canAdmin: boolean }) {
         </div>
       )}
 
-      <Card className="p-4">
+      <Card className="p-4 max-md:[&>.card-head]:!px-0 max-md:[&>.card-head]:!pt-0 max-md:[&>.card-head]:mb-3">
         <CardHead
           title="Rooms & beds"
           icon="hostel"
           subtitle={canAdmin ? "Click a free bed to allocate (or mark it out of service), an occupied bed to move or vacate." : "Read-only view."}
           actions={
-            <Select aria-label="Filter by hostel" className="field w-auto" value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <Select aria-label="Filter by hostel" className="field w-auto max-md:!w-full" value={filter} onChange={(e) => setFilter(e.target.value)}>
               <option value="">All hostels</option>
               {hostels.map((h) => <option key={h.id} value={h.id}>{h.name} ({h.occupied}/{h.capacity})</option>)}
             </Select>
@@ -180,12 +196,12 @@ export function RoomsPanel({ canAdmin }: { canAdmin: boolean }) {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {shown.map((r) => (
               <div key={r.id} className="rounded-xl border border-line bg-surface-2/60 p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <div>
+                <div className="mb-2 flex items-center justify-between max-md:gap-2">
+                  <div className="max-md:min-w-0">
                     <p className="font-semibold text-ink">{r.roomNumber}</p>
-                    <p className="text-xs text-ink-3">{r.hostel.name}</p>
+                    <p className="text-xs text-ink-3 max-md:truncate">{r.hostel.name}</p>
                   </div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 max-md:shrink-0 max-md:flex-wrap max-md:justify-end">
                     {r.out_of_service > 0 && <Badge tone="slate">{r.out_of_service} out of service</Badge>}
                     <Badge tone={r.free === 0 ? "rose" : r.occupied === 0 ? "emerald" : "amber"}>{r.occupied}/{r.capacity}</Badge>
                     {canAdmin && (
@@ -202,7 +218,7 @@ export function RoomsPanel({ canAdmin }: { canAdmin: boolean }) {
                       disabled={!canAdmin}
                       onClick={() => openBed(r, b)}
                       aria-label={`${r.roomNumber} bed ${b.label}: ${b.student ? b.student.fullName : b.is_active ? "free" : "out of service"}`}
-                      className={`rounded-lg border px-2 py-1.5 text-left text-xs transition-colors ${
+                      className={`rounded-lg border px-2 py-1.5 text-left text-xs transition-colors max-md:min-h-11 max-md:min-w-0 max-md:text-[12.5px] ${
                         b.student
                           ? "border-brand-100 bg-brand-50 text-brand-700 hover:bg-brand-100"
                           : !b.is_active
@@ -235,11 +251,29 @@ export function RoomsPanel({ canAdmin }: { canAdmin: boolean }) {
         footer={action && (action.bed.student ? (
           <>
             <Button variant="danger" loading={busy}
-              onClick={() => run(() => apiFetch(`/api/hostel/allocations/${action.bed.allocation_id}`, { method: "DELETE" }), "Bed vacated")}>
+              onClick={async () => {
+                if (!(await confirmAction({
+                  title: `Vacate ${action.bed.student!.fullName} from ${action.room.roomNumber} / ${action.bed.label}?`,
+                  text: "The student is deallocated and the bed becomes free.",
+                  confirmText: "Vacate",
+                  tone: "danger",
+                }))) return;
+                await run(() => apiFetch(`/api/hostel/allocations/${action.bed.allocation_id}`, { method: "DELETE" }), `${action.bed.student!.fullName} vacated from ${action.room.roomNumber} / ${action.bed.label}`);
+              }}>
               Vacate
             </Button>
             <Button variant="primary" loading={busy} disabled={!moveRoom}
-              onClick={() => run(() => post("/api/hostel/allocations", { student_id: action.bed.student!.id, room_id: moveRoom, bed_id: moveBed || undefined }), "Student moved")}>
+              onClick={async () => {
+                const bedLabel = moveTarget?.beds.find((b) => b.id === moveBed)?.label;
+                const dest = `${moveTarget?.roomNumber ?? "the selected room"}${bedLabel ? ` / ${bedLabel}` : ""}`;
+                if (!(await confirmAction({
+                  title: `Move ${action.bed.student!.fullName} to ${dest}?`,
+                  text: `Their current bed ${action.room.roomNumber} / ${action.bed.label} will be freed.`,
+                  confirmText: "Move",
+                  tone: "primary",
+                }))) return;
+                await run(() => post("/api/hostel/allocations", { student_id: action.bed.student!.id, room_id: moveRoom, bed_id: moveBed || undefined }), `${action.bed.student!.fullName} moved to ${dest}`);
+              }}>
               Move
             </Button>
           </>
@@ -253,7 +287,15 @@ export function RoomsPanel({ canAdmin }: { canAdmin: boolean }) {
               Mark out of service
             </Button>
             <Button variant="primary" loading={busy} disabled={!pickStudent}
-              onClick={() => run(() => post("/api/hostel/allocations", { student_id: pickStudent, room_id: action.room.id, bed_id: action.bed.id }), "Bed allocated")}>
+              onClick={async () => {
+                const s = unallocated.find((x) => x.id === pickStudent);
+                if (!(await confirmAction({
+                  title: `Allocate ${action.room.roomNumber} / ${action.bed.label} to ${s?.fullName ?? "this student"}?`,
+                  confirmText: "Allocate",
+                  tone: "primary",
+                }))) return;
+                await run(() => post("/api/hostel/allocations", { student_id: pickStudent, room_id: action.room.id, bed_id: action.bed.id }), `${action.room.roomNumber} / ${action.bed.label} allocated to ${s?.fullName ?? "student"}`);
+              }}>
               Allocate
             </Button>
           </>
@@ -298,7 +340,15 @@ export function RoomsPanel({ canAdmin }: { canAdmin: boolean }) {
         subtitle="Raising adds new beds; lowering takes free beds out of service (highest first)."
         footer={resize && (
           <Button variant="primary" loading={busy} disabled={!(Number(resize.capacity) >= 1)}
-            onClick={() => run(() => post(`/api/hostel/rooms/${resize.room.id}`, { capacity: Number(resize.capacity) }, "PUT"), "Room updated").then(() => setResize(null))}>
+            onClick={async () => {
+              if (!(await confirmAction({
+                title: `Set ${resize.room.roomNumber} to ${Number(resize.capacity)} beds?`,
+                text: Number(resize.capacity) < resize.room.capacity ? "Free beds above the new count are taken out of service (highest first)." : "New beds are added to the room.",
+                confirmText: "Save",
+                tone: "primary",
+              }))) return;
+              await run(() => post(`/api/hostel/rooms/${resize.room.id}`, { capacity: Number(resize.capacity) }, "PUT"), `${resize.room.roomNumber} updated to ${Number(resize.capacity)} beds`).then(() => setResize(null));
+            }}>
             Save
           </Button>
         )}

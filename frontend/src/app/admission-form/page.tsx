@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { BASE } from "@/lib/api";
 import { Badge, Button, Field, Icon, ProgressBar, Reveal, Skeleton, ToastHost, useToast } from "@/components/ui";
+import { confirmAction } from "@/components/confirm";
 import { useRouteMeta } from "@/components/RouteMeta";
 import { fmtDate, inr, readUpload } from "@/components/admissions/shared";
 import { payWithRazorpay, type GatewayOrder } from "@/lib/razorpay";
@@ -140,9 +141,11 @@ function AdmissionFormInner() {
     }
   };
 
-  const removeDoc = async (id: string) => {
+  const removeDoc = async (id: string, name: string) => {
+    if (!(await confirmAction({ title: `Remove ${name}?`, text: "The file is deleted from your application.", confirmText: "Remove", tone: "danger" }))) return;
     try {
       await call(`/api/admissions/public/${encodeURIComponent(token)}/documents/${id}`, { method: "DELETE" });
+      toast.push(`${name} removed`, "success");
       await load({ keepValues: true });
     } catch (e) {
       fail(e);
@@ -193,7 +196,7 @@ function AdmissionFormInner() {
   const set = (k: string, v: string) => setValues((cur) => ({ ...cur, [k]: v }));
 
   return (
-    <main className="mx-auto max-w-xl overflow-x-clip px-4 py-10">
+    <main className="mx-auto max-w-xl overflow-x-clip px-4 py-10 max-md:py-6">
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden>
         <span className="absolute left-[12%] top-[-8rem] h-72 w-72 animate-[float_9s_ease-in-out_infinite] rounded-full bg-brand-400/20 blur-3xl" />
         <span className="absolute right-[6%] top-[20%] h-64 w-64 animate-[float_11s_ease-in-out_infinite_reverse] rounded-full bg-accent-400/25 blur-3xl" />
@@ -230,7 +233,7 @@ function AdmissionFormInner() {
       )}
 
       {state === "submitted" && (
-        <div className="card border-ok-line bg-ok-soft/80 p-8 text-center" style={{ animation: "scale-in 0.45s var(--ease-spring) both" }}>
+        <div className="card border-ok-line bg-ok-soft/80 p-8 text-center max-md:p-5" style={{ animation: "scale-in 0.45s var(--ease-spring) both" }}>
           <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-ok text-white shadow-lift">
             <Icon name="check" className="h-7 w-7" strokeWidth={2.5} />
           </span>
@@ -245,7 +248,7 @@ function AdmissionFormInner() {
 
       {state === "ready" && data && !data.editable && (
         <Reveal delay={40}>
-          <div className="card space-y-4 p-6">
+          <div className="card space-y-4 p-6 max-md:p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-[12px] uppercase tracking-wide text-ink-3">Application for</p>
@@ -295,7 +298,7 @@ function AdmissionFormInner() {
 
       {state === "ready" && data && data.editable && (
         <Reveal delay={60}>
-          <div className="card space-y-4 p-6">
+          <div className="card space-y-4 p-6 max-md:p-4">
             {data.status === "Re-submit" && (
               <div role="status" className="rounded-xl border border-warn-line bg-warn-soft/80 px-3.5 py-2.5 text-[13px] text-warn-ink">
                 <b>The school asked for changes:</b> {data.remarks ?? "please review and resubmit."}
@@ -351,16 +354,16 @@ function AdmissionFormInner() {
               <p className="text-sm font-semibold text-ink">Documents</p>
               <p className="text-[12px] text-ink-3">JPEG, PNG, WebP or PDF, up to 5 MB each.</p>
               {data.documents.map((d) => (
-                <div key={d.id} className="flex items-center justify-between rounded-lg border border-line px-3 py-2 text-[13px]">
-                  <span><b>{DOC_TYPES.find((t) => t.id === d.docType)?.label ?? d.docType}</b> <span className="text-ink-3">{d.fileName}</span></span>
-                  <button className="btn-ghost !px-2 !py-1 text-xs" onClick={() => removeDoc(d.id)} aria-label={`Remove ${d.fileName}`}>Remove</button>
+                <div key={d.id} className="flex items-center justify-between rounded-lg border border-line px-3 py-2 text-[13px] max-md:gap-2">
+                  <span className="max-md:min-w-0 max-md:[overflow-wrap:anywhere]"><b>{DOC_TYPES.find((t) => t.id === d.docType)?.label ?? d.docType}</b> <span className="text-ink-3">{d.fileName}</span></span>
+                  <button className="btn-ghost !px-2 !py-1 text-xs max-md:shrink-0" onClick={() => removeDoc(d.id, d.fileName)} aria-label={`Remove ${d.fileName}`}>Remove</button>
                 </div>
               ))}
               <div className="flex flex-wrap items-center gap-2">
-                <select aria-label="Document type" value={docType} onChange={(e) => setDocType(e.target.value)} className="field w-auto">
+                <select aria-label="Document type" value={docType} onChange={(e) => setDocType(e.target.value)} className="field w-auto max-md:min-w-[9rem] max-md:flex-1">
                   {DOC_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
                 </select>
-                <label className={`btn-soft cursor-pointer ${busy === "upload" ? "pointer-events-none opacity-50" : ""}`}>
+                <label className={`btn-soft cursor-pointer max-md:flex-1 max-md:justify-center ${busy === "upload" ? "pointer-events-none opacity-50" : ""}`}>
                   <Icon name="upload" className="h-4 w-4" /> {busy === "upload" ? "Uploading…" : "Upload file"}
                   <input type="file" className="sr-only" accept="image/jpeg,image/png,image/webp,application/pdf"
                     onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = ""; }} />

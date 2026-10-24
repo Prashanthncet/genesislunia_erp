@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { formatDate } from "@/lib/format";
 import { hasRole, R, type Me } from "@/lib/auth";
 import { Badge, Button, Card, CardHead, EmptyState, Field, Icon, Input, Select, useToast } from "@/components/ui";
 import { TableView } from "@/components/TableView";
 import { CardBody, CardEmpty, CardGrid, CardTitle, Chip, Monogram, RecordCard, Ring, initials, toneFor, type Tone } from "@/components/RecordCard";
+import { confirmAction } from "@/components/confirm";
 import { ReasonModal } from "./ReasonModal";
 import { LEAVE_ON_BEHALF, LEAVE_VIEW_ALL, STAFF_LEAVE_TYPES, errMsg, statusBadge, type Balance, type StaffLeave } from "./shared";
 
@@ -60,6 +62,13 @@ export function MyLeavePanel({ me, onChanged }: { me: Me; onChanged?: () => void
   };
 
   const withdraw = async (id: string) => {
+    const l = mine.find((x) => x.id === id);
+    if (!(await confirmAction({
+      title: l ? `Withdraw ${l.leaveType.toLowerCase()} leave (${l.startDate} → ${l.endDate})?` : "Withdraw this leave request?",
+      text: "The request is cancelled and removed from the approval queue.",
+      confirmText: "Withdraw",
+      tone: "danger",
+    }))) return;
     try {
       await apiFetch(`/api/staff-leaves/${id}/withdraw`, { method: "PUT" });
       toast.push("Leave withdrawn");
@@ -110,11 +119,11 @@ export function MyLeavePanel({ me, onChanged }: { me: Me; onChanged?: () => void
           {QUOTA_TYPES.map(({ type, tone }) => {
             const l = own.leaves[type];
             return (
-              <div key={type} className="card flex items-center gap-3 p-3">
+              <div key={type} className="card flex items-center gap-3 p-3 max-md:gap-2.5">
                 <Ring value={l && l.quota ? (l.remaining / l.quota) * 100 : 0} tone={tone} size={48} stroke={5} label={`${type} remaining`}>
                   {l?.remaining ?? 0}
                 </Ring>
-                <div>
+                <div className="max-md:min-w-0">
                   <p className="text-[13px] font-semibold text-ink">{type}</p>
                   <p className="tnum text-[11.5px] text-ink-3">{l?.used ?? 0} used of {l?.quota ?? 0}</p>
                 </div>
@@ -148,7 +157,7 @@ export function MyLeavePanel({ me, onChanged }: { me: Me; onChanged?: () => void
           </div>
         </div>
         <div className="px-4 pb-4">
-          <Button variant="primary" onClick={apply} loading={busy}><Icon name="check" className="h-4 w-4" /> Submit request</Button>
+          <Button variant="primary" onClick={apply} loading={busy} className="max-md:w-full"><Icon name="check" className="h-4 w-4" /> Submit request</Button>
         </div>
       </Card>
 
@@ -159,12 +168,12 @@ export function MyLeavePanel({ me, onChanged }: { me: Me; onChanged?: () => void
             {mine.map((l) => (
               <li key={l.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
                 <Badge tone="slate">{l.leaveType}</Badge>
-                <span className="tnum text-ink-2">{l.startDate} → {l.endDate}</span>
-                {l.reason && <span className="text-ink-3">{l.reason}</span>}
-                {l.remarks && <span className="text-[12px] italic text-ink-3">“{l.remarks}”</span>}
-                <span className="ml-auto flex items-center gap-2">
+                <span className="tnum text-ink-2 max-md:hidden">{l.startDate} → {l.endDate}</span><span className="tnum text-ink-2 md:hidden">{formatDate(l.startDate)} → {formatDate(l.endDate)}</span>
+                {l.reason && <span className="text-ink-3 max-md:w-full max-md:break-words">{l.reason}</span>}
+                {l.remarks && <span className="text-[12px] italic text-ink-3 max-md:w-full max-md:break-words">“{l.remarks}”</span>}
+                <span className="ml-auto flex items-center gap-2 max-md:flex-wrap">
                   <Badge tone={statusBadge(l.status)}>{l.status}</Badge>
-                  {l.status === "Pending" && <Button size="sm" variant="ghost" onClick={() => withdraw(l.id)}>Withdraw</Button>}
+                  {l.status === "Pending" && <Button size="sm" variant="ghost" onClick={() => withdraw(l.id)} className="max-md:!min-h-11">Withdraw</Button>}
                 </span>
               </li>
             ))}
@@ -226,7 +235,7 @@ export function LeaveApprovalPanel({ me, refreshKey, onChanged }: { me: Me; refr
         method: "PUT",
         body: JSON.stringify({ decision: pending.decision, remarks: remarks || undefined }),
       });
-      toast.push(`Leave ${pending.decision.toLowerCase()}`);
+      toast.push(`Leave ${pending.decision.toLowerCase()} for ${pending.leave.staff.name}`);
       setPending(null);
       await load();
       onChanged?.();
@@ -242,14 +251,14 @@ export function LeaveApprovalPanel({ me, refreshKey, onChanged }: { me: Me; refr
         <ul className="divide-y divide-line">
           {queue.map((l) => (
             <li key={l.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
-              <span className="font-semibold text-ink">{l.staff.name}</span>
+              <span className="font-semibold text-ink max-md:min-w-0 max-md:break-words">{l.staff.name}</span>
               {l.staff.department && <Chip>{l.staff.department}</Chip>}
               <Badge tone="slate">{l.leaveType}</Badge>
-              <span className="tnum text-ink-2">{l.startDate} → {l.endDate}</span>
-              {l.reason && <span className="text-ink-3">{l.reason}</span>}
-              <span className="ml-auto flex gap-2">
-                <Button size="sm" variant="soft" onClick={() => setPending({ leave: l, decision: "Approved" })}>Approve</Button>
-                <Button size="sm" variant="danger" onClick={() => setPending({ leave: l, decision: "Rejected" })}>Reject</Button>
+              <span className="tnum text-ink-2 max-md:hidden">{l.startDate} → {l.endDate}</span><span className="tnum text-ink-2 md:hidden">{formatDate(l.startDate)} → {formatDate(l.endDate)}</span>
+              {l.reason && <span className="text-ink-3 max-md:w-full max-md:break-words">{l.reason}</span>}
+              <span className="ml-auto flex gap-2 max-md:ml-0 max-md:w-full">
+                <Button size="sm" variant="soft" onClick={() => setPending({ leave: l, decision: "Approved" })} className="max-md:flex-1 max-md:!min-h-11">Approve</Button>
+                <Button size="sm" variant="danger" onClick={() => setPending({ leave: l, decision: "Rejected" })} className="max-md:flex-1 max-md:!min-h-11">Reject</Button>
               </span>
             </li>
           ))}
@@ -262,12 +271,12 @@ export function LeaveApprovalPanel({ me, refreshKey, onChanged }: { me: Me; refr
           <CardHead title="Recent decisions" icon="clock" />
           <ul className="divide-y divide-line">
             {history.map((l) => (
-              <li key={l.id} className="flex flex-wrap items-center gap-3 px-4 py-2.5 text-sm">
-                <span className="font-semibold">{l.staff.name}</span>
+              <li key={l.id} className="flex flex-wrap items-center gap-3 px-4 py-2.5 text-sm max-md:gap-x-2 max-md:gap-y-1.5">
+                <span className="font-semibold max-md:min-w-0 max-md:break-words">{l.staff.name}</span>
                 <Badge tone="slate">{l.leaveType}</Badge>
-                <span className="tnum text-ink-2">{l.startDate} → {l.endDate}</span>
+                <span className="tnum text-ink-2 max-md:hidden">{l.startDate} → {l.endDate}</span><span className="tnum text-ink-2 md:hidden">{formatDate(l.startDate)} → {formatDate(l.endDate)}</span>
                 {l.approver && <span className="text-[12px] text-ink-3">by {l.approver.name}</span>}
-                {l.remarks && <span className="text-[12px] italic text-ink-3">“{l.remarks}”</span>}
+                {l.remarks && <span className="text-[12px] italic text-ink-3 max-md:break-words">“{l.remarks}”</span>}
                 <span className="ml-auto"><Badge tone={statusBadge(l.status)}>{l.status}</Badge></span>
               </li>
             ))}

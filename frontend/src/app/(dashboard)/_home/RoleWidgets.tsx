@@ -33,15 +33,15 @@ function useSafe<T>(path: string | null): T | null | undefined {
 }
 
 function Loading() {
-  return <div className="space-y-2 p-5">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-9 w-full" />)}</div>;
+  return <div className="space-y-2 p-5 max-md:p-4">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-9 w-full" />)}</div>;
 }
 
 function CountRow({ href, icon, label, value, tone = "brand" }: { href: string; icon: string; label: string; value: number; tone?: "brand" | "warn" | "danger" | "ok" }) {
   const chip = { brand: "bg-brand-50 text-brand-700", warn: "bg-warn-soft text-warn-ink", danger: "bg-danger-soft text-danger-ink", ok: "bg-ok-soft text-ok-ink" }[tone];
   return (
-    <Link href={href} className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-surface-2">
+    <Link href={href} className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-surface-2 max-md:min-h-14 max-md:px-4">
       <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${chip}`}><Icon name={icon} className="h-4 w-4" /></span>
-      <span className="flex-1 text-[13px] font-medium text-ink-2">{label}</span>
+      <span className="flex-1 text-[13px] font-medium text-ink-2 max-md:min-w-0 max-md:leading-snug">{label}</span>
       <span className="font-display text-[18px] font-bold tnum text-ink">{value}</span>
       <Icon name="chevronRight" className="h-4 w-4 text-ink-3" />
     </Link>
@@ -79,9 +79,9 @@ export function AdmissionQueueWidget({ role }: { role: string }) {
             ))}
           </div>
           {mine.length > 0 && (
-            <ul className="border-t border-line px-5 py-3 text-[12.5px] text-ink-2">
+            <ul className="border-t border-line px-5 py-3 text-[12.5px] text-ink-2 max-md:px-4 max-md:py-1 max-md:text-[13px]">
               {mine.slice(0, 5).map((a) => (
-                <li key={a.id} className="flex justify-between gap-3 py-1">
+                <li key={a.id} className="flex justify-between gap-3 py-1 max-md:min-h-11 max-md:items-center">
                   <span className="truncate">{a.studentName ?? "Unnamed applicant"}</span>
                   <span className="shrink-0 text-ink-3">{a.status}</span>
                 </li>
@@ -158,7 +158,7 @@ export function TodayScheduleWidget({ me }: { me: Me }) {
       ) : (
         <ul className="divide-y divide-line">
           {entries.map((e) => (
-            <li key={`${e.period_number}-${e.kind}`} className={`flex items-center gap-3 px-5 py-2.5 ${e.kind === "relieved" || e.kind === "break" ? "opacity-60" : ""}`}>
+            <li key={`${e.period_number}-${e.kind}`} className={`flex items-center gap-3 px-5 py-2.5 max-md:min-h-12 max-md:px-4 ${e.kind === "relieved" || e.kind === "break" ? "opacity-60" : ""}`}>
               <span className="w-12 shrink-0 text-[11.5px] font-semibold tnum text-ink-3">{e.start_time ?? `P${e.period_number}`}</span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-semibold text-ink">
@@ -200,12 +200,12 @@ export function ClassesToMarkWidget() {
       {classes === undefined ? <Loading /> : list.length === 0 ? (
         <EmptyState icon="attendance" title="No classes to mark" />
       ) : (
-        <ul className="grid grid-cols-2 gap-2 p-5 sm:grid-cols-3">
+        <ul className="grid grid-cols-2 gap-2 p-5 sm:grid-cols-3 max-md:p-4">
           {list.map((c) => {
             const s = status[c.id];
             return (
               <li key={c.id}>
-                <Link href="/attendance" className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-[12.5px] ${
+                <Link href="/attendance" className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-[12.5px] max-md:min-h-11 max-md:text-[13px] ${
                   s === false ? "border-warn-line bg-warn-soft text-warn-ink" : s ? "border-ok-line bg-ok-soft text-ok-ink" : "border-line text-ink-2"
                 }`}>
                   <span className="truncate font-semibold">{c.name}{c.section ? ` ${c.section}` : ""}</span>
@@ -237,7 +237,7 @@ export function LessonPlansWidget({ me }: { me: Me }) {
       ) : (
         <ul className="divide-y divide-line">
           {pending.slice(0, 5).map((p) => (
-            <li key={p.id} className="flex items-center justify-between gap-3 px-5 py-2.5 text-[12.5px]">
+            <li key={p.id} className="flex items-center justify-between gap-3 px-5 py-2.5 text-[12.5px] max-md:min-h-12 max-md:px-4 max-md:text-[13px]">
               <span className="min-w-0">
                 <span className="block truncate font-semibold text-ink">{p.topic}</span>
                 <span className="block text-ink-3">{p.syllabus?.subject?.name ?? "Lesson"} · {p.date}</span>
@@ -288,13 +288,13 @@ export function GateDeskWidget({ me }: { me: Me }) {
             {Array.isArray(visitors) && <CountRow href="/gate" icon="user" label="Visitors on campus" value={inside.length} tone={inside.length ? "warn" : "ok"} />}
           </div>
           <div className="border-t border-line md:border-t-0">
-            <p className="px-5 pt-3 text-[11px] font-semibold uppercase tracking-wide text-ink-3">Out now</p>
+            <p className="px-5 pt-3 text-[11px] font-semibold uppercase tracking-wide text-ink-3 max-md:px-4">Out now</p>
             {!Array.isArray(out) || out.length === 0 ? (
               <EmptyState icon="check" title="Everyone is on campus" />
             ) : (
-              <ul className="px-5 py-2 text-[12.5px]">
+              <ul className="px-5 py-2 text-[12.5px] max-md:divide-y max-md:divide-line max-md:px-4 max-md:py-1 max-md:text-[13px]">
                 {[...out].sort((a, b) => Number(!!b.late) - Number(!!a.late)).slice(0, 7).map((p) => (
-                  <li key={p.id} className="flex items-center justify-between gap-3 py-1.5">
+                  <li key={p.id} className="flex items-center justify-between gap-3 py-1.5 max-md:min-h-12">
                     <span className="min-w-0 truncate text-ink">{p.student?.fullName ?? p.type}</span>
                     {p.late
                       ? <Badge tone="rose">Late · due {hhmm(p.expectedInTime)}</Badge>
@@ -348,7 +348,7 @@ export function WardenHostelWidget({ me }: { me: Me }) {
                 const pct = h.capacity ? Math.round((h.occupied / h.capacity) * 100) : 0;
                 const absent = r?.roster.filter((x) => x.status === "Absent").length ?? 0;
                 return (
-                  <li key={h.id} className="px-5 py-3">
+                  <li key={h.id} className="px-5 py-3 max-md:px-4">
                     <div className="flex items-center justify-between gap-3">
                       <span className="min-w-0 truncate text-[13px] font-semibold text-ink">{h.name}</span>
                       {r === undefined ? <Skeleton className="h-5 w-24" />
@@ -395,12 +395,12 @@ export function FeesWidget({ me }: { me: Me }) {
       )}
       {Array.isArray(defaulters) && (
         <div className="border-t border-line">
-          <p className="px-5 pt-3 text-[11px] font-semibold uppercase tracking-wide text-ink-3">Top defaulters ({defaulters.length})</p>
-          {defaulters.length === 0 ? <p className="px-5 py-3 text-[12.5px] text-ink-3">Nobody is overdue.</p> : (
-            <ul className="px-5 py-2 text-[12.5px]">
+          <p className="px-5 pt-3 text-[11px] font-semibold uppercase tracking-wide text-ink-3 max-md:px-4">Top defaulters ({defaulters.length})</p>
+          {defaulters.length === 0 ? <p className="px-5 py-3 text-[12.5px] text-ink-3 max-md:px-4">Nobody is overdue.</p> : (
+            <ul className="px-5 py-2 text-[12.5px] max-md:divide-y max-md:divide-line max-md:px-4 max-md:py-1 max-md:text-[13px]">
               {defaulters.slice(0, 5).map((d) => (
-                <li key={d.student_id} className="flex justify-between gap-3 py-1">
-                  <span className="truncate text-ink">{d.full_name} <span className="text-ink-3">· {d.class_name}</span></span>
+                <li key={d.student_id} className="flex justify-between gap-3 py-1 max-md:min-h-12 max-md:items-center">
+                  <span className="truncate text-ink max-md:min-w-0">{d.full_name} <span className="text-ink-3">· {d.class_name}</span></span>
                   <span className="shrink-0 font-semibold tnum text-danger">{inr(d.overdue_amount)}</span>
                 </li>
               ))}
@@ -427,9 +427,9 @@ export function LeaveApprovalsWidget() {
       {rows === undefined ? <Loading /> : mine.length === 0 ? <EmptyState icon="check" title="No leave waiting" /> : (
         <ul className="divide-y divide-line">
           {mine.slice(0, 6).map((l) => (
-            <li key={l.id} className="flex justify-between gap-3 px-5 py-2.5 text-[12.5px]">
+            <li key={l.id} className="flex justify-between gap-3 px-5 py-2.5 text-[12.5px] max-md:min-h-12 max-md:flex-col max-md:justify-center max-md:gap-0.5 max-md:px-4 max-md:text-[13px]">
               <span className="truncate font-semibold text-ink">{l.staff?.name ?? "Staff member"}</span>
-              <span className="shrink-0 text-ink-3">{l.leaveType ?? "Leave"} · {l.startDate}{l.endDate && l.endDate !== l.startDate ? ` → ${l.endDate}` : ""}</span>
+              <span className="shrink-0 text-ink-3 max-md:shrink max-md:text-[12px]">{l.leaveType ?? "Leave"} · {l.startDate}{l.endDate && l.endDate !== l.startDate ? ` → ${l.endDate}` : ""}</span>
             </li>
           ))}
         </ul>
@@ -450,9 +450,9 @@ export function StudentLeaveWidget() {
       {rows === undefined ? <Loading /> : rows.length === 0 ? <EmptyState icon="check" title="Nothing pending" /> : (
         <ul className="divide-y divide-line">
           {rows.slice(0, 6).map((l) => (
-            <li key={l.id} className="flex justify-between gap-3 px-5 py-2.5 text-[12.5px]">
+            <li key={l.id} className="flex justify-between gap-3 px-5 py-2.5 text-[12.5px] max-md:min-h-12 max-md:flex-col max-md:justify-center max-md:gap-0.5 max-md:px-4 max-md:text-[13px]">
               <span className="truncate font-semibold text-ink">{l.student?.fullName ?? "Student"}</span>
-              <span className="shrink-0 text-ink-3">{l.leaveType} · from {l.startDate}</span>
+              <span className="shrink-0 text-ink-3 max-md:shrink max-md:text-[12px]">{l.leaveType} · from {l.startDate}</span>
             </li>
           ))}
         </ul>

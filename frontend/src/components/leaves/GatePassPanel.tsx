@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiDownload, apiFetch } from "@/lib/api";
 import { hasRole, type Me } from "@/lib/auth";
 import { Badge, Button, Card, CardHead, EmptyState, Field, Icon, Input, Select, Tabs, useToast } from "@/components/ui";
+import { confirmAction } from "@/components/confirm";
 import { ReasonModal } from "./ReasonModal";
 import {
   GATE_PRINCIPAL_STEP, GATE_PRINT, GATE_REQUEST, GATE_TYPES, GATE_WARDEN_STEP, classLabel, errMsg, fmtStamp, fmtTime, statusBadge,
@@ -53,10 +54,19 @@ export function GatePassPanel({
   };
 
   const act = async (g: GatePass, step: "approve-warden" | "approve-principal") => {
+    const principal = step === "approve-principal";
+    if (!(await confirmAction({
+      title: principal ? `Issue gate pass for ${g.student.fullName}?` : `Approve gate pass for ${g.student.fullName}?`,
+      text: principal
+        ? `${g.type} · out ${fmtTime(g.outTime)}. The parent will be sent the one-time exit code.`
+        : `${g.type} · out ${fmtTime(g.outTime)}. It will go to the Principal for final approval.`,
+      confirmText: principal ? "Issue pass" : "Approve",
+      tone: "primary",
+    }))) return;
     setBusy(true);
     try {
       await apiFetch(`/api/gate-passes/${g.id}/${step}`, { method: "PUT" });
-      toast.push(step === "approve-principal" ? "Pass issued — parent sent the exit OTP" : "Approved — sent to the Principal");
+      toast.push(step === "approve-principal" ? `Pass issued for ${g.student.fullName} — parent sent the exit OTP` : `Approved for ${g.student.fullName} — sent to the Principal`);
       await load();
       onChanged?.();
     } catch (e) { toast.push(errMsg(e), "error"); } finally { setBusy(false); }
@@ -67,7 +77,7 @@ export function GatePassPanel({
     setBusy(true);
     try {
       await apiFetch(`/api/gate-passes/${rejecting.id}/reject`, { method: "PUT", body: JSON.stringify({ reason }) });
-      toast.push("Gate pass rejected");
+      toast.push(`Gate pass rejected for ${rejecting.student.fullName}`);
       setRejecting(null);
       await load();
       onChanged?.();
@@ -103,7 +113,7 @@ export function GatePassPanel({
             <Field label="Expected back"><Input type="datetime-local" value={form.expected_in_time} min={form.out_time} onChange={(e) => setForm({ ...form, expected_in_time: e.target.value })} /></Field>
             <div className="sm:col-span-2"><Field label="Reason" required><Input value={form.reason} maxLength={500} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></Field></div>
           </div>
-          <div className="px-4 pb-4"><Button variant="primary" onClick={request} loading={busy}><Icon name="check" className="h-4 w-4" /> Request pass</Button></div>
+          <div className="px-4 pb-4"><Button variant="primary" onClick={request} loading={busy} className="max-md:w-full"><Icon name="check" className="h-4 w-4" /> Request pass</Button></div>
         </Card>
       )}
 
@@ -118,12 +128,28 @@ export function GatePassPanel({
         />
         <ul className="divide-y divide-line">
           {(wardenStep || principalStep ? shown : rows).map((g) => (
-            <li key={g.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 text-sm">
-              <div className="min-w-0">
-                <p className="font-semibold text-ink">{g.student.fullName} <span className="text-[12px] font-normal text-ink-3">{classLabel(g.student.class)}</span></p>
-                <p className="text-[12px] text-ink-3">
+            <li key={g.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 text-sm max-md:py-4">
+              <div className="min-w-0 max-md:w-full max-md:break-words">
+                <p className="font-semibold text-ink max-md:hidden">{g.student.fullName} <span className="text-[12px] font-normal text-ink-3">{classLabel(g.student.class)}</span></p>
+                {/* Phones: who + status on one line. */}
+                <div className="flex items-start justify-between gap-3 md:hidden">
+                  <p className="min-w-0 text-[15px] font-semibold leading-snug text-ink">
+                    {g.student.fullName}
+                    <span className="block text-[12.5px] font-normal text-ink-3">{classLabel(g.student.class)}</span>
+                  </p>
+                  <span className="flex shrink-0 flex-wrap justify-end gap-1">
+                    {g.late && <Badge tone="rose">Late</Badge>}
+                    <Badge tone={statusBadge(g.status)}>{g.status}</Badge>
+                  </span>
+                </div>
+                <p className="text-[12px] text-ink-3 max-md:hidden">
                   {g.type} · {g.reason} · out {fmtTime(g.outTime)}{g.expectedInTime ? ` · back ${fmtTime(g.expectedInTime)}` : ""}
                 </p>
+                {/* Phones: dates first on their own line, reason clamped under them. */}
+                <p className="tnum mt-1.5 text-[12.5px] text-ink-2 md:hidden">
+                  {g.type} · out {fmtTime(g.outTime)}{g.expectedInTime ? ` · back ${fmtTime(g.expectedInTime)}` : ""}{g.passCode ? ` · Pass ${g.passCode}` : ""}
+                </p>
+                <p className="line-clamp-2 text-[12px] text-ink-3 md:hidden" title={g.reason}>{g.reason}</p>
                 {g.status === "Rejected" && g.rejectedReason && <p className="text-[12px] text-danger">Rejected: {g.rejectedReason}</p>}
                 {g.actualOutTime && (
                   <p className="text-[12px] text-ink-3">
@@ -132,19 +158,21 @@ export function GatePassPanel({
                   </p>
                 )}
               </div>
-              <span className="ml-auto flex flex-wrap items-center gap-2">
-                {g.passCode && <span className="font-mono text-[12px] text-ink-2">{g.passCode}</span>}
-                {g.late && <Badge tone="rose">Late</Badge>}
-                <Badge tone={statusBadge(g.status)}>{g.status}</Badge>
+              <span className="ml-auto flex flex-wrap items-center gap-2 max-md:ml-0 max-md:mt-1 max-md:grid max-md:w-full max-md:grid-cols-2">
+                <span className="contents max-md:hidden">
+                  {g.passCode && <span className="font-mono text-[12px] text-ink-2">{g.passCode}</span>}
+                  {g.late && <Badge tone="rose">Late</Badge>}
+                  <Badge tone={statusBadge(g.status)}>{g.status}</Badge>
+                </span>
                 {g.status === "Pending" && wardenStep && (
-                  <Button size="sm" variant="soft" disabled={busy} onClick={() => act(g, "approve-warden")}>Warden approve</Button>
+                  <Button size="sm" variant="soft" disabled={busy} onClick={() => act(g, "approve-warden")} className="max-md:order-2 max-md:!min-h-11">Warden approve</Button>
                 )}
                 {g.status === "Warden Approved" && principalStep && (
-                  <Button size="sm" variant="soft" disabled={busy} onClick={() => act(g, "approve-principal")}>Issue pass</Button>
+                  <Button size="sm" variant="soft" disabled={busy} onClick={() => act(g, "approve-principal")} className="max-md:order-2 max-md:!min-h-11">Issue pass</Button>
                 )}
-                {mineToAct(g) && <Button size="sm" variant="danger" onClick={() => setRejecting(g)}>Reject</Button>}
+                {mineToAct(g) && <Button size="sm" variant="danger" onClick={() => setRejecting(g)} className="max-md:order-1 max-md:!min-h-11">Reject</Button>}
                 {ISSUED.includes(g.status) && hasRole(me, GATE_PRINT) && (
-                  <Button size="sm" variant="ghost" onClick={() => print(g)}><Icon name="download" className="h-3.5 w-3.5" /> Print pass</Button>
+                  <Button size="sm" variant="ghost" onClick={() => print(g)} className="max-md:order-3 max-md:col-span-2 max-md:!min-h-11"><Icon name="download" className="h-3.5 w-3.5" /> Print pass</Button>
                 )}
               </span>
             </li>

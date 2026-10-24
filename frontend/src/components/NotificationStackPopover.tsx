@@ -68,7 +68,7 @@ export function NotificationStackPopover({
       <Link
         href={href}
         aria-label={`Notifications${newCount ? `, ${newCount} in the last 24 hours` : ""}`}
-        className={`relative grid h-9 w-9 place-items-center rounded-xl border transition-all duration-200 ${
+        className={`relative grid h-9 w-9 place-items-center rounded-xl border max-lg:h-10 max-lg:w-10 transition-all duration-200 ${
           isHovered
             ? "border-brand-300 bg-brand-50 text-brand-600 shadow-soft"
             : "border-line-strong bg-surface text-ink-2 hover:bg-surface-2"
@@ -92,7 +92,7 @@ export function NotificationStackPopover({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute right-0 top-full z-50 mt-2 w-80 rounded-xl border border-line bg-surface/97 p-3 shadow-pop backdrop-blur-xl sm:w-96"
+            className="absolute right-0 top-full z-50 mt-2 w-80 max-lg:hidden rounded-xl border border-line bg-surface/97 p-3 shadow-pop backdrop-blur-xl sm:w-96"
           >
             <div className="flex items-center justify-between border-b border-line px-1.5 pb-2.5">
               <div className="flex items-center gap-2">

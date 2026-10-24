@@ -96,7 +96,7 @@ export function ChildSwitcher() {
   const list = overview?.children ?? [];
   if (list.length < 2) return null;
   return (
-    <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist" aria-label="Choose a child">
+    <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 max-md:-mx-4 max-md:snap-x max-md:scroll-px-4 max-md:px-4" role="tablist" aria-label="Choose a child">
       {list.map((c) => {
         const active = c.id === child?.id;
         return (
@@ -106,7 +106,7 @@ export function ChildSwitcher() {
             role="tab"
             aria-selected={active}
             onClick={() => selectChild(c.id)}
-            className={`flex min-h-11 shrink-0 items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors ${
+            className={`flex min-h-11 shrink-0 items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors max-md:min-h-12 max-md:snap-start ${
               active ? "border-brand-300 bg-brand-50 ring-1 ring-brand-100" : "border-line bg-surface hover:bg-surface-2"
             }`}
           >
@@ -116,7 +116,7 @@ export function ChildSwitcher() {
               {c.full_name.split(" ").map((p) => p[0]).slice(0, 2).join("")}
             </span>
             <span className="min-w-0">
-              <span className="block max-w-[11rem] truncate text-[13px] font-semibold text-ink">{c.full_name}</span>
+              <span className="block max-w-[11rem] truncate text-[13px] max-md:max-w-[9.5rem] font-semibold text-ink">{c.full_name}</span>
               <span className="block text-[11px] text-ink-3">{classLabel(c.class)}</span>
             </span>
           </button>

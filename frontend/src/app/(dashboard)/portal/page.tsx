@@ -19,18 +19,47 @@ function Tile({ href, icon, label, value, hint, tone = "brand" }: {
 }) {
   const chip = { brand: "bg-brand-50 text-brand-700", ok: "bg-ok-soft text-ok-ink", warn: "bg-warn-soft text-warn-ink", danger: "bg-danger-soft text-danger-ink" }[tone];
   return (
-    <Link href={href} className="card card-hover flex min-h-[7rem] flex-col justify-between p-4">
+    <Link href={href} className="card card-hover flex min-h-[7rem] flex-col justify-between p-4 max-md:min-w-0 max-md:p-3.5">
       <span className="flex items-start justify-between gap-2">
-        <span className="text-[12.5px] font-medium text-ink-3">{label}</span>
+        <span className="min-w-0 text-[12.5px] font-medium text-ink-3">{label}</span>
         <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${chip}`}>
           <Icon name={icon} className="h-4 w-4" />
         </span>
       </span>
       <span>
-        <span className="block font-display text-[24px] font-bold leading-tight tnum text-ink">{value}</span>
-        {hint && <span className="mt-0.5 block text-[11.5px] text-ink-3">{hint}</span>}
+        <span className="block font-display text-[24px] font-bold leading-tight tnum text-ink max-md:text-[20px] max-md:[overflow-wrap:anywhere]">{value}</span>
+        {hint && <span className="mt-0.5 block text-[11.5px] text-ink-3 max-md:line-clamp-2">{hint}</span>}
       </span>
     </Link>
+  );
+}
+
+/** Phone-only shortcuts to the screens parents / students open most; desktop has the sidebar. */
+function QuickActions({ isParent }: { isParent: boolean }) {
+  const items = isParent
+    ? [
+        { href: "/portal/leaves", icon: "leaves", label: "Request leave" },
+        { href: "/portal/fees", icon: "fees", label: "Pay fees" },
+        { href: "/portal/gate-passes", icon: "door", label: "Gate passes" },
+        { href: "/portal/messages", icon: "bell", label: "Messages" },
+      ]
+    : [
+        { href: "/portal/attendance", icon: "attendance", label: "Attendance" },
+        { href: "/portal/results", icon: "exams", label: "Results" },
+        { href: "/portal/timetable", icon: "timetable", label: "Timetable" },
+        { href: "/portal/messages", icon: "bell", label: "Notices" },
+      ];
+  return (
+    <nav aria-label="Quick actions" className="grid grid-cols-4 gap-2 md:hidden">
+      {items.map((a) => (
+        <Link key={a.href} href={a.href} className="card flex min-h-[4.5rem] min-w-0 flex-col items-center justify-center gap-1.5 px-1 py-2.5 text-center active:bg-surface-2">
+          <span className="grid h-9 w-9 place-items-center rounded-xl bg-brand-50 text-brand-700">
+            <Icon name={a.icon} className="h-[18px] w-[18px]" />
+          </span>
+          <span className="text-[11.5px] font-semibold leading-tight text-ink">{a.label}</span>
+        </Link>
+      ))}
+    </nav>
   );
 }
 
@@ -130,6 +159,8 @@ function Overview({ child, isParent }: { child: PortalChild; isParent: boolean }
         )}
       </div>
 
+      <QuickActions isParent={isParent} />
+
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
         <TodayCard child={child} />
 
@@ -170,7 +201,7 @@ function Overview({ child, isParent }: { child: PortalChild; isParent: boolean }
                 {child.messages.map((m) => (
                   <li key={m.id} className="px-5 py-3">
                     <div className="flex items-baseline justify-between gap-3">
-                      <p className="truncate text-[12.5px] font-semibold text-ink">{m.subject ?? `${m.channel.toUpperCase()} message`}</p>
+                      <p className="min-w-0 truncate text-[12.5px] font-semibold text-ink">{m.subject ?? `${m.channel.toUpperCase()} message`}</p>
                       <span className="shrink-0 text-[11px] text-ink-3">{relativeTime(m.created_at)}</span>
                     </div>
                     <p className="mt-0.5 line-clamp-2 text-[12px] text-ink-2">{m.body}</p>

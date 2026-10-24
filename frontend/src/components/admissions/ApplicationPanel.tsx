@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiDownload, apiFetch } from "@/lib/api";
 import { R, hasRole, useMe } from "@/lib/auth";
 import { Badge, Button, Field, Icon, Input, Modal, ProgressBar, Select, Skeleton, Tabs, Textarea } from "@/components/ui";
+import { confirmAction } from "@/components/confirm";
 import { Application, DocLink, PIPELINE, STATUS_TONE, docHref, fmtDate, fmtDateTime, inr, post, readUpload, stageOf } from "./shared";
 
 type Detail = Application & {
@@ -70,6 +71,26 @@ export function ApplicationPanel({
   }, [d?.status, me, classes.length]);
 
   const act = async (path: string, body: object, ok: string) => {
+    const who = d?.studentName ?? d?.parentName ?? "this application";
+    const c = ((): { title: string; text?: string; confirmText: string; tone: "primary" | "danger" } => {
+      switch (path) {
+        case "validate":
+          return (body as { is_valid?: boolean }).is_valid
+            ? { title: `Mark documents valid for ${who}?`, text: "The parent will be asked to pay the admission fee.", confirmText: "Mark valid", tone: "primary" }
+            : { title: `Send ${who} back for re-submission?`, text: "The parent will be asked to fix and re-submit the form.", confirmText: "Send back", tone: "primary" };
+        case "reissue-link": return { title: `Re-issue the form link for ${who}?`, text: "A new link is sent to the parent.", confirmText: "Re-issue", tone: "primary" };
+        case "pay": return { title: `Record offline payment for ${who}?`, confirmText: "Record", tone: "primary" };
+        case "verify-receipt": return { title: `Approve the fee for ${who}?`, confirmText: "Approve", tone: "primary" };
+        case "allocate": return { title: `Assign roll number and house to ${who}?`, confirmText: "Assign", tone: "primary" };
+        case "vp-approve": return { title: `Approve ${who}?`, text: "The application goes to the Principal.", confirmText: "Approve", tone: "primary" };
+        case "vp-send-back": return { title: `Send ${who} back to the OS?`, confirmText: "Send back", tone: "primary" };
+        case "principal-send-back": return { title: `Send ${who} back to the VP?`, confirmText: "Send back", tone: "primary" };
+        case "principal-approve": return { title: `Sign and confirm admission of ${who}?`, text: "The student record is created. This cannot be undone.", confirmText: "Sign & confirm", tone: "primary" };
+        case "reject": return { title: `Reject ${who}?`, text: "The parent is notified with your reason. This cannot be undone.", confirmText: "Reject", tone: "danger" };
+        default: return { title: `Continue with this action for ${who}?`, confirmText: "Confirm", tone: "primary" };
+      }
+    })();
+    if (!(await confirmAction(c))) return;
     setBusy(true);
     try {
       await post(`/api/admissions/${id}/${path}`, body);
@@ -134,8 +155,8 @@ export function ApplicationPanel({
         <Button variant="primary" onClick={() => setDialog("verify")}><Icon name="receipt" className="h-4 w-4" /> Verify &amp; approve fee</Button>
       )}
       {s === "Fee Approved" && can(R.ADMISSION_OS) && (
-        <span className="flex flex-wrap items-center gap-2">
-          <Select aria-label="Class for roll number" value={classId} onChange={(e) => setClassId(e.target.value)} className="w-auto">
+        <span className="flex flex-wrap items-center gap-2 max-md:w-full max-md:[&>*]:flex-1">
+          <Select aria-label="Class for roll number" value={classId} onChange={(e) => setClassId(e.target.value)} className="w-auto max-md:min-w-[9rem]">
             <option value="">{d.class ? `${d.class.name}${d.class.section ? `-${d.class.section}` : ""} (applied)` : "Class…"}</option>
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name}{c.section ? `-${c.section}` : ""}</option>)}
           </Select>
@@ -209,11 +230,11 @@ export function ApplicationPanel({
         ]} />
 
         {tab === "form" && (
-          <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+          <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 max-md:grid-cols-1">
             {d.template.map((f) => (
               <div key={f.id}>
                 <dt className="text-[11.5px] uppercase tracking-wide text-ink-3">{f.label}</dt>
-                <dd className="text-[13.5px] font-semibold text-ink">{d.dynamic_data[f.key] || "—"}</dd>
+                <dd className="text-[13.5px] font-semibold text-ink max-md:[overflow-wrap:anywhere]">{d.dynamic_data[f.key] || "—"}</dd>
               </div>
             ))}
             {[
@@ -228,7 +249,7 @@ export function ApplicationPanel({
             ].map(([k, v]) => (
               <div key={k}>
                 <dt className="text-[11.5px] uppercase tracking-wide text-ink-3">{k}</dt>
-                <dd className="text-[13.5px] font-semibold text-ink">{v}</dd>
+                <dd className="text-[13.5px] font-semibold text-ink max-md:[overflow-wrap:anywhere]">{v}</dd>
               </div>
             ))}
             {s === "Admission Complete" && (
@@ -257,10 +278,10 @@ export function ApplicationPanel({
             {docs.length === 0 && <p className="text-[13px] text-ink-3">No documents uploaded.</p>}
             {docs.map((doc) => (
               <div key={doc.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-3 py-2">
-                <span className="flex items-center gap-2 text-[13px]">
-                  <Icon name="file" className="h-4 w-4 text-ink-3" />
+                <span className="flex items-center gap-2 text-[13px] max-md:min-w-0 max-md:flex-wrap">
+                  <Icon name="file" className="h-4 w-4 text-ink-3 max-md:shrink-0" />
                   <b className="capitalize">{doc.docType.replace(/_/g, " ")}</b>
-                  <span className="text-ink-3">{doc.fileName} · {Math.ceil(doc.sizeBytes / 1024)} KB</span>
+                  <span className="text-ink-3 max-md:break-all">{doc.fileName} · {Math.ceil(doc.sizeBytes / 1024)} KB</span>
                   {doc.studentId && <Badge tone="emerald">Archived to student</Badge>}
                 </span>
                 <Button size="sm" variant="soft" onClick={() => view(doc)}><Icon name="eye" className="h-3.5 w-3.5" /> View</Button>
@@ -268,9 +289,9 @@ export function ApplicationPanel({
             ))}
             {preview && (
               <div className="rounded-lg border border-line p-2">
-                <div className="mb-2 flex items-center justify-between text-[12.5px]">
-                  <b>{preview.name}</b>
-                  <span className="flex gap-2">
+                <div className="mb-2 flex items-center justify-between text-[12.5px] max-md:gap-2">
+                  <b className="max-md:min-w-0 max-md:break-all">{preview.name}</b>
+                  <span className="flex gap-2 max-md:shrink-0">
                     <a href={preview.url} download={preview.name} target="_blank" rel="noopener noreferrer" className="btn-ghost !px-2 !py-1 text-xs">Open</a>
                     <button className="btn-ghost !px-2 !py-1 text-xs" onClick={() => setPreview(null)}>Close</button>
                   </span>
@@ -292,7 +313,7 @@ export function ApplicationPanel({
             {tl.steps.map((st) => (
               <li key={st.id} className="flex gap-3 text-[13px]">
                 <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand-500" aria-hidden />
-                <div>
+                <div className="max-md:min-w-0 max-md:[overflow-wrap:anywhere]">
                   <p><b>{st.toStatus}</b> <span className="text-ink-3">· {st.action.replace(/_/g, " ")} by {st.actorRole ?? "—"} · {fmtDateTime(st.createdAt)}</span></p>
                   {st.remarks && <p className="text-ink-2">“{st.remarks}”</p>}
                 </div>
@@ -305,11 +326,11 @@ export function ApplicationPanel({
           <ul className="space-y-2">
             {tl.notifications.length === 0 && <p className="text-[13px] text-ink-3">No messages sent yet.</p>}
             {tl.notifications.map((n) => (
-              <li key={n.id} className="rounded-lg border border-line px-3 py-2 text-[12.5px]">
+              <li key={n.id} className="rounded-lg border border-line px-3 py-2 text-[12.5px] max-md:[overflow-wrap:anywhere]">
                 <p className="flex flex-wrap items-center gap-2">
                   <Badge tone="sky">{n.channel}</Badge>
                   <b>{n.subject ?? "—"}</b>
-                  <span className="text-ink-3">→ {n.recipient} · {fmtDateTime(n.createdAt)}</span>
+                  <span className="text-ink-3 max-md:min-w-0">→ {n.recipient} · {fmtDateTime(n.createdAt)}</span>
                   <Badge tone={n.status === "failed" ? "rose" : n.status === "sent" ? "emerald" : "slate"}>{n.status}</Badge>
                 </p>
                 <p className="mt-1 text-ink-2">{n.body}</p>
@@ -361,7 +382,7 @@ export function ApplicationPanel({
               <Input value={ref.receipt_no} maxLength={60} onChange={(e) => setRef({ ...ref, receipt_no: e.target.value })} />
             </Field>
             <Field label="Receipt scan (optional)" hint="PDF / JPEG / PNG, max 5 MB">
-              <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" className="text-[13px]"
+              <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" className="text-[13px] max-md:w-full max-md:min-w-0"
                 onChange={async (e) => {
                   const f = e.target.files?.[0];
                   if (!f) return setReceiptFile(null);

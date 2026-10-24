@@ -67,10 +67,10 @@ export function KpiCard({
         )}
         <div className="min-w-0 flex-1">
           <p className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-ink-3">{label}</p>
-          <p className="mt-1 font-display text-[25px] font-extrabold leading-none tracking-tight text-ink">
+          <p className="mt-1 font-display text-[25px] font-extrabold leading-none tracking-tight text-ink max-md:text-[22px] max-md:leading-tight max-md:[overflow-wrap:anywhere]">
             {value}
           </p>
-          <p className="mt-1.5 flex items-center gap-1 text-[11.5px] font-semibold">
+          <p className="mt-1.5 flex items-center gap-1 text-[11.5px] font-semibold max-md:flex-wrap">
             {deltaText ? (
               <>
                 <Icon name={up ? "trendUp" : "trendDown"} className={`h-3.5 w-3.5 ${up ? "text-ok" : "text-danger"}`} />

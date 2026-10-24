@@ -74,7 +74,7 @@ export function PortalNotices({ showChildLabels }: { showChildLabels: boolean })
         </div>
       )}
       {!error && rows === null && (
-        <div className="space-y-3 p-5" aria-busy>
+        <div className="space-y-3 p-5 max-md:p-4" aria-busy>
           {[0, 1, 2].map((i) => <Skeleton key={i} className="h-20 w-full" />)}
         </div>
       )}
@@ -103,12 +103,12 @@ export function PortalNotices({ showChildLabels }: { showChildLabels: boolean })
                     onClick={() => toggle(n)}
                     aria-expanded={expanded}
                     aria-controls={`notice-${n.id}`}
-                    className="flex w-full items-start gap-3 px-5 py-4 text-left hover:bg-surface-2/60"
+                    className="flex w-full items-start gap-3 px-5 py-4 text-left hover:bg-surface-2/60 max-md:px-4"
                   >
                     <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${n.read ? "bg-line-strong" : "bg-accent-500"}`} aria-hidden />
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-2">
-                        <span className={`text-[14px] leading-snug text-ink ${n.read ? "font-medium" : "font-semibold"}`}>{n.title}</span>
+                        <span className={`text-[14px] leading-snug text-ink max-md:min-w-0 max-md:[overflow-wrap:anywhere] ${n.read ? "font-medium" : "font-semibold"}`}>{n.title}</span>
                         {important && <Badge tone="rose"><Icon name="alert" className="h-3 w-3" /> Important</Badge>}
                         <Badge tone={n.read ? "slate" : "brand"}>{n.read ? "Read" : "Unread"}</Badge>
                       </span>
@@ -134,8 +134,8 @@ export function PortalNotices({ showChildLabels }: { showChildLabels: boolean })
                     <Icon name={expanded ? "minus" : "plus"} className="mt-1 h-4 w-4 shrink-0 text-ink-3" />
                   </button>
                   {expanded && (
-                    <div id={`notice-${n.id}`} className="border-t border-line px-5 py-4">
-                      <p className="whitespace-pre-line text-[13px] leading-relaxed text-ink-2">{n.body}</p>
+                    <div id={`notice-${n.id}`} className="border-t border-line px-5 py-4 max-md:px-4">
+                      <p className="whitespace-pre-line text-[13px] leading-relaxed text-ink-2 max-md:[overflow-wrap:anywhere]">{n.body}</p>
                       {n.expires_at && <p className="mt-3 text-[11.5px] text-ink-3">Shown until {formatDate(n.expires_at)}</p>}
                     </div>
                   )}

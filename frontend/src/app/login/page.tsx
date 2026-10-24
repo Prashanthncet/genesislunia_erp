@@ -87,7 +87,16 @@ export default function LoginPage() {
       const portal = (R.PORTAL as readonly string[]).includes(res.role);
       window.location.href = res.must_change_password ? "/account/password" : portal ? "/portal" : "/";
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign-in failed");
+      // fetch() rejects with a TypeError when the API is unreachable ("Failed to fetch");
+      // a proxy/gateway failure can hand back an HTML page as the message. Neither reads well.
+      const raw = err instanceof Error ? err.message.trim() : "";
+      setError(
+        err instanceof TypeError
+          ? "Can't reach the server. Check your connection and try again."
+          : !raw || raw.startsWith("<")
+            ? "Sign-in failed. Please try again in a moment."
+            : raw,
+      );
       setLoading(false);
     }
   };
@@ -196,8 +205,8 @@ export default function LoginPage() {
       </div>
 
       {/* ── 2. Top Header ── */}
-      <header className="relative z-10 flex items-center justify-between px-6 py-6 sm:px-10">
-        <div className="flex items-center gap-3">
+      <header className="relative z-10 flex items-center justify-between px-6 py-6 sm:px-10 max-md:!px-4 max-md:!py-4 max-md:gap-3">
+        <div className="flex items-center gap-3 max-md:min-w-0">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-700 text-white shadow-sm">
             <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 3L1 9L12 15L21 10.09V17H23V9M5 13.18V17.18L12 21L19 17.18V13.18L12 17L5 13.18Z" />
@@ -205,24 +214,25 @@ export default function LoginPage() {
           </div>
           <div>
             <span className="text-sm font-bold tracking-tight text-ink">GENESIS LUMIA ERP</span>
-            <span className="block text-[10px] font-medium text-ink-3 uppercase tracking-wider">Sainik School Core</span>
+            <span className="block text-[10px] font-medium text-ink-3 uppercase tracking-wider max-md:text-[11px]">Sainik School Core</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 rounded-full border border-ok-line bg-white/90 px-3.5 py-1 text-xs font-semibold text-ok-ink shadow-soft backdrop-blur-md">
+        <div className="flex items-center gap-2 rounded-full border border-ok-line bg-white/90 px-3.5 py-1 text-xs font-semibold text-ok-ink shadow-soft backdrop-blur-md max-md:shrink-0 max-md:px-3 max-md:py-1.5">
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ok opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-ok" />
           </span>
-          <span>Institutional Network Online</span>
+          <span className="max-md:hidden">Institutional Network Online</span>
+          <span className="md:hidden">Online</span>
         </div>
       </header>
 
       {/* ── 3. Centered Authentication Card ── */}
-      <main className="relative z-10 my-auto flex items-center justify-center px-4 py-8">
-        <div className="w-full max-w-[440px] rounded-xl border border-line/90 bg-white/95 p-6 sm:p-9 shadow-2xl shadow-line/50 backdrop-blur-xl transition-all">
+      <main className="relative z-10 my-auto flex items-center justify-center px-4 py-8 max-md:pt-2 max-md:pb-6">
+        <div className="w-full max-w-[440px] rounded-xl border border-line/90 bg-white/95 p-6 sm:p-9 max-md:!p-5 shadow-2xl shadow-line/50 backdrop-blur-xl transition-all">
           <div className="text-center">
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-ink">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-ink max-md:!text-[24px]">
               Welcome back
             </h1>
             <p className="mt-1.5 text-xs text-ink-2 font-medium">
@@ -245,7 +255,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4 max-md:mt-5">
             <div>
               <label htmlFor="login-id" className="block text-xs font-semibold text-ink-2 mb-1">Email or login ID</label>
               <input
@@ -258,7 +268,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@school.edu or your login ID"
-                className="w-full rounded-lg border border-line-strong bg-white px-4 py-2.5 text-sm text-ink placeholder-slate-400 focus:border-brand-700 focus:outline-none focus:ring-2 focus:ring-accent-500/10 transition"
+                className="w-full rounded-lg border border-line-strong bg-white px-4 py-2.5 text-sm text-ink placeholder-slate-400 focus:border-brand-700 focus:outline-none focus:ring-2 focus:ring-accent-500/10 transition max-md:min-h-11"
               />
             </div>
 
@@ -273,14 +283,14 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
-                  className="w-full rounded-lg border border-line-strong bg-white px-4 py-2.5 text-sm text-ink placeholder-slate-400 focus:border-brand-700 focus:outline-none focus:ring-2 focus:ring-accent-500/10 transition pr-10"
+                  className="w-full rounded-lg border border-line-strong bg-white px-4 py-2.5 text-sm text-ink placeholder-slate-400 focus:border-brand-700 focus:outline-none focus:ring-2 focus:ring-accent-500/10 transition pr-10 max-md:min-h-11 max-md:pr-12"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPw(!showPw)}
                   aria-label={showPw ? "Hide password" : "Show password"}
                   aria-pressed={showPw}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 hover:text-ink-2"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 hover:text-ink-2 max-md:right-0.5 max-md:grid max-md:h-11 max-md:w-11 max-md:place-items-center"
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
@@ -295,7 +305,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="group flex w-full items-center justify-center gap-2 rounded-lg bg-brand-700 py-3 text-sm font-semibold text-white shadow-sm hover:bg-brand-600 active:scale-[0.99] disabled:opacity-50 transition"
+              className="group flex w-full items-center justify-center gap-2 rounded-lg bg-brand-700 py-3 text-sm font-semibold max-md:min-h-12 max-md:text-[15px] text-white shadow-sm hover:bg-brand-600 active:scale-[0.99] disabled:opacity-50 transition"
             >
               <span>{loading ? "Signing in…" : "Sign in"}</span>
               <span className="transition-transform group-hover:translate-x-1" aria-hidden>→</span>
@@ -303,14 +313,14 @@ export default function LoginPage() {
           </form>
 
           {/* Demo quick-fill: every seeded role, grouped */}
-          <div className="mt-6 border-t border-line pt-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-ink-3 text-center mb-2.5">
+          <div className="mt-6 border-t border-line pt-4 max-md:mt-7 max-md:border-dashed max-md:pt-5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-ink-3 text-center mb-2.5 max-md:mb-2 max-md:text-[11px] max-md:font-semibold">
               Demo logins — tap to fill
             </p>
-            <div className="space-y-2.5">
+            <div className="space-y-2.5 max-md:space-y-2">
               {DEMO_GROUPS.map((g) => (
                 <div key={g.group}>
-                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-3">{g.group}</p>
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-3 max-md:text-[11px]">{g.group}</p>
                   <div className="grid grid-cols-2 gap-1.5">
                     {g.logins.map((d) => (
                       <button
@@ -318,12 +328,12 @@ export default function LoginPage() {
                         type="button"
                         onClick={() => { setEmail(d.email); setPassword(d.password); setError(""); }}
                         title={d.email}
-                        className={`flex min-h-9 items-center gap-2 rounded-xl border p-2 text-left text-[11px] transition hover:border-brand-300 hover:bg-brand-50/30 ${
+                        className={`flex min-h-9 items-center gap-2 rounded-xl border p-2 text-left text-[11px] transition max-md:min-h-10 max-md:py-1.5 max-md:text-[12px] hover:border-brand-300 hover:bg-brand-50/30 ${
                           email === d.email ? "border-brand-300 bg-brand-50/50" : "border-line bg-surface-2/70"
                         }`}
                       >
                         <span className={`h-2 w-2 shrink-0 rounded-full ${g.dot}`} aria-hidden />
-                        <span className="truncate font-semibold text-ink-2">{ROLE_LABEL[d.role] ?? d.role}</span>
+                        <span className="truncate font-semibold text-ink-2 max-md:font-medium">{ROLE_LABEL[d.role] ?? d.role}</span>
                       </button>
                     ))}
                   </div>
@@ -335,8 +345,8 @@ export default function LoginPage() {
       </main>
 
       {/* ── 4. Global Timezone Ticker Bar ── */}
-      <footer className="relative z-10 border-t border-line/70 bg-white/70 backdrop-blur-md py-2.5 px-4 overflow-x-auto">
-        <div className="flex items-center justify-between min-w-[720px] max-w-5xl mx-auto text-[10px] font-semibold text-ink-2">
+      <footer className="relative z-10 border-t border-line/70 bg-white/70 backdrop-blur-md py-2.5 px-4 overflow-x-auto max-md:overflow-x-visible max-md:py-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div className="flex items-center justify-between min-w-[720px] max-w-5xl mx-auto text-[10px] font-semibold text-ink-2 max-md:grid max-md:min-w-0 max-md:grid-cols-5 max-md:gap-y-2.5 max-md:text-[11px]">
           {[
             { time: "8:26 AM", tz: "UTC-8" },
             { time: "11:26 AM", tz: "UTC-6" },
@@ -351,7 +361,7 @@ export default function LoginPage() {
           ].map((item, i) => (
             <div key={i} className="text-center">
               <span className="block text-ink">{item.time}</span>
-              <span className="text-ink-3 text-[9px]">{item.tz}</span>
+              <span className="text-ink-3 text-[9px] max-md:text-[11px]">{item.tz}</span>
             </div>
           ))}
         </div>

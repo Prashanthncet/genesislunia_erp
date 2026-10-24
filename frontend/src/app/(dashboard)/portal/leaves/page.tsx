@@ -36,12 +36,14 @@ function LeavesBody({ child }: { child: PortalChild }) {
         method: "POST",
         body: JSON.stringify({ ...form, reason: form.reason.trim() }),
       });
-      toast.push("Leave request sent to the school");
+      toast.push(`Leave request for ${child.full_name} sent to the school`, "success");
       setForm((f) => ({ ...f, reason: "" }));
       reload();
       void reloadOverview();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Could not send the request");
+      const msg = err instanceof Error ? err.message : "Could not send the request";
+      setFormError(msg);
+      toast.push(msg, "error");
     } finally {
       setSaving(false);
     }
@@ -63,7 +65,7 @@ function LeavesBody({ child }: { child: PortalChild }) {
               {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
             </Select>
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 max-[379px]:grid-cols-1">
             <Field label="From" required>
               <Input type="date" value={form.start_date} onChange={set("start_date")} required />
             </Field>
@@ -94,7 +96,7 @@ function LeavesBody({ child }: { child: PortalChild }) {
                     <p className="text-[13.5px] font-semibold text-ink">
                       {l.leave_type} · {fmtDay(l.start_date)}{l.end_date !== l.start_date ? ` – ${fmtDay(l.end_date)}` : ""}
                     </p>
-                    {l.reason && <p className="mt-0.5 text-[12.5px] text-ink-2">{l.reason}</p>}
+                    {l.reason && <p className="mt-0.5 text-[12.5px] text-ink-2 max-md:break-words">{l.reason}</p>}
                     {l.remarks && <p className="mt-0.5 text-[12px] text-ink-3">School note: {l.remarks}</p>}
                     <p className="mt-1 text-[11px] text-ink-3">{l.requested_by_me ? "Requested by you" : "Recorded by the school"}</p>
                   </div>

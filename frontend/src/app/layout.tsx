@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { DownloadTray } from "@/components/DownloadTray";
 
 /**
  * Inter everywhere — headings, body, tables. It stays legible at the dense
@@ -33,6 +34,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Lets the mobile shell draw under notches / the home indicator and pad itself with
+  // env(safe-area-inset-*). Desktop browsers ignore it.
+  viewportFit: "cover",
   themeColor: "#142b4a",
 };
 
@@ -50,6 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
         {children}
+        <DownloadTray />
       </body>
     </html>
   );

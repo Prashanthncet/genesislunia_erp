@@ -227,9 +227,9 @@ function LeadershipBoard({ me }: { me: Me }) {
   const loadingCore = !dash && !error;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 max-md:flex max-md:flex-col max-md:gap-4 max-md:space-y-0">
       {/* ── Hero ─────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden rounded-panel border border-navy-800 bg-navy-900 text-white shadow-card">
+      <section className="relative overflow-hidden rounded-panel border border-navy-800 bg-navy-900 text-white shadow-card max-md:order-1">
         <Image
           src="/school-banner.jpg"
           alt=""
@@ -239,15 +239,15 @@ function LeadershipBoard({ me }: { me: Me }) {
           className="object-cover object-center opacity-25"
         />
         <div className="absolute inset-0 bg-gradient-to-r from-navy-950/95 via-navy-900/80 to-navy-800/40" aria-hidden />
-        <div className="relative flex flex-col gap-5 p-5 sm:p-7 lg:flex-row lg:items-center lg:justify-between">
+        <div className="relative flex flex-col gap-5 p-5 sm:p-7 lg:flex-row lg:items-center lg:justify-between max-md:!p-4 max-md:gap-4">
           <div className="min-w-0">
             <p className="text-[11.5px] font-semibold uppercase tracking-[0.14em] text-brand-300">
               {formatLongDate(today)}
             </p>
-            <h1 className="mt-1.5 font-display text-[26px] font-extrabold leading-tight tracking-tight sm:text-[30px]">
+            <h1 className="mt-1.5 font-display text-[26px] font-extrabold leading-tight tracking-tight sm:text-[30px] max-md:break-words max-md:!text-[22px]">
               {greeting(today)}, {role}.
             </h1>
-            <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-white/70">
+            <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-white/70 max-md:hidden">
               Here&apos;s what&apos;s happening across this branch today.
             </p>
           </div>
@@ -257,15 +257,15 @@ function LeadershipBoard({ me }: { me: Me }) {
               <Link
                 key={a.label}
                 href={a.href}
-                className="group rounded-xl border border-white/10 bg-white/[0.06] p-3 transition-colors duration-200 hover:border-white/25 hover:bg-white/[0.12]"
+                className="group rounded-xl border border-white/10 bg-white/[0.06] p-3 transition-colors duration-200 hover:border-white/25 hover:bg-white/[0.12] max-md:min-w-0"
               >
                 <span className="flex items-center gap-1.5 text-white/60">
                   <Icon name={a.icon} className="h-3.5 w-3.5" />
                 </span>
-                <span className="mt-1.5 block font-display text-[20px] font-extrabold leading-none tabular-nums">
+                <span className="mt-1.5 block font-display text-[20px] font-extrabold leading-none tabular-nums max-md:text-[24px]">
                   {loadingCore ? "–" : a.value}
                 </span>
-                <span className="mt-1 block text-[10.5px] font-medium leading-tight text-white/60">{a.label}</span>
+                <span className="mt-1 block text-[10.5px] font-medium leading-tight text-white/60 max-md:mt-1.5 max-md:text-[12px] max-md:text-white/70">{a.label}</span>
               </Link>
             ))}
           </div>
@@ -273,7 +273,7 @@ function LeadershipBoard({ me }: { me: Me }) {
       </section>
 
       {error && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-panel border border-danger/30 bg-danger-soft px-4 py-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-panel border border-danger/30 bg-danger-soft px-4 py-3.5 max-md:order-2">
           <p className="flex items-center gap-2 text-[13px] font-medium text-danger">
             <Icon name="alert" className="h-4 w-4 shrink-0" />
             {error}
@@ -286,13 +286,13 @@ function LeadershipBoard({ me }: { me: Me }) {
       )}
 
       {/* ── What is waiting on this leader ───────────────────────── */}
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2 max-md:order-3 max-md:gap-4">
         <ApprovalsWidget me={me} />
         <AdmissionQueueWidget role={me.role} />
       </div>
 
       {/* ── KPI tiles with trend sparklines ──────────────────────── */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 max-md:order-4 max-md:grid-cols-2 max-md:gap-3 max-md:[&>.card>div:first-child]:p-3.5 max-md:[&>.card>div:first-child]:pb-1.5 max-md:[&>.card>div:first-child>span:first-child]:hidden max-md:[&>.card_p:first-child]:text-[11px] max-md:[&>.card_p:first-child]:leading-snug max-md:[&>.card_p:nth-child(2)]:mt-1.5 max-md:[&>.card_p:nth-child(2)]:text-[24px] max-md:[&>.card_p:last-child]:flex-wrap max-md:[&>.card_p:last-child]:text-[11px] max-md:[&>.card_p:last-child]:leading-snug">
         <KpiCard
           label="Total Students"
           value={loadingCore ? "—" : String(dash?.students_active ?? 0)}
@@ -334,23 +334,23 @@ function LeadershipBoard({ me }: { me: Me }) {
       </div>
 
       {/* ── Quick access ─────────────────────────────────────────── */}
-      <Card delay={210}>
+      <Card className="max-md:order-5" delay={210}>
         <CardHead
           icon="sparkles"
           title="Quick access"
           subtitle="Jump straight to the task you came here for."
         />
-        <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4 lg:grid-cols-8">
+        <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4 lg:grid-cols-8 max-md:!grid-cols-4 max-md:gap-x-2 max-md:gap-y-3 max-md:p-4">
           {QUICK_ACTIONS.filter((a) => canAccess(a.href, me.role)).map((a) => (
             <TiltCard key={a.label} maxTilt={8} scale={1.03} glare={false} className="h-full">
               <Link
                 href={a.href}
-                className="group flex h-full flex-col items-center gap-2.5 px-2 py-4 text-center"
+                className="group flex h-full flex-col items-center gap-2.5 px-2 py-4 text-center max-md:min-h-[84px] max-md:gap-2 max-md:px-0.5 max-md:py-2"
               >
                 <span className={`grid h-11 w-11 place-items-center rounded-xl transition-transform duration-200 group-hover:scale-105 ${a.tone}`}>
                   <Icon name={a.icon} className="h-5 w-5" />
                 </span>
-                <span className="text-[12px] font-semibold leading-tight text-ink-2">{a.label}</span>
+                <span className="text-[12px] font-semibold leading-tight text-ink-2 max-md:text-[11.5px]">{a.label}</span>
               </Link>
             </TiltCard>
           ))}
@@ -358,8 +358,8 @@ function LeadershipBoard({ me }: { me: Me }) {
       </Card>
 
       {/* ── Attendance rings · fee trend · collection status ─────── */}
-      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-12">
-        <Card className="xl:col-span-4" delay={240}>
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-12 max-md:contents">
+        <Card className="xl:col-span-4 max-md:order-8" delay={240}>
           {/* No action button here on purpose: the header reads as one clean
               block, and Roll call is already in Quick access. */}
           <CardHead
@@ -367,7 +367,7 @@ function LeadershipBoard({ me }: { me: Me }) {
             title="Attendance by Class"
             subtitle="Present rate across all recorded roll calls."
           />
-          <div className="p-5">
+          <div className="p-5 max-md:p-4">
             {attendance === null ? (
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
                 {Array.from({ length: 8 }).map((_, i) => (
@@ -386,7 +386,7 @@ function LeadershipBoard({ me }: { me: Me }) {
           </div>
         </Card>
 
-        <Card className="xl:col-span-4" delay={270}>
+        <Card className="xl:col-span-4 max-md:order-6" delay={270}>
           <CardHead
             icon="reports"
             title="Fee Collection Trend"
@@ -398,7 +398,7 @@ function LeadershipBoard({ me }: { me: Me }) {
               </Link>
             }
           />
-          <div className="p-5">
+          <div className="p-5 max-md:p-4">
             {monthsLoading ? (
               <div className="flex items-end gap-2 pb-6" style={{ height: 248 }}>
                 {Array.from({ length: 8 }).map((_, i) => (
@@ -415,12 +415,16 @@ function LeadershipBoard({ me }: { me: Me }) {
                 emptyMessage="No invoices have been raised yet."
               />
             )}
+            {/* Phones: the chart scrolls sideways once the months don't fit — say so. */}
+            {!monthsLoading && feePoints.length > 5 && (
+              <p className="mt-2 hidden text-center text-[11px] font-medium text-ink-3 max-md:block">Swipe the chart sideways to see every month</p>
+            )}
           </div>
         </Card>
 
-        <Card className="xl:col-span-4" delay={300}>
+        <Card className="xl:col-span-4 max-md:order-9" delay={300}>
           <CardHead icon="wallet" title="Collection Status" subtitle="Where this branch's billing stands." />
-          <div className="p-5">
+          <div className="p-5 max-md:p-4">
             {!fees ? (
               <div className="flex items-center gap-5">
                 <Skeleton className="h-[132px] w-[132px] !rounded-full" />
@@ -463,8 +467,8 @@ function LeadershipBoard({ me }: { me: Me }) {
       </div>
 
       {/* ── Exam comparison · operations · outbound log ──────────── */}
-      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-12">
-        <Card className="xl:col-span-4" delay={330}>
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-12 max-md:contents">
+        <Card className="xl:col-span-4 max-md:order-11" delay={330}>
           <CardHead
             icon="exams"
             title="Average Score by Exam"
@@ -476,7 +480,7 @@ function LeadershipBoard({ me }: { me: Me }) {
               </Link>
             }
           />
-          <div className="p-5">
+          <div className="p-5 max-md:p-4">
             {examScores === null ? (
               <div className="flex items-end gap-2 pb-6" style={{ height: 248 }}>
                 {Array.from({ length: 8 }).map((_, i) => (
@@ -499,10 +503,13 @@ function LeadershipBoard({ me }: { me: Me }) {
                 emptyMessage="No marks entered yet."
               />
             )}
+            {examScores !== null && examSeries.length > 0 && examCategories.length > 5 && (
+              <p className="mt-2 hidden text-center text-[11px] font-medium text-ink-3 max-md:block">Swipe the chart sideways to see every class</p>
+            )}
           </div>
         </Card>
 
-        <Card className="xl:col-span-4" delay={360}>
+        <Card className="xl:col-span-4 max-md:order-10" delay={360}>
           <CardHead icon="activity" title="Operations Snapshot" subtitle="Live status at a glance." />
           <div className="grid grid-cols-2 gap-px bg-line">
             <div className="flex flex-col items-center gap-1 bg-surface p-4">
@@ -513,14 +520,14 @@ function LeadershipBoard({ me }: { me: Me }) {
               {summary?.hostel.occupancy_pct === null || summary === null ? (
                 <>
                   <p className="font-display text-[19px] font-extrabold leading-none text-ink-3">—</p>
-                  <p className="text-[10.5px] text-ink-3">no beds configured</p>
+                  <p className="text-[10.5px] text-ink-3 max-md:text-[11.5px]">no beds configured</p>
                 </>
               ) : (
                 <>
-                  <p className="font-display text-[19px] font-extrabold leading-none tabular-nums text-ink">
+                  <p className="font-display text-[19px] font-extrabold leading-none tabular-nums text-ink max-md:text-[22px]">
                     {summary.hostel.occupancy_pct.toFixed(0)}%
                   </p>
-                  <p className="text-[10.5px] tabular-nums text-ink-3">
+                  <p className="text-[10.5px] tabular-nums text-ink-3 max-md:text-[11.5px]">
                     {summary.hostel.allocated} of {summary.hostel.capacity} beds
                   </p>
                 </>
@@ -532,10 +539,10 @@ function LeadershipBoard({ me }: { me: Me }) {
                 <Icon name="wallet" className="h-4 w-4" />
               </span>
               <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-ink-3">Payroll</p>
-              <p className="font-display text-[19px] font-extrabold leading-none tabular-nums text-ink">
+              <p className="font-display text-[19px] font-extrabold leading-none tabular-nums text-ink max-md:text-[22px]">
                 {summary ? inrCompact(summary.payroll_total_net) : "—"}
               </p>
-              <p className="text-[10.5px] tabular-nums text-ink-3">
+              <p className="text-[10.5px] tabular-nums text-ink-3 max-md:text-[11.5px]">
                 {summary ? `${summary.payslip_count} payslips` : "…"}
               </p>
             </div>
@@ -557,7 +564,7 @@ function LeadershipBoard({ me }: { me: Me }) {
           </div>
         </Card>
 
-        <Card className="xl:col-span-4" delay={390}>
+        <Card className="xl:col-span-4 max-md:order-7" delay={390}>
           <CardHead
             icon="bell"
             title="Recent Outbound Messages"
@@ -580,18 +587,18 @@ function LeadershipBoard({ me }: { me: Me }) {
               {notices.slice(0, 5).map((n) => {
                 const meta = NOTICE_META[n.refType ?? ""] ?? { icon: "bell", label: n.channel };
                 return (
-                  <li key={n.id} className="flex items-start gap-3 px-5 py-3.5">
+                  <li key={n.id} className="flex items-start gap-3 px-5 py-3.5 max-md:px-4">
                     <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-2">
                       <Icon name={meta.icon} className="h-4 w-4" />
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline justify-between gap-3">
-                        <p className="truncate text-[12.5px] font-semibold text-ink">
+                        <p className="truncate text-[12.5px] font-semibold text-ink max-md:text-[13px]">
                           {n.subject ?? `${meta.label} notification`}
                         </p>
                         <span className="shrink-0 text-[11px] text-ink-3">{relativeTime(n.createdAt)}</span>
                       </div>
-                      <p className="mt-0.5 line-clamp-1 text-[11.5px] text-ink-2">{n.body}</p>
+                      <p className="mt-0.5 line-clamp-1 text-[11.5px] text-ink-2 max-md:text-[12px]">{n.body}</p>
                     </div>
                     <Badge tone={n.status === "sent" ? "emerald" : n.status === "failed" ? "rose" : "amber"}>
                       {n.status}
@@ -612,14 +619,14 @@ function LeadershipBoard({ me }: { me: Me }) {
 function RoleHero({ me, subtitle }: { me: Me; subtitle: string }) {
   const [today] = useState(() => new Date());
   return (
-    <section className="relative overflow-hidden rounded-panel border border-navy-800 bg-navy-900 p-5 text-white shadow-card sm:p-7">
+    <section className="relative overflow-hidden rounded-panel border border-navy-800 bg-navy-900 p-5 text-white shadow-card sm:p-7 max-md:!p-4">
       <p className="text-[11.5px] font-semibold uppercase tracking-[0.14em] text-brand-300">
         {formatLongDate(today)} · {ROLE_LABEL[me.role] ?? me.role}
       </p>
-      <h1 className="mt-1.5 font-display text-[24px] font-extrabold leading-tight tracking-tight sm:text-[28px]">
+      <h1 className="mt-1.5 font-display text-[24px] font-extrabold leading-tight tracking-tight sm:text-[28px] max-md:break-words max-md:!text-[21px]">
         {greeting(today)}{me.name ? `, ${me.name}` : ""}.
       </h1>
-      <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-white/70">{subtitle}</p>
+      <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-white/70 max-md:mt-1 max-md:text-[12.5px] max-md:leading-snug">{subtitle}</p>
     </section>
   );
 }
@@ -642,11 +649,11 @@ function MyShortcuts({ me }: { me: Me }) {
   return (
     <Card>
       <CardHead icon="sparkles" title="Quick access" subtitle="Only the screens your role can open." />
-      <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4 sm:p-5">
+      <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4 sm:p-5 max-md:!grid-cols-4 max-md:!p-4">
         {links.map((l) => (
-          <Link key={l.href} href={l.href} className="flex items-center gap-2.5 rounded-xl border border-line px-3 py-3 text-[12.5px] font-semibold text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink">
-            <Icon name={l.icon} className="h-4 w-4 shrink-0 text-brand-700" />
-            <span className="truncate">{l.label}</span>
+          <Link key={l.href} href={l.href} className="flex items-center gap-2.5 rounded-xl border border-line px-3 py-3 text-[12.5px] font-semibold text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink max-md:min-h-[84px] max-md:min-w-0 max-md:flex-col max-md:justify-center max-md:gap-2 max-md:px-1 max-md:py-2.5 max-md:text-center max-md:text-[11.5px] max-md:leading-tight">
+            <Icon name={l.icon} className="h-4 w-4 shrink-0 text-brand-700 max-md:h-5 max-md:w-5" />
+            <span className="truncate max-md:line-clamp-2 max-md:whitespace-normal">{l.label}</span>
           </Link>
         ))}
       </div>
@@ -670,9 +677,9 @@ function RoleDashboard({ me }: { me: Me }) {
   const r = me.role;
   const teaching = r === ROLE.TEACHER || r === ROLE.HOD;
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 max-md:space-y-4">
       <RoleHero me={me} subtitle={SUBTITLE[r] ?? "Your work for today."} />
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2 max-md:gap-4">
         {teaching && <TodayScheduleWidget me={me} />}
         {hasRole(me, R.ATTENDANCE_MARK) && <ClassesToMarkWidget />}
         {teaching && <LessonPlansWidget me={me} />}

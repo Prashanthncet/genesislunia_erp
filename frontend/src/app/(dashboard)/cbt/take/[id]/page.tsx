@@ -7,6 +7,7 @@ import { apiFetch } from "@/lib/api";
 import { hasRole, ROLE, useMe } from "@/lib/auth";
 import { Badge, Button, Card, EmptyState, PageHeader, Textarea, useToast } from "@/components/ui";
 import { errMsg, OPTION_KEYS, type AttemptView } from "@/components/cbt/types";
+import { confirmAction } from "@/components/confirm";
 
 type SubmitResult = { status: string; score: number; max_score: number; pending_manual_grading: boolean; auto_submitted: boolean; late_answers_ignored?: boolean };
 
@@ -187,45 +188,45 @@ export default function TakeTestPage() {
 
   return (
     <div className="space-y-4">
-      <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-surface/95 px-4 py-3 shadow-soft backdrop-blur">
-        <div className="min-w-0">
+      <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-surface/95 px-4 py-3 shadow-soft backdrop-blur max-lg:top-[calc(56px+var(--m-safe-top)+0.5rem)] max-md:mx-0 max-md:flex-nowrap max-md:gap-2 max-md:px-3 max-md:py-2.5">
+        <div className="min-w-0 max-md:flex-1">
           <p className="truncate font-display font-bold text-ink">{view.title}</p>
           <p className="text-xs text-ink-3">{answered} of {view.questions.length} answered · {saveState === "saved" ? "All answers saved" : saveState === "saving" ? "Saving…" : saveState === "pending" ? "Unsaved changes" : "Offline — will retry"}</p>
         </div>
-        <div className="flex items-center gap-3">
-          <span role="timer" aria-live="polite" className={`tnum rounded-lg px-3 py-1.5 font-display text-xl font-bold ${low ? "bg-danger-soft text-danger-ink" : "bg-brand-50 text-brand-700"}`}>
+        <div className="flex items-center gap-3 max-md:shrink-0 max-md:gap-2">
+          <span role="timer" aria-live="polite" className={`tnum rounded-lg px-3 py-1.5 font-display text-xl font-bold max-md:px-2 max-md:text-lg ${low ? "bg-danger-soft text-danger-ink" : "bg-brand-50 text-brand-700"}`}>
             {remaining === null ? "--:--" : fmt(remaining)}
           </span>
-          <Button variant="primary" loading={submitting} onClick={() => { if (confirm("Submit your test? You cannot change answers afterwards.")) void submit(false); }}>Submit</Button>
+          <Button variant="primary" loading={submitting} onClick={async () => { if (await confirmAction({ title: "Submit your test?", text: "You cannot change answers afterwards.", confirmText: "Submit", tone: "primary" })) void submit(false); }}>Submit</Button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-        <Card className="p-3 lg:order-2">
+        <Card className="p-3 lg:order-2 max-md:min-w-0">
           <p className="mb-2 text-xs font-semibold uppercase text-ink-3">Questions</p>
-          <div className="grid grid-cols-6 gap-1.5 lg:grid-cols-4">
+          <div className="grid grid-cols-6 gap-1.5 lg:grid-cols-4 max-md:-m-1 max-md:overflow-x-auto max-md:overscroll-x-contain max-md:[scrollbar-width:none] max-md:flex max-md:gap-2 max-md:p-1">
             {view.questions.map((x, n) => (
               <button key={x.id} type="button" onClick={() => setCurrent(n)} aria-label={`Question ${n + 1}${(answers[x.id] ?? "").trim() ? ", answered" : ""}`}
-                className={`rounded-md py-1.5 text-xs font-bold ${n === current ? "ring-2 ring-brand-500" : ""} ${(answers[x.id] ?? "").trim() ? "bg-brand-700 text-white" : "bg-surface-2 text-ink-2"}`}>
+                className={`rounded-md py-1.5 text-xs font-bold max-md:h-10 max-md:w-10 max-md:shrink-0 max-md:rounded-lg max-md:py-0 max-md:text-sm ${n === current ? "ring-2 ring-brand-500" : ""} ${(answers[x.id] ?? "").trim() ? "bg-brand-700 text-white" : "bg-surface-2 text-ink-2"}`}>
                 {n + 1}
               </button>
             ))}
           </div>
         </Card>
 
-        <Card className="p-5 lg:col-span-3">
+        <Card className="p-5 lg:col-span-3 max-md:min-w-0 max-md:p-4">
           {q && (
             <>
               <div className="mb-3 flex items-center justify-between">
                 <span className="text-xs font-semibold text-ink-3">Question {current + 1} of {view.questions.length}</span>
                 <Badge>{q.marks} mark{q.marks === 1 ? "" : "s"}</Badge>
               </div>
-              <p className="mb-4 whitespace-pre-wrap text-[15px] font-medium text-ink">{q.question}</p>
+              <p className="mb-4 whitespace-pre-wrap text-[15px] font-medium text-ink max-md:text-base max-md:[overflow-wrap:anywhere]">{q.question}</p>
               {q.type === "mcq" ? (
                 <div className="space-y-2" role="radiogroup" aria-label={`Question ${current + 1} options`}>
                   {OPTION_KEYS.map(([k, key]) => (
-                    <label key={k} className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm ${answers[q.id] === k ? "border-brand-500 bg-brand-50" : "border-line hover:bg-surface-2"}`}>
-                      <input type="radio" name={q.id} checked={answers[q.id] === k} onChange={() => answer(q.id, k, true)} />
+                    <label key={k} className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm max-md:min-h-14 max-md:px-4 max-md:py-3 max-md:text-[15px] max-md:[overflow-wrap:anywhere] ${answers[q.id] === k ? "border-brand-500 bg-brand-50" : "border-line hover:bg-surface-2"}`}>
+                      <input className="max-md:h-5 max-md:w-5 max-md:shrink-0" type="radio" name={q.id} checked={answers[q.id] === k} onChange={() => answer(q.id, k, true)} />
                       <b>{k}.</b> {q[key]}
                     </label>
                   ))}
@@ -234,9 +235,9 @@ export default function TakeTestPage() {
                 <Textarea aria-label={`Answer to question ${current + 1}`} rows={8} maxLength={5000} placeholder="Write your answer…"
                   value={answers[q.id] ?? ""} onChange={(e) => answer(q.id, e.target.value, false)} />
               )}
-              <div className="mt-4 flex justify-between">
-                <Button disabled={current === 0} onClick={() => { void flush(); setCurrent(current - 1); }}>Previous</Button>
-                <Button disabled={current >= view.questions.length - 1} onClick={() => { void flush(); setCurrent(current + 1); }}>Next</Button>
+              <div className="mt-4 flex justify-between max-md:sticky max-md:bottom-[calc(var(--m-nav-h)+var(--m-safe-bottom)+0.5rem)] max-md:z-10 max-md:-mx-2 max-md:gap-3 max-md:rounded-xl max-md:bg-surface/95 max-md:p-2 max-md:backdrop-blur">
+                <Button disabled={current === 0} onClick={() => { void flush(); setCurrent(current - 1); }} className="max-md:flex-1">Previous</Button>
+                <Button disabled={current >= view.questions.length - 1} onClick={() => { void flush(); setCurrent(current + 1); }} className="max-md:flex-1">Next</Button>
               </div>
             </>
           )}

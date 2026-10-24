@@ -81,15 +81,15 @@ export function TeacherWeekView({
   return (
     <div className="rounded-xl border border-line bg-white p-4 shadow-sm space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h3 className="text-[16px] font-semibold text-ink">Teacher week</h3>
           <p className="text-[12.5px] text-ink-3">
             {data ? `${data.teacher.name} · ${lessons} lessons/week · max ${data.teacher.max_periods}/day · week of ${data.week.from}` : "Pick a teacher"}
             {data && data.covers.length ? ` · ${data.covers.length} cover${data.covers.length === 1 ? "" : "s"} this week` : ""}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Select aria-label="Teacher" value={teacherId} onChange={(e) => setTeacherId(e.target.value)} className="w-auto">
+        <div className="flex flex-wrap items-center gap-2 max-md:w-full">
+          <Select aria-label="Teacher" value={teacherId} onChange={(e) => setTeacherId(e.target.value)} className="w-auto max-md:!w-full">
             {options.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </Select>
           {data && canDownload?.(data.teacher.id) && (

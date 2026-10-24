@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { hasRole, R, ROLE, useMe } from "@/lib/auth";
 import { TableView } from "@/components/TableView";
+import { confirmAction } from "@/components/confirm";
 import {
   Badge, Button, Card, CardHead, EmptyState, Field, Icon, Input, Modal, PageHeader,
   ProgressBar, Reveal, Select, SkeletonRows, StatCard, useToast,
@@ -204,6 +205,7 @@ export default function ClassesPage() {
       setFormError("Class name is required.");
       return;
     }
+    if (editing && !(await confirmAction({ title: `Update ${classLabel(editing)}?`, text: "Saves the new name, section and class teacher.", confirmText: "Update", tone: "primary" }))) return;
     setSaving(true);
     setFormError(null);
     const body = JSON.stringify({
@@ -256,7 +258,9 @@ export default function ClassesPage() {
       setDeleting(null);
       await load();
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "Delete failed");
+      const message = err instanceof Error ? err.message : "Delete failed";
+      setDeleteError(message);
+      toast.push(message, "error");
     }
   }
 
@@ -450,19 +454,19 @@ export default function ClassesPage() {
           title="Class directory"
           subtitle={loading ? "Loading…" : `${visible.length} of ${classes.length} shown`}
           actions={
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 max-md:w-full max-md:flex-nowrap">
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search class…"
                 aria-label="Search classes"
-                className="!w-44"
+                className="!w-44 max-md:!w-auto max-md:min-w-0 max-md:flex-1"
               />
               <Select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as SortKey)}
                 aria-label="Sort classes by"
-                className="!w-40"
+                className="!w-40 max-md:!w-[9.5rem] max-md:shrink-0"
               >
                 <option value="name">Sort: Name</option>
                 <option value="strength">Sort: Strength</option>

@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { R, ROLE, ROLE_LABEL, useMe } from "@/lib/auth";
 import { Badge, Button, Card, CardHead, EmptyState, Field, Icon, IconButton, Input, Modal, Select, SkeletonRows, useToast } from "@/components/ui";
 import { TableView } from "@/components/TableView";
+import { confirmAction } from "@/components/confirm";
 
 type UserRow = {
   id: string;
@@ -28,6 +29,9 @@ const ALL_ROLES = Object.values(ROLE).filter((r) => r !== ROLE.ADMIN);
 const ADMINS = R.ADMINS as readonly string[];
 
 /** Same rule as the backend DTO: 8–72 chars, upper + lower + digit. */
+/** Name to show in confirmations and toasts. */
+const who = (u: UserRow) => u.name ?? u.staff?.name ?? u.student?.fullName ?? u.email;
+
 const strongEnough = (p: string) => p.length >= 8 && p.length <= 72 && /[a-z]/.test(p) && /[A-Z]/.test(p) && /\d/.test(p);
 
 function tempPassword(): string {
@@ -81,6 +85,10 @@ export function UserManagement() {
     && !(me?.role === ROLE.HR && ADMINS.includes(u.role));
 
   const toggleActive = async (u: UserRow) => {
+    const ok = u.isActive
+      ? await confirmAction({ title: `Disable ${who(u)}?`, text: `${u.email} will be signed out on their next request and cannot sign in until re-enabled.`, confirmText: "Disable", tone: "danger" })
+      : await confirmAction({ title: `Re-enable ${who(u)}?`, text: `${u.email} will be able to sign in again.`, confirmText: "Enable", tone: "primary" });
+    if (!ok) return;
     try {
       await apiFetch(`/api/auth/users/${u.id}`, { method: "PUT", body: JSON.stringify({ is_active: !u.isActive }) });
       toast.push(u.isActive ? `${u.email} disabled — signed out on the next request` : `${u.email} re-enabled`);
@@ -103,7 +111,7 @@ export function UserManagement() {
           </Button>
         }
       />
-      <div className="flex flex-wrap gap-2 border-b border-line px-5 py-3">
+      <div className="flex flex-wrap gap-2 border-b border-line px-5 py-3 max-md:px-4">
         <Input className="field flex-1" placeholder="Search name, email or child…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search users" />
         <Select className="field w-auto" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} aria-label="Filter by role">
           <option value="">All roles</option>
@@ -131,7 +139,7 @@ export function UserManagement() {
                   <tr key={u.id}>
                     <td className="px-5 py-3">
                       <p className="font-semibold text-ink">{u.name ?? u.staff?.name ?? u.student?.fullName ?? "—"}</p>
-                      <p className="text-[12px] text-ink-3">{u.email}</p>
+                      <p className="text-[12px] text-ink-3 max-md:break-all">{u.email}</p>
                     </td>
                     <td className="px-3 py-3"><Badge tone="brand">{ROLE_LABEL[u.role] ?? u.role}</Badge></td>
                     <td className="px-3 py-3 text-[12.5px] text-ink-2">
@@ -146,9 +154,9 @@ export function UserManagement() {
                     </td>
                     <td className="px-5 py-3">
                       {canTouch(u) ? (
-                        <span className="flex justify-end gap-1">
-                          <IconButton name="edit" label={`Change role of ${u.email}`} variant="ghost" onClick={() => setEditing(u)} />
-                          <IconButton name="key" label={`Reset password of ${u.email}`} variant="ghost" onClick={() => setResetting(u)} />
+                        <span className="flex justify-end gap-1 max-md:gap-2">
+                          <IconButton name="edit" label={`Change role of ${u.email}`} variant="ghost" className="max-md:!h-10 max-md:!min-h-10 max-md:!min-w-10" onClick={() => setEditing(u)} />
+                          <IconButton name="key" label={`Reset password of ${u.email}`} variant="ghost" className="max-md:!h-10 max-md:!min-h-10 max-md:!min-w-10" onClick={() => setResetting(u)} />
                           <Button size="sm" variant={u.isActive ? "danger" : "soft"} onClick={() => toggleActive(u)}>
                             {u.isActive ? "Disable" : "Enable"}
                           </Button>
@@ -342,13 +350,23 @@ function EditRoleModal({ user, roles, onClose, onDone }: { user: UserRow; roles:
   const portalSwitch = (R.PORTAL as readonly string[]).includes(role) !== (R.PORTAL as readonly string[]).includes(user.role);
 
   const save = async () => {
+    const roleChanged = role !== user.role;
+    const ok = await confirmAction({
+      title: roleChanged ? `Change ${who(user)} to ${ROLE_LABEL[role] ?? role}?` : `Save changes to ${who(user)}?`,
+      text: roleChanged
+        ? `${user.email} moves from ${ROLE_LABEL[user.role] ?? user.role} to ${ROLE_LABEL[role] ?? role}. Their access changes on their next request.`
+        : "Takes effect on their next request.",
+      confirmText: roleChanged ? "Change role" : "Save",
+      tone: "primary",
+    });
+    if (!ok) return;
     setSaving(true);
     try {
       await apiFetch(`/api/auth/users/${user.id}`, {
         method: "PUT",
         body: JSON.stringify({ ...(role !== user.role ? { role } : {}), ...(name !== (user.name ?? "") ? { name } : {}) }),
       });
-      toast.push("User updated — takes effect on their next request");
+      toast.push(roleChanged ? `${who(user)} is now ${ROLE_LABEL[role] ?? role} — takes effect on their next request` : `${who(user)} updated — takes effect on their next request`);
       onDone();
     } catch (err) {
       toast.push(err instanceof Error ? err.message : "Update failed", "error");
@@ -387,6 +405,12 @@ function ResetModal({ user, onClose, onDone }: { user: UserRow; onClose: () => v
   const [password, setPassword] = useState(tempPassword);
   const [saving, setSaving] = useState(false);
   const save = async () => {
+    if (!(await confirmAction({
+      title: `Reset the password for ${who(user)}?`,
+      text: `${user.email}'s current password stops working immediately. They sign in with the temporary password and must change it.`,
+      confirmText: "Reset password",
+      tone: "danger",
+    }))) return;
     setSaving(true);
     try {
       await apiFetch(`/api/auth/users/${user.id}`, { method: "PUT", body: JSON.stringify({ password }) });

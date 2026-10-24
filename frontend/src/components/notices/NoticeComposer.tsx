@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { Button, Field, Icon, Input, Modal, Select, Textarea, useToast } from "@/components/ui";
 import type { NoticeAudience, NoticeDelivery, NoticeTargets } from "./types";
+import { confirmAction } from "@/components/confirm";
 
 type StudentRow = { id: string; fullName: string; admissionNo: string; rollNo: string | null };
 
@@ -71,6 +72,13 @@ export function NoticeComposer({
     if (!draft.body.trim()) return setError("Write the notice text");
     if (draft.audience !== "all_students" && !draft.classId) return setError("Choose a class");
     if (draft.audience === "student" && !draft.studentId) return setError("Choose a student");
+    const className = targets?.classes.find((c) => c.id === draft.classId)?.name;
+    const studentName = students.find((s) => s.id === draft.studentId)?.fullName;
+    const who = draft.audience === "all_students" ? "all students"
+      : draft.audience === "class" ? `students of ${className ?? "the selected class"}`
+      : studentName ?? "the selected student";
+    const channel = draft.alsoSend === "none" ? "" : ` They will also get it by ${draft.alsoSend === "sms" ? "SMS" : "email"}.`;
+    if (!(await confirmAction({ title: `Send "${draft.title.trim()}" to ${who}?`, text: `It will be posted on the student portal straight away.${channel}`, confirmText: "Send notice", tone: "primary" }))) return;
     setSending(true);
     try {
       const res = await apiFetch<{ id: string; delivery: NoticeDelivery }>("/api/notices", {

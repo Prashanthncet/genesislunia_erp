@@ -6,9 +6,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import { Button, Icon, IconButton, ToastHost } from "@/components/ui";
-import { useRouteMeta } from "@/components/RouteMeta";
+import { routeTagline, useRouteMeta } from "@/components/RouteMeta";
 import { NotificationStackPopover, recentCount, type Notice } from "@/components/NotificationStackPopover";
 import { CommandPalette } from "@/components/motion/CommandPalette";
+import { MobileBottomNav } from "@/components/mobile/MobileBottomNav";
 import { apiFetch } from "@/lib/api";
 import { R, ROLE, ROLE_LABEL, clearSession, hasRole, isPortal, useMe } from "@/lib/auth";
 import { canAccess, findNavItem, homeFor, navFor } from "@/lib/nav";
@@ -112,6 +113,8 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   const [collapsed, setCollapsed] = useState(false);
 
   const current = useMemo(() => findNavItem(pathname, roleKey), [pathname, roleKey]);
+  const isDetail = !!current && pathname !== current.href && pathname.startsWith(current.href === "/" ? "/__none__" : current.href + "/")
+    || pathname === "/account/password";
   const groupOfCurrent = useMemo(
     () => groups.find((g) => g.items.some((i) => i.href === current?.href))?.group,
     [groups, current],
@@ -245,14 +248,14 @@ export default function DashboardShell({ children }: { children: React.ReactNode
         {/* ── Sidebar ─────────────────────────────────────────────── */}
         {mobileOpen && (
           <div
-            className="fixed inset-0 z-40 bg-navy-950/50 backdrop-blur-sm lg:hidden"
+            className="fixed inset-0 z-[45] bg-navy-950/50 backdrop-blur-sm lg:hidden"
             onClick={() => setMobileOpen(false)}
             aria-hidden
           />
         )}
 
         <aside
-          className={`fixed inset-y-0 left-0 z-50 flex w-[264px] shrink-0 flex-col bg-brand-900 transition-[transform,width] duration-300 ease-soft lg:sticky lg:top-0 lg:h-dvh lg:translate-x-0 ${
+          className={`fixed inset-y-0 left-0 z-50 flex w-[264px] shrink-0 flex-col bg-brand-900 transition-[transform,width] duration-300 ease-soft lg:sticky lg:top-0 lg:h-dvh lg:translate-x-0 max-lg:w-[min(86vw,304px)] max-lg:pb-[var(--m-safe-bottom)] max-lg:pl-[env(safe-area-inset-left)] max-lg:pt-[var(--m-safe-top)] ${
             collapsed ? "lg:w-[76px]" : ""
           } ${mobileOpen ? "translate-x-0 shadow-pop" : "-translate-x-full"}`}
         >
@@ -276,12 +279,27 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             </div>
             <button
               onClick={() => setMobileOpen(false)}
-              className="grid h-8 w-8 place-items-center rounded-lg text-white/60 transition-colors hover:bg-white/10 hover:text-white lg:hidden"
+              className="grid h-8 w-8 max-lg:h-10 max-lg:w-10 place-items-center rounded-lg text-white/60 transition-colors hover:bg-white/10 hover:text-white lg:hidden"
               aria-label="Close navigation"
             >
               <Icon name="x" className="h-4 w-4" />
             </button>
           </div>
+
+          {/* Phones/tablets: who is signed in, one tap to the profile page. */}
+          <Link
+            href="/account"
+            className="mx-3 mt-3 flex items-center gap-3 rounded-xl bg-white/[0.06] p-3 ring-1 ring-white/10 transition-colors active:bg-white/10 lg:hidden"
+          >
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-accent-500 text-[16px] font-bold text-white">
+              {(me?.name || me?.email || role || "U").charAt(0).toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14.5px] font-semibold text-white">{me?.name || role || "User"}</span>
+              <span className="block truncate text-[12px] text-white/60">{me?.email || role}</span>
+            </span>
+            <span className="shrink-0 text-[12px] font-semibold text-white/70">Profile</span>
+          </Link>
 
           <nav className={`scroll-slim relative flex-1 overflow-y-auto px-3 py-4 ${collapsed ? "lg:px-2" : ""}`} aria-label="Main">
             {groups.map((group, gi) => (
@@ -380,30 +398,53 @@ export default function DashboardShell({ children }: { children: React.ReactNode
 
         {/* ── Main column ─────────────────────────────────────────── */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 flex h-[64px] shrink-0 items-center gap-3 border-b border-line bg-surface/85 px-4 backdrop-blur-xl sm:px-6">
+          <header className="sticky top-0 z-30 flex h-[64px] shrink-0 items-center gap-3 border-b border-line bg-surface/85 px-4 backdrop-blur-xl sm:px-6 max-lg:h-[calc(66px+var(--m-safe-top))] max-lg:gap-2 max-lg:pt-[var(--m-safe-top)]">
             {/* No `lg:hidden` here: `.btn-ghost` is unlayered CSS, which beats Tailwind's
                 layered utilities, so this button was always visible on desktop yet did nothing. */}
-            <IconButton
-              name="menu"
-              label={collapsed ? "Expand sidebar" : "Toggle sidebar"}
-              variant="ghost"
-              onClick={toggleNav}
-              aria-expanded={!collapsed}
-            />
+            <span className="contents max-lg:hidden">
+              <IconButton
+                name="menu"
+                label={collapsed ? "Expand sidebar" : "Toggle sidebar"}
+                variant="ghost"
+                onClick={toggleNav}
+                aria-expanded={!collapsed}
+              />
+            </span>
 
             <div className="min-w-0 flex-1">
               <div className="hidden lg:block">
                 <CommandPalette role={roleKey} />
               </div>
               <div className="flex min-w-0 items-center gap-2 lg:hidden">
-                <Icon name={current?.icon ?? (onAccount ? "user" : "home")} className="h-4 w-4 shrink-0 text-brand-700" />
-                <p className="truncate font-display text-[15px] font-bold text-ink">
-                  {current?.name ?? (onAccount ? "My account" : "Dashboard")}
-                </p>
+                {isDetail ? (
+                  <button
+                    type="button"
+                    onClick={() => (window.history.length > 1 ? router.back() : router.push(current?.href ?? "/"))}
+                    aria-label="Back"
+                    className="-ml-1 grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink active:bg-surface-2"
+                  >
+                    <Icon name="chevronLeft" className="h-5 w-5" />
+                  </button>
+                ) : (
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700 ring-1 ring-brand-100">
+                    <Icon name={current?.icon ?? (onAccount ? "user" : "home")} className="h-5 w-5" />
+                  </span>
+                )}
+                <div className="min-w-0">
+                  <h1 className="truncate font-display text-[19px] font-bold leading-tight text-ink">
+                    {current?.name ?? (onAccount ? "My account" : "Dashboard")}
+                  </h1>
+                  <p className="mt-0.5 truncate text-[11.5px] leading-tight text-ink-3">
+                    {routeTagline(pathname) || (onAccount ? "Your profile and sign-in details" : "Genesis Lumia ERP")}
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2 max-lg:gap-1">
+              <span className="contents lg:hidden">
+                <CommandPalette role={roleKey} compact />
+              </span>
               {showBell && (
                 <NotificationStackPopover
                   items={notices}
@@ -472,10 +513,6 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             </div>
           </header>
 
-          <div className="border-b border-line bg-surface px-4 py-2 sm:px-6 lg:hidden">
-            <CommandPalette role={roleKey} />
-          </div>
-
           {/* Breadcrumb — quiet orientation for deep pages. */}
           <div className="hidden items-center gap-1.5 px-4 pt-5 text-[12px] text-ink-3 sm:px-6 lg:flex">
             <span>{groupOfCurrent ?? (onAccount ? "Account" : "Overview")}</span>
@@ -483,16 +520,30 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             <span className="font-semibold text-ink-2">{current?.name ?? (onAccount ? "My account" : "Dashboard")}</span>
           </div>
 
-          <main key={pathname} className="min-w-0 flex-1 px-4 py-5 sm:px-6 sm:py-6">
+          <main key={pathname} className="min-w-0 flex-1 px-4 py-5 sm:px-6 sm:py-6 max-lg:!pb-[calc(var(--m-nav-h)+var(--m-safe-bottom)+1.5rem)]">
             {/* Entrance animation lives in (dashboard)/template.tsx — running it here too doubled it. */}
             <div className="mx-auto w-full max-w-[1560px]">{content}</div>
           </main>
 
-          <footer className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-3 text-[11.5px] text-ink-3 sm:px-6">
+          <footer className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-3 text-[11.5px] text-ink-3 sm:px-6 max-lg:hidden">
             <span>© {new Date().getFullYear()} Genesis Lumia ERP · {branchName}</span>
             <span>{portal ? "You only see your own family's records" : "All data is scoped to your branch"}</span>
           </footer>
         </div>
+
+        {me && (
+          <MobileBottomNav
+            role={roleKey}
+            groups={groups}
+            activeHref={current?.href}
+            badges={{
+              ...(portal && unreadNotices ? { "/portal/messages": unreadNotices } : {}),
+              ...(!portal && newNotices ? { [bellHref]: newNotices } : {}),
+            }}
+            onMore={() => setMobileOpen(true)}
+            moreOpen={mobileOpen}
+          />
+        )}
       </div>
     </ToastHost>
   );

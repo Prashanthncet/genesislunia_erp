@@ -54,7 +54,7 @@ export function CreateForms({ notify, onCreated }: { notify: (msg: string, tone?
 
   return (
     <div className="space-y-4">
-      <div className="card p-5">
+      <div className="card p-5 max-md:p-4">
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <Field label="Academic year" hint="Needs a published template for this year.">
             <Input value={year} onChange={(e) => setYear(e.target.value)} className="w-32" pattern="\d{4}-\d{2}" />
@@ -62,7 +62,7 @@ export function CreateForms({ notify, onCreated }: { notify: (msg: string, tone?
         </div>
         <div className="space-y-3">
           {rows.map((r, i) => (
-            <div key={i} className="grid gap-3 sm:grid-cols-[1.4fr_1.4fr_1fr_auto]">
+            <div key={i} className="grid gap-3 sm:grid-cols-[1.4fr_1.4fr_1fr_auto] max-md:rounded-xl max-md:border max-md:border-line max-md:p-3">
               <Field label="Parent name" required>
                 <Input value={r.parent_name} maxLength={120} onChange={(e) => set(i, { parent_name: e.target.value })} />
               </Field>
@@ -72,13 +72,13 @@ export function CreateForms({ notify, onCreated }: { notify: (msg: string, tone?
               <Field label="Phone">
                 <Input type="tel" value={r.parent_contact} maxLength={16} onChange={(e) => set(i, { parent_contact: e.target.value })} />
               </Field>
-              <div className="flex items-end pb-1">
+              <div className="flex items-end pb-1 max-md:justify-end max-md:pb-0 max-md:empty:hidden">
                 {rows.length > 1 && <IconButton name="trash" label="Remove row" variant="ghost" onClick={() => setRows(rows.filter((_, j) => j !== i))} />}
               </div>
             </div>
           ))}
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 flex flex-wrap gap-2 max-md:[&>*]:flex-1">
           <Button variant="soft" onClick={() => setRows([...rows, blank()])} disabled={rows.length >= 50}>
             <Icon name="plus" className="h-4 w-4" /> Add parent
           </Button>
@@ -89,7 +89,7 @@ export function CreateForms({ notify, onCreated }: { notify: (msg: string, tone?
       </div>
 
       {generated.length > 0 && (
-        <div className="card border-l-[3px] border-l-warn p-5">
+        <div className="card border-l-[3px] border-l-warn p-5 max-md:p-4">
           <div className="mb-3 flex items-start gap-2">
             <Icon name="lock" className="mt-0.5 h-4 w-4 text-warn" />
             <p className="text-[13px] text-ink-2">
@@ -133,7 +133,7 @@ export function CreateForms({ notify, onCreated }: { notify: (msg: string, tone?
               </tbody>
             </table>
           </div>
-          <Button variant="ghost" className="mt-3" onClick={() => setGenerated([])}>I have handed these over — hide</Button>
+          <Button variant="ghost" className="mt-3 max-md:w-full" onClick={() => setGenerated([])}>I have handed these over — hide</Button>
         </div>
       )}
     </div>

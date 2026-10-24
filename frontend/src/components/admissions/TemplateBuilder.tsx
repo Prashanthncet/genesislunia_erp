@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { Badge, Button, EmptyState, Field, Icon, IconButton, Input, Select } from "@/components/ui";
 import { TableView } from "@/components/TableView";
+import { confirmAction } from "@/components/confirm";
 import {
   FIELD_TYPES, STATUS_TONE, TemplateField, TemplateSummary, currentAcademicYear, post, shiftYear,
 } from "./shared";
@@ -68,6 +69,7 @@ export function TemplateBuilder({ notify }: { notify: (msg: string, tone?: "succ
 
   const save = async () => {
     if (!draft.label.trim()) return notify("Field label is required", "error");
+    if (editing && !(await confirmAction({ title: `Update field ${fields.find((f) => f.id === editing)?.label ?? draft.label.trim()}?`, text: `Saves your changes to the ${year} template.`, confirmText: "Update", tone: "primary" }))) return;
     const body = { ...draft, validation_rule: draft.validation_rule.trim() || undefined };
     const ok = editing
       ? await run(() => apiFetch(`/api/admissions/fields/${editing}`, { method: "PUT", body: JSON.stringify(body) }), "Field updated")
@@ -88,7 +90,7 @@ export function TemplateBuilder({ notify }: { notify: (msg: string, tone?: "succ
 
   return (
     <div className="space-y-4">
-      <div className="card p-5">
+      <div className="card p-5 max-md:p-4">
         <div className="flex flex-wrap items-end gap-3">
           <Field label="Academic year">
             <Select aria-label="Academic year" value={year} onChange={(e) => { setYear(e.target.value); setEditing(null); setDraft(EMPTY); }} className="w-auto">
@@ -99,9 +101,12 @@ export function TemplateBuilder({ notify }: { notify: (msg: string, tone?: "succ
             {status ? <Badge tone={STATUS_TONE[status] ?? "slate"}>{status}</Badge> : <Badge tone="slate">No template yet</Badge>}
             <span className="text-xs text-ink-3">{fields.length} field{fields.length === 1 ? "" : "s"}</span>
           </div>
-          <div className="ml-auto flex flex-wrap gap-2">
+          <div className="ml-auto flex flex-wrap gap-2 max-md:ml-0 max-md:w-full max-md:[&>*]:flex-1">
             {editable && fields.length > 0 && (
-              <Button variant="accent" loading={busy} onClick={() => run(() => post(`/api/admissions/templates/${year}/send`), "Sent to the OS for approval")}>
+              <Button variant="accent" loading={busy} onClick={async () => {
+                if (!(await confirmAction({ title: `Send the ${year} template for approval?`, text: "The template is locked until the Office Superintendent reviews it.", confirmText: "Send", tone: "primary" }))) return;
+                void run(() => post(`/api/admissions/templates/${year}/send`), "Sent to the OS for approval");
+              }}>
                 <Icon name="spark" className="h-4 w-4" /> Send for approval
               </Button>
             )}
@@ -136,11 +141,11 @@ export function TemplateBuilder({ notify }: { notify: (msg: string, tone?: "succ
             <Field label="Validation (regex, optional)">
               <Input value={draft.validation_rule} maxLength={200} onChange={(e) => setDraft({ ...draft, validation_rule: e.target.value })} placeholder="^[0-9]{12}$" className="font-mono" />
             </Field>
-            <label className="flex items-center gap-2 self-end pb-2.5 text-[13px] text-ink-2">
-              <input type="checkbox" checked={draft.is_required} onChange={(e) => setDraft({ ...draft, is_required: e.target.checked })} />
+            <label className="flex items-center gap-2 self-end pb-2.5 text-[13px] text-ink-2 max-md:min-h-11 max-md:pb-0 max-md:text-[14px]">
+              <input type="checkbox" className="max-md:h-5 max-md:w-5" checked={draft.is_required} onChange={(e) => setDraft({ ...draft, is_required: e.target.checked })} />
               Required
             </label>
-            <div className="flex items-end gap-2">
+            <div className="flex items-end gap-2 max-md:[&>*]:flex-1">
               <Button variant="primary" loading={busy} onClick={save}>
                 <Icon name={editing ? "check" : "plus"} className="h-4 w-4" /> {editing ? "Save" : "Add"}
               </Button>
@@ -150,7 +155,7 @@ export function TemplateBuilder({ notify }: { notify: (msg: string, tone?: "succ
         )}
 
         {fields.length === 0 && !loading && (
-          <div className="mt-4 flex flex-wrap items-end gap-2 border-t border-line pt-4">
+          <div className="mt-4 flex flex-wrap items-end gap-2 border-t border-line pt-4 max-md:[&>*]:flex-1">
             <Field label="Start from an earlier year">
               <Select aria-label="Copy template from year" value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)} className="w-auto">
                 <option value="">Choose year…</option>
@@ -168,7 +173,7 @@ export function TemplateBuilder({ notify }: { notify: (msg: string, tone?: "succ
       </div>
 
       <div className="card overflow-x-auto">
-        <TableView id="template">
+        <TableView id="template" title="Label" badge={false} mobileHide={["#"]}>
           <table className="w-full text-sm">
             <thead className="table-head">
               <tr>
@@ -188,7 +193,7 @@ export function TemplateBuilder({ notify }: { notify: (msg: string, tone?: "succ
                   <td className="px-4 py-3 font-semibold">{f.label}</td>
                   <td className="px-4 py-3"><Badge tone="sky">{f.fieldType}</Badge></td>
                   <td className="px-4 py-3">{f.isRequired ? <Badge tone="rose">Required</Badge> : <Badge tone="slate">Optional</Badge>}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{f.validationRule ?? "—"}</td>
+                  <td className={`px-4 py-3 font-mono text-xs max-md:break-all${f.validationRule ? "" : " max-md:[.as-cards_&]:!hidden"}`}>{f.validationRule ?? "—"}</td>
                   <td className="px-4 py-3"><Badge tone={STATUS_TONE[f.status] ?? "slate"}>{f.status}</Badge></td>
                   {editable && (
                     <td className="px-4 py-3">
@@ -200,7 +205,10 @@ export function TemplateBuilder({ notify }: { notify: (msg: string, tone?: "succ
                           setDraft({ label: f.label, field_type: f.fieldType, is_required: f.isRequired, validation_rule: f.validationRule ?? "" });
                         }} />
                         <IconButton name="trash" label={`Delete ${f.label}`} variant="danger"
-                          onClick={() => run(() => apiFetch(`/api/admissions/fields/${f.id}`, { method: "DELETE" }), "Field deleted")} />
+                          onClick={async () => {
+                            if (!(await confirmAction({ title: `Delete ${f.label}?`, text: `The field is removed from the ${year} template.`, confirmText: "Delete", tone: "danger" }))) return;
+                            void run(() => apiFetch(`/api/admissions/fields/${f.id}`, { method: "DELETE" }), `${f.label} deleted`);
+                          }} />
                       </span>
                     </td>
                   )}
@@ -240,6 +248,9 @@ export function TemplateApprovals({ notify }: { notify: (msg: string, tone?: "su
   const act = async (kind: "approve" | "reject") => {
     if (!open) return;
     if (kind === "reject" && !remarks.trim()) return notify("Remarks are required to reject", "error");
+    if (!(await confirmAction(kind === "approve"
+      ? { title: `Approve and publish the ${open} template?`, text: "Parents will see this form for the year.", confirmText: "Publish", tone: "primary" }
+      : { title: `Reject the ${open} template?`, text: "It goes back to the admission officer with your remarks.", confirmText: "Reject", tone: "danger" }))) return;
     setBusy(true);
     try {
       await post(`/api/admissions/templates/${open}/${kind}`, remarks.trim() ? { remarks: remarks.trim() } : {});
@@ -258,7 +269,7 @@ export function TemplateApprovals({ notify }: { notify: (msg: string, tone?: "su
   return (
     <div className="space-y-4">
       <div className="card overflow-x-auto">
-        <TableView id="template-approvals">
+        <TableView id="template-approvals" badge={false}>
           <table className="w-full text-sm">
             <thead className="table-head">
               <tr>
@@ -290,7 +301,7 @@ export function TemplateApprovals({ notify }: { notify: (msg: string, tone?: "su
       </div>
 
       {open && (
-        <div className="card p-5">
+        <div className="card p-5 max-md:p-4">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="font-display text-[15px] font-bold">Template {open}</h3>
             <IconButton name="x" label="Close" variant="ghost" onClick={() => setOpen(null)} />
@@ -302,7 +313,7 @@ export function TemplateApprovals({ notify }: { notify: (msg: string, tone?: "su
                 <span className="font-semibold">{f.label}</span>
                 <Badge tone="sky">{f.fieldType}</Badge>
                 {f.isRequired && <Badge tone="rose">Required</Badge>}
-                {f.validationRule && <span className="font-mono text-xs text-ink-3">{f.validationRule}</span>}
+                {f.validationRule && <span className="font-mono text-xs text-ink-3 max-md:break-all">{f.validationRule}</span>}
               </li>
             ))}
           </ol>
@@ -311,7 +322,7 @@ export function TemplateApprovals({ notify }: { notify: (msg: string, tone?: "su
               <Field label="Remarks" hint="Required when rejecting; shown to the admission officer.">
                 <Input value={remarks} maxLength={1000} onChange={(e) => setRemarks(e.target.value)} />
               </Field>
-              <div className="flex gap-2">
+              <div className="flex gap-2 max-md:[&>*]:flex-1">
                 <Button variant="primary" loading={busy} onClick={() => act("approve")}><Icon name="check" className="h-4 w-4" /> Approve &amp; publish</Button>
                 <Button variant="danger" loading={busy} onClick={() => act("reject")}>Reject</Button>
               </div>

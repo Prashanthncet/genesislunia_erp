@@ -65,7 +65,7 @@ export function ReportIncidentForm({ students, onCreated }: {
         </div>
       </div>
       <div className="px-4 pb-4">
-        <Button variant="primary" onClick={submit} loading={busy}><Icon name="check" className="h-4 w-4" /> Submit report</Button>
+        <Button variant="primary" onClick={submit} loading={busy} className="max-md:w-full"><Icon name="check" className="h-4 w-4" /> Submit report</Button>
       </div>
     </Card>
   );

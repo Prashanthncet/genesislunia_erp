@@ -71,6 +71,9 @@ export function GroupedBars({
         ))}
       </div>
 
+      {/* Phones: many categories scroll sideways inside the chart instead of truncating to "Cla…". */}
+      <div className="max-md:overflow-x-auto max-md:overscroll-x-contain">
+      <div className="max-md:min-w-[var(--gb-min)]" style={{ "--gb-min": `${categories.length * 44 + 56}px` } as import("react").CSSProperties}>
       <div className="flex gap-3">
         {/* Y axis */}
         <div className="relative w-11 shrink-0" style={{ height }}>
@@ -79,7 +82,7 @@ export function GroupedBars({
               .slice()
               .reverse()
               .map((t) => (
-                <span key={t} className="text-right text-[10px] font-medium leading-none tabular-nums text-ink-3">
+                <span key={t} className="text-right text-[10px] font-medium leading-none tabular-nums text-ink-3 max-md:text-[11px]">
                   {tickText(t)}
                 </span>
               ))}
@@ -155,12 +158,14 @@ export function GroupedBars({
         {categories.map((cat, ci) => (
           <span
             key={`${cat}-${ci}`}
-            className="min-w-0 flex-1 truncate text-center text-[10.5px] font-medium text-ink-3"
+            className="min-w-0 flex-1 truncate text-center text-[10.5px] font-medium text-ink-3 max-md:text-[11px]"
             title={cat}
           >
             {cat}
           </span>
         ))}
+      </div>
+      </div>
       </div>
     </div>
   );

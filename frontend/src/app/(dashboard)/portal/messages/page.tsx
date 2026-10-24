@@ -27,13 +27,13 @@ function MessagesBody({ child }: { child: PortalChild }) {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-3">
-                  <p className="truncate text-[13px] font-semibold text-ink">{m.subject ?? `${m.channel.toUpperCase()} message`}</p>
+                  <p className="truncate text-[13px] font-semibold text-ink max-md:line-clamp-2 max-md:whitespace-normal">{m.subject ?? `${m.channel.toUpperCase()} message`}</p>
                   <span className="shrink-0 text-[11px] text-ink-3" title={new Date(m.created_at).toLocaleString("en-IN")}>
                     {relativeTime(m.created_at)}
                   </span>
                 </div>
-                <p className="mt-0.5 whitespace-pre-line text-[12.5px] leading-relaxed text-ink-2">{m.body}</p>
-                <p className="mt-1 flex items-center gap-2 text-[10.5px] uppercase tracking-wide text-ink-3">
+                <p className="mt-0.5 whitespace-pre-line text-[12.5px] leading-relaxed text-ink-2 max-md:text-[13px] max-md:[overflow-wrap:anywhere]">{m.body}</p>
+                <p className="mt-1 flex items-center gap-2 text-[10.5px] uppercase tracking-wide text-ink-3 max-md:text-[11px]">
                   {m.channel}
                   {m.status === "failed" && <Badge tone="rose">not delivered</Badge>}
                 </p>

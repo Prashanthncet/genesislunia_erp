@@ -1039,3 +1039,343 @@ html[data-motion="reduced"] .record-card.is-interactive:hover { transform: none;
   .no-print { display: none !important; }
   body { background: #fff; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOBILE LAYER — phones (<768px) and the drawer/bottom-nav shell (<1024px).
+   Everything below lives inside max-width media queries, so desktop (≥1024px)
+   renders exactly as before. Material 3 / Flutter-style mobile conventions:
+   48px touch targets, 16px inputs (no iOS focus-zoom), bottom navigation,
+   bottom sheets, safe-area insets.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Height of the mobile bottom navigation bar (without the home-indicator inset). */
+  --m-nav-h: 64px;
+  --m-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --m-safe-top: env(safe-area-inset-top, 0px);
+}
+
+@media (max-width: 1023.98px) {
+  /* Landscape iPhones: keep content out from under the notch (viewport-fit=cover). */
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  /* Sticky header must not hide anchors / focused fields. */
+  html { scroll-padding-top: calc(56px + var(--m-safe-top)); }
+
+  /* No grey flash on tap; feedback comes from our own :active states. */
+  a, button, [role="button"], [role="tab"], label, summary { -webkit-tap-highlight-color: transparent; }
+
+  /* Hover lifts make no sense on touch and leave cards "stuck" lifted after a tap. */
+  .card-hover:hover { transform: none; box-shadow: var(--shadow-soft); }
+
+  /* Pinned save bars sit above the bottom navigation instead of under it. */
+  .m-above-nav { bottom: calc(var(--m-nav-h) + var(--m-safe-bottom)) !important; }
+
+  /* Horizontal scrollers (tabs, chip rows) — swipeable, no visible scrollbar. */
+  .m-scroll-x {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .m-scroll-x::-webkit-scrollbar { display: none; }
+}
+
+@media (max-width: 767.98px) {
+  /* Touch targets: Material's 48dp minimum (44px is the iOS floor). */
+  .btn-primary,
+  .btn-soft,
+  .btn-ghost,
+  .btn-danger,
+  .btn-accent,
+  .btn-dark {
+    min-height: 2.75rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  /* 16px stops iOS Safari zooming the whole page when a field gets focus. */
+  /* Compact, readable form controls (14px, 42px tall). iOS Safari zooms the page when a
+     focused field is under 16px, so iPhone/iPad alone keep 16px — see the @supports block. */
+  .field {
+    min-height: 2.625rem;
+    font-size: 0.875rem;
+  }
+  textarea.field { min-height: 5.5rem; }
+  /* Icon-prefixed search inputs: .field padding otherwise wins over pl-9/pl-10 and the icon sits on the text. */
+  .field.pl-9 { padding-left: 2.25rem; }
+  .field.pl-10 { padding-left: 2.5rem; }
+  .field.pr-11 { padding-right: 2.75rem; }
+
+  /* Tighter card chrome: phones need the width for content, not padding. */
+  .card-head { padding: 0.875rem 1rem; }
+
+  /* Data tables that stay tabular scroll inside their card with momentum. */
+  .table-wrap { -webkit-overflow-scrolling: touch; }
+
+  /* ── Record cards (TableView card mode) on phones ──────────────────────────
+     Desktop lays cards out at minmax(21rem, 1fr) — 336px, wider than a 360px phone
+     has, which clipped every card. Phones get a list-row card instead:
+
+     ┌─────────────────────────────────┐
+     │ Title                  (Status) │  headline + status on one line
+     │─────────────────────────────────│
+     │ Label                     value │  label/value rows, hairline dividers
+     │ Label                     value │
+     │ Long label                      │  long text: label above, value below
+     │ the whole value, wrapping…      │
+     │─────────────────────────────────│
+     │ [   Action   ] [   Action    ]  │  equal-width actions
+     └─────────────────────────────────┘                                      */
+  .as-cards tbody,
+  .as-cards tfoot {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+  .as-cards table:not([data-dense]) tr:not([data-full-row]) {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0.875rem 1rem 0.75rem;
+    border-radius: 1rem;
+  }
+  .as-cards tr:hover {
+    transform: none;
+    border-color: var(--color-line);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 4px 12px -2px rgba(15, 23, 42, 0.03);
+  }
+  .as-cards td {
+    font-size: 0.875rem;
+  }
+
+  /* Headline */
+  .as-cards td[data-role="title"] {
+    padding-bottom: 0.75rem;
+    border-bottom: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+  .as-cards td[data-role="title"],
+  .as-cards td[data-role="title"] * {
+    text-align: left;
+  }
+  .as-cards tr:has(td[data-role="badge"]) td[data-role="title"] {
+    padding-right: 6.5rem;
+  }
+  .as-cards td[data-role="badge"] {
+    top: 0.875rem;
+    right: 1rem;
+    max-width: 6rem;
+  }
+  .as-cards td[data-role="badge"] .badge {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Field rows: muted label left, value right, hairline between rows. */
+  .as-cards table:not([data-dense]) td:is([data-role="meta"], [data-role="wide"]) {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    column-gap: 1rem;
+    row-gap: 0.25rem;
+    min-height: 2.75rem;
+    padding: 0.5rem 0;
+    border-top: 1px solid var(--color-line);
+    text-align: right;
+    font-weight: 500;
+  }
+  .as-cards table:not([data-dense]) td:is([data-role="meta"], [data-role="wide"])::before {
+    flex: 0 1 auto;
+    max-width: 48%;
+    margin: 0;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    text-align: left;
+    color: var(--color-ink-3);
+  }
+  .as-cards table:not([data-dense]) td[data-role="meta"] > * {
+    margin-left: auto;
+    min-width: 0;
+    max-width: 100%;
+    text-align: right;
+    justify-content: flex-end;
+  }
+  /* Long text and controls take the full width under their label. */
+  .as-cards table:not([data-dense]) td[data-role="wide"],
+  .as-cards table:not([data-dense]) td[data-role="meta"]:has(select, input, textarea, [role="radiogroup"]) {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    text-align: left;
+  }
+  .as-cards table:not([data-dense]) td[data-role="wide"] > *,
+  .as-cards table:not([data-dense]) td[data-role="meta"]:has(select, input, textarea, [role="radiogroup"]) > * {
+    margin-left: 0;
+    text-align: left;
+    justify-content: flex-start;
+  }
+  .as-cards table:not([data-dense]) td[data-role="wide"]::before,
+  .as-cards table:not([data-dense]) td[data-role="meta"]:has(select, input, textarea, [role="radiogroup"])::before {
+    max-width: none;
+  }
+  .as-cards td > [role="radiogroup"] {
+    width: 100%;
+  }
+
+  /* Actions: footer row, equal-width buttons. */
+  .as-cards table:not([data-dense]) td[data-role="actions"] {
+    margin-top: 0;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--color-line);
+    align-items: center;
+  }
+  .as-cards td[data-role="actions"] button,
+  .as-cards td[data-role="actions"] a {
+    min-height: 2.5rem;
+    height: auto;
+  }
+  .as-cards td[data-role="actions"] > * {
+    flex: 1 1 auto;
+  }
+
+  /* Fields a page marks as secondary (TableView `mobileHide`) stay on desktop cards and tables. */
+  .as-cards td[data-mhide] {
+    display: none !important;
+  }
+  /* Dense matrices (monthly register): 7 tiles across is ~38px each on a phone. */
+  .as-cards table[data-dense] tr {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  /* Add / edit / view screens open as full-screen pages on phones: slide in like a pushed
+     page instead of popping up as a sheet. */
+  .m-page {
+    animation: m-page-in 0.26s var(--ease-soft) both;
+  }
+
+  /* ── Purpose-built record cards (RecordCard) footer on phones ───────────────
+     Actions sat right-aligned and wrapped raggedly (Profile · Edit / Mark left · 🗑).
+     Phones get an even 2-column grid of same-height buttons; a lone or odd last
+     action spans the row. Ghost buttons get an outline so the set reads as one group. */
+  .record-card-footer,
+  .record-card-footer > div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+  /* A wrapper of buttons and any caption (e.g. the invoice number) each take a full row. */
+  .record-card-footer > div,
+  .record-card-footer > :not(button):not(a):not(div) {
+    grid-column: 1 / -1;
+  }
+  .record-card-footer > :not(button):not(a):not(div) {
+    justify-self: start;
+    font-size: 0.75rem;
+  }
+  .record-card-footer > :is(button, a):only-child,
+  .record-card-footer > :is(button, a):last-child:nth-child(odd),
+  .record-card-footer > div > :only-child,
+  .record-card-footer > div > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+  .record-card-footer :is(button, a):is(.btn-primary, .btn-soft, .btn-ghost, .btn-danger, .btn-accent, .btn-dark) {
+    width: 100%;
+    justify-content: center;
+    min-height: 2.75rem;
+  }
+  .record-card-footer .btn-ghost {
+    border: 1px solid var(--color-line);
+    background: var(--color-surface);
+  }
+
+  /* ── Table mode on phones ───────────────────────────────────────────────────
+     Pages wrap <TableView> in an overflow-x scroller, so the "N records · Table |
+     Cards" toolbar scrolled sideways with the table. The table scrolls on its own;
+     the toolbar stays put. */
+  .table-wrap:has(> .table-view),
+  [class*="overflow-x"]:has(> .table-view) {
+    overflow-x: visible;
+  }
+  .table-view {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .table-view > div:last-child:not(.as-cards):not(.hidden) {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Narrow first/last cell padding so more columns fit before scrolling. */
+  table:where(.data-table) thead th,
+  table:where(.data-table) tbody td {
+    padding: 0.75rem 0.75rem;
+  }
+
+  /* Toasts would cover the sticky Save bar (attendance, roll call) for 4.5s right
+     after Save. On those pages they drop in under the app bar instead. */
+  body:has(.m-above-nav) .m-toasts {
+    top: calc(56px + var(--m-safe-top) + 0.5rem);
+    bottom: auto !important;
+  }
+
+  /* Pressed feedback for list rows / cards that act as buttons. */
+  .record-card.is-interactive:active { transform: scale(0.99); }
+}
+
+@keyframes m-page-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-page { animation: none; }
+}
+
+/* iOS Safari only (-webkit-touch-callout is WebKit-on-iOS): 16px inputs stop the zoom-on-focus. */
+@supports (-webkit-touch-callout: none) {
+  @media (max-width: 767.98px) {
+    .field,
+    input:not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
+}
+
+/* ── Download tray (components/DownloadTray) ─────────────────────────────── */
+.dl-card {
+  animation: dl-in 0.28s var(--ease-soft) both;
+}
+.dl-shine {
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.7) 50%, transparent 70%);
+  background-size: 220% 100%;
+  animation: dl-shine 1.3s linear infinite;
+}
+.dl-indeterminate {
+  animation: dl-indeterminate 1.15s var(--ease-soft) infinite;
+}
+@keyframes dl-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dl-shine {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}
+@keyframes dl-indeterminate {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(330%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dl-card, .dl-shine, .dl-indeterminate { animation: none; }
+}

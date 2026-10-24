@@ -7,6 +7,8 @@ import {
   AnimatedNumber, Badge, Button, EmptyState, Field, Icon, Input, PageHeader, ProgressBar, Reveal, Select, Tabs, useToast,
 } from "@/components/ui";
 import { TableView } from "@/components/TableView";
+import { confirmAction } from "@/components/confirm";
+import { MobileFilters } from "@/components/mobile/MobileFilters";
 import { gradeTone, type GradeBand } from "@/components/academics/grades";
 
 type ClassItem = { id: string; name: string; section: string | null };
@@ -151,6 +153,7 @@ function MarksEntry({ classes, subjects, exams, teaching, isTeacher, onSaved }: 
     if (!grid) return;
     if (errors) return toast.push(`Fix ${errors} invalid score(s) before saving`, "error");
     if (!changed.length) return toast.push("No changes to save", "info");
+    if (!(await confirmAction({ title: `Save ${changed.length} mark(s) for ${grid.subject.name}?`, text: `${grid.exam.name} · these scores will be recorded for the class.`, confirmText: "Save marks", tone: "primary" }))) return;
     setSaving(true);
     try {
       const res = await apiFetch<{ recorded: number }>("/api/exams/marks", {
@@ -190,13 +193,13 @@ function MarksEntry({ classes, subjects, exams, teaching, isTeacher, onSaved }: 
       )}
       {loading && <div className="card p-6 text-sm text-ink-3">Loading students…</div>}
       {grid && (
-        <div className="card overflow-hidden">
+        <div className="card overflow-hidden max-md:overflow-visible">
           <div className="card-head">
             <div>
               <h2 className="font-display text-[18px] font-semibold text-ink">{grid.exam.name} · {grid.subject.name}</h2>
               <p className="text-[12.5px] text-ink-3">Max marks {max} · weight {grid.exam.weight} · {grid.rows.length} students · {changed.length} unsaved</p>
             </div>
-            <Button variant="primary" onClick={save} loading={saving} disabled={!changed.length || errors > 0}><Icon name="check" className="h-4 w-4" /> Save marks</Button>
+            <Button variant="primary" onClick={save} loading={saving} disabled={!changed.length || errors > 0} className="max-md:w-full"><Icon name="check" className="h-4 w-4" /> Save marks</Button>
           </div>
           <TableView id="marks" title="Student">
             <table className="w-full text-sm">
@@ -227,6 +230,12 @@ function MarksEntry({ classes, subjects, exams, teaching, isTeacher, onSaved }: 
               </tbody>
             </table>
           </TableView>
+          {grid.rows.length > 0 && (
+            <div className="sticky bottom-[calc(var(--m-nav-h)+var(--m-safe-bottom)+0.5rem)] z-10 flex items-center gap-3 rounded-b-[inherit] border-t border-line bg-surface/95 p-3 backdrop-blur md:hidden">
+              <span className="min-w-0 flex-1 text-[12.5px] text-ink-3">{errors > 0 ? <span className="font-medium text-danger">{errors} invalid</span> : `${changed.length} unsaved`}</span>
+              <Button variant="primary" onClick={save} loading={saving} disabled={!changed.length || errors > 0} className="flex-1"><Icon name="check" className="h-4 w-4" /> Save marks</Button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -309,6 +318,8 @@ function ReportCards({ classes, teaching, bands, canGenerate, canPublish, portal
 
   const publish = async (confirm: boolean) => {
     if (!termReady) return toast.push("Choose a class, term and academic year to publish", "error");
+    // The replace step (confirm=true) is already gated by the inline "Replace published cards" banner.
+    if (!confirm && !(await confirmAction({ title: `${pub?.published ? "Re-publish" : "Publish"} report cards for ${term.trim()} ${year.trim()}?`, text: "Every student's card for this class is frozen and becomes visible to parents and students.", confirmText: pub?.published ? "Re-publish" : "Publish", tone: "primary" }))) return;
     setBusy("publish");
     try {
       const r = await apiFetch<{ published: number; republished: boolean; without_marks: number }>("/api/exams/report-cards/publish", {
@@ -380,10 +391,10 @@ function ReportCards({ classes, teaching, bands, canGenerate, canPublish, portal
             </Select>
           </Field>
         ) : (
-          <>
+          <MobileFilters label="Term & year" active={[term, year].filter((v) => v.trim()).length}>
             <Field label="Term" hint="Required to publish"><Input value={term} onChange={(e) => setTerm(e.target.value)} placeholder="e.g. Term 1" /></Field>
             <Field label="Academic year" hint="e.g. 2026-27"><Input value={year} onChange={(e) => setYear(e.target.value)} placeholder="2026-27" /></Field>
-          </>
+          </MobileFilters>
         )}
         <div className="flex flex-wrap items-end gap-2">
           {!portal && (
@@ -405,7 +416,7 @@ function ReportCards({ classes, teaching, bands, canGenerate, canPublish, portal
               <p className="text-[12.5px] text-ink-3">Freezes every student&apos;s card for the chosen class, term and year. Parents and students only ever see published cards; later mark edits don&apos;t change them.</p>
             </div>
             {canPublish && (
-              <Button variant="primary" onClick={() => publish(false)} loading={busy === "publish"} disabled={!termReady}>
+              <Button variant="primary" onClick={() => publish(false)} loading={busy === "publish"} disabled={!termReady} className="max-md:w-full">
                 <Icon name="check" className="h-4 w-4" /> {pub?.published ? "Re-publish" : "Publish"}
               </Button>
             )}
@@ -425,9 +436,9 @@ function ReportCards({ classes, teaching, bands, canGenerate, canPublish, portal
           {needConfirm && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warn-line bg-warn-soft px-3 py-2.5 text-[12.5px] text-ink">
               <span>{needConfirm} Replacing changes what parents see, and is recorded in the audit log.</span>
-              <span className="flex gap-2">
+              <span className="flex gap-2 max-md:w-full max-md:flex-wrap">
                 <Button size="sm" onClick={() => setNeedConfirm(null)}>Cancel</Button>
-                <Button size="sm" variant="danger" loading={busy === "publish"} onClick={() => publish(true)}>Replace published cards</Button>
+                <Button size="sm" variant="danger" loading={busy === "publish"} onClick={() => publish(true)} className="max-md:flex-1">Replace published cards</Button>
               </span>
             </div>
           )}
@@ -440,16 +451,16 @@ function ReportCards({ classes, teaching, bands, canGenerate, canPublish, portal
             <p className="font-semibold text-ink">Generate report cards for the class</p>
             <p className="text-[12.5px] text-ink-3">Provisional: computes every student&apos;s card from live marks (staff only); download individually or as one combined PDF.</p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="accent" onClick={generate} loading={busy === "generate"} disabled={!classId}><Icon name="sparkles" className="h-4 w-4" /> Generate</Button>
-            {gen && <Button onClick={() => download(gen.class_pdf_url, "report-cards.pdf", "class")} loading={busy === "class"}><Icon name="download" className="h-4 w-4" /> Class PDF</Button>}
+          <div className="flex gap-2 max-md:w-full">
+            <Button variant="accent" className="max-md:flex-1" onClick={generate} loading={busy === "generate"} disabled={!classId}><Icon name="sparkles" className="h-4 w-4" /> Generate</Button>
+            {gen && <Button className="max-md:flex-1" onClick={() => download(gen.class_pdf_url, "report-cards.pdf", "class")} loading={busy === "class"}><Icon name="download" className="h-4 w-4" /> Class PDF</Button>}
           </div>
         </div>
       )}
 
       {gen && (
         <div className="card overflow-hidden">
-          <TableView id="generation" title="Student">
+          <TableView id="generation" title="Student" mobileHide={["Attendance"]}>
             <table className="w-full text-sm">
               <thead className="table-head"><tr><th className="px-4 py-3">Rank</th><th className="px-4 py-3">Student</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Overall</th><th className="px-4 py-3">Grade</th><th className="px-4 py-3">Attendance</th><th className="px-4 py-3 text-right">PDF</th></tr></thead>
               <tbody>
@@ -479,11 +490,11 @@ function CardPreview({ card, bands }: { card: ReportCard; bands: GradeBand[] }) 
   const overall = card.overall_pct ?? 0;
   return (
     <div className="space-y-4">
-      <div className="card relative overflow-hidden p-5">
+      <div className="card relative overflow-hidden p-5 max-md:p-4">
         <div className="relative flex flex-wrap items-center justify-between gap-4">
           <div>
             <h3 className="text-lg font-bold">{card.student.full_name}</h3>
-            <p className="text-sm text-ink-2">{card.student.admission_no} · {card.student.class_name ?? "—"} · {[card.term, card.academic_year].filter(Boolean).join(" · ") || "All exams"}</p>
+            <p className="text-sm text-ink-2 max-md:[overflow-wrap:anywhere]">{card.student.admission_no} · {card.student.class_name ?? "—"} · {[card.term, card.academic_year].filter(Boolean).join(" · ") || "All exams"}</p>
             <div className="mt-3 flex flex-wrap gap-2 text-xs">
               <Badge tone="brand">Rank {card.rank ? `${card.rank} of ${card.class_size}` : "—"}</Badge>
               <Badge tone="sky">CGPA {card.grade_point ?? "—"}</Badge>
@@ -500,7 +511,7 @@ function CardPreview({ card, bands }: { card: ReportCard; bands: GradeBand[] }) 
             </div>
             <div className="mt-3 max-w-xs"><ProgressBar value={overall} tone={card.passed === false ? "rose" : "emerald"} label="Overall percentage" /></div>
           </div>
-          <div className="text-right">
+          <div className="text-right max-md:w-full max-md:text-left">
             <p className="text-4xl font-black text-brand-700">{card.overall_pct === null ? "—" : <AnimatedNumber value={card.overall_pct} suffix="%" decimals={1} />}</p>
             <p className="text-xs font-bold uppercase tracking-wide text-ink-2">Overall · Grade {card.overall_grade ?? "—"}{card.remark ? ` · ${card.remark}` : ""}</p>
           </div>
@@ -551,17 +562,17 @@ function ExamsAdmin({ classes, exams, canSetup, onChange }: { classes: ClassItem
     } catch (e) { toast.push(errText(e), "error"); } finally { setBusy(false); }
   };
   const remove = async (e: Exam) => {
-    if (!window.confirm(`Delete ${e.name}?`)) return;
-    try { await apiFetch(`/api/exams/${e.id}`, { method: "DELETE" }); onChange(); toast.push("Exam deleted", "success"); }
+    if (!(await confirmAction({ title: `Delete ${e.name}?`, text: "This cannot be undone.", confirmText: "Delete", tone: "danger" }))) return;
+    try { await apiFetch(`/api/exams/${e.id}`, { method: "DELETE" }); onChange(); toast.push(`${e.name} deleted`, "success"); }
     catch (err) { toast.push(errText(err), "error"); }
   };
   return (
     <div className={`grid grid-cols-1 gap-6 ${canSetup ? "lg:grid-cols-[22rem_1fr]" : ""}`}>
       {canSetup && (
-        <div className="card space-y-3 p-5">
+        <div className="card space-y-3 p-5 max-md:p-4">
           <h3 className="font-semibold text-ink">Create exam</h3>
           <Field label="Name" required><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 max-md:[&>*]:min-w-0">
             <Field label="Date" required><Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field>
             <Field label="Class"><Select aria-label="Exam class" value={form.class_id} onChange={(e) => setForm({ ...form, class_id: e.target.value })}><option value="">Any class</option>{classes.map((c) => <option key={c.id} value={c.id}>{cls(c)}</option>)}</Select></Field>
             <Field label="Term"><Input value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} placeholder="Term 1" /></Field>
@@ -573,7 +584,7 @@ function ExamsAdmin({ classes, exams, canSetup, onChange }: { classes: ClassItem
         </div>
       )}
       <div className="card overflow-hidden">
-        <TableView id="exams" title="Exam">
+        <TableView id="exams" title="Exam" mobileHide={["Weight", "Max"]}>
           <table className="w-full text-sm">
             <thead className="table-head"><tr><th className="px-4 py-3">Exam</th><th className="px-4 py-3">Date</th><th className="px-4 py-3">Class</th><th className="px-4 py-3">Term / year</th><th className="px-4 py-3">Weight</th><th className="px-4 py-3">Max</th><th className="px-4 py-3">Marks</th>{canSetup && <th className="px-4 py-3" />}</tr></thead>
             <tbody>
@@ -586,7 +597,7 @@ function ExamsAdmin({ classes, exams, canSetup, onChange }: { classes: ClassItem
                   <td className="tnum px-4 py-3">{e.weight}</td>
                   <td className="tnum px-4 py-3">{e.maxMarks}</td>
                   <td className="tnum px-4 py-3">{e._count?.examMarks ?? 0}</td>
-                  {canSetup && <td className="px-4 py-3 text-right"><button aria-label={`Delete ${e.name}`} onClick={() => remove(e)} className="rounded-lg p-1.5 text-danger hover:bg-danger-soft"><Icon name="trash" className="h-4 w-4" /></button></td>}
+                  {canSetup && <td className="px-4 py-3 text-right"><button aria-label={`Delete ${e.name}`} onClick={() => remove(e)} className="rounded-lg p-1.5 text-danger hover:bg-danger-soft max-md:p-3"><Icon name="trash" className="h-4 w-4" /></button></td>}
                 </tr>
               ))}
               {exams.length === 0 && <tr><td colSpan={8} className="px-4 py-10 text-center text-ink-3">No exams yet</td></tr>}
@@ -622,6 +633,7 @@ function BandEditor({ bands, canEdit, onSaved }: { bands: GradeBand[]; canEdit: 
 
   const save = async () => {
     if (err) return toast.push(err, "error");
+    if (!(await confirmAction({ title: "Save the grade scale?", text: "Report cards and the performance report will use the new bands.", confirmText: "Save scale", tone: "primary" }))) return;
     setBusy(true);
     try {
       const saved = await apiFetch<GradeBand[]>("/api/exams/grade-bands", { method: "PUT", body: JSON.stringify({ bands: rows.map((r) => ({
@@ -640,13 +652,14 @@ function BandEditor({ bands, canEdit, onSaved }: { bands: GradeBand[]; canEdit: 
           <p className="text-[12.5px] text-ink-3">A percentage gets the band with the highest threshold it reaches. Used by report cards and the performance report.</p>
         </div>
         {canEdit && (
-          <div className="flex gap-2">
-            <Button size="sm" onClick={() => setRows([...rows, { grade: "", min: "", gp: "", remark: "" }])}><Icon name="plus" className="h-3.5 w-3.5" /> Band</Button>
-            <Button size="sm" variant="primary" onClick={save} loading={busy} disabled={!!err}>Save scale</Button>
+          <div className="flex gap-2 max-md:w-full">
+            <Button size="sm" className="max-md:flex-1" onClick={() => setRows([...rows, { grade: "", min: "", gp: "", remark: "" }])}><Icon name="plus" className="h-3.5 w-3.5" /> Band</Button>
+            <Button size="sm" variant="primary" onClick={save} loading={busy} disabled={!!err} className="max-md:flex-1">Save scale</Button>
           </div>
         )}
       </div>
       {err && <p className="px-5 pt-3 text-[12.5px] font-medium text-danger">{err}</p>}
+      <div className="max-md:overflow-x-auto max-md:overscroll-x-contain">
       <table className="w-full text-sm">
         <thead className="table-head"><tr><th className="px-4 py-3">Grade</th><th className="px-4 py-3">From %</th><th className="px-4 py-3">Grade point</th><th className="px-4 py-3">Remark</th>{canEdit && <th className="px-4 py-3" />}</tr></thead>
         <tbody>
@@ -654,11 +667,11 @@ function BandEditor({ bands, canEdit, onSaved }: { bands: GradeBand[]; canEdit: 
             <tr key={i} className="border-t border-line">
               {canEdit ? (
                 <>
-                  <td className="px-4 py-2"><input aria-label="Grade" className="field w-20" value={r.grade} onChange={(e) => set(i, "grade", e.target.value)} /></td>
-                  <td className="px-4 py-2"><input aria-label="Minimum percent" inputMode="decimal" className="field w-24 tnum" value={r.min} onChange={(e) => set(i, "min", e.target.value)} /></td>
-                  <td className="px-4 py-2"><input aria-label="Grade point" inputMode="decimal" className="field w-24 tnum" value={r.gp} onChange={(e) => set(i, "gp", e.target.value)} /></td>
-                  <td className="px-4 py-2"><input aria-label="Remark" className="field" value={r.remark} onChange={(e) => set(i, "remark", e.target.value)} /></td>
-                  <td className="px-4 py-2 text-right"><button aria-label={`Remove band ${r.grade}`} onClick={() => setRows(rows.filter((_, j) => j !== i))} className="rounded-lg p-1.5 text-danger hover:bg-danger-soft"><Icon name="trash" className="h-4 w-4" /></button></td>
+                  <td className="px-4 py-2"><input aria-label="Grade" className="field w-20 max-md:min-w-[4.5rem]" value={r.grade} onChange={(e) => set(i, "grade", e.target.value)} /></td>
+                  <td className="px-4 py-2"><input aria-label="Minimum percent" inputMode="decimal" className="field w-24 tnum max-md:!w-20 max-md:min-w-[4.5rem]" value={r.min} onChange={(e) => set(i, "min", e.target.value)} /></td>
+                  <td className="px-4 py-2"><input aria-label="Grade point" inputMode="decimal" className="field w-24 tnum max-md:!w-20 max-md:min-w-[4.5rem]" value={r.gp} onChange={(e) => set(i, "gp", e.target.value)} /></td>
+                  <td className="px-4 py-2"><input aria-label="Remark" className="field max-md:min-w-[10rem]" value={r.remark} onChange={(e) => set(i, "remark", e.target.value)} /></td>
+                  <td className="px-4 py-2 text-right"><button aria-label={`Remove band ${r.grade}`} onClick={() => setRows(rows.filter((_, j) => j !== i))} className="rounded-lg p-1.5 text-danger hover:bg-danger-soft max-md:p-3"><Icon name="trash" className="h-4 w-4" /></button></td>
                 </>
               ) : (
                 <>
@@ -672,6 +685,7 @@ function BandEditor({ bands, canEdit, onSaved }: { bands: GradeBand[]; canEdit: 
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
