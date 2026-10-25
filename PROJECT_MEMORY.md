@@ -841,3 +841,44 @@ Deps installed once by lead: pdf-lib 1.17.1, exceljs 4.4.0, qrcode 1.5.4 (+@type
   - Still laptop-dependent (must be on/awake). Durable fix = DEPLOY.md: backend on Render + Neon, then set KV
     BACKEND_URL to the Render URL (one command, no redeploy) and remove the Startup .vbs.
   - cf-worker.mjs + wrangler.jsonc changes NOT committed (not asked); wrangler.jsonc was staged by the other session.
+- 2026-10-25 NEW /landing (Jayanth: "most beautiful, enhanced, animated landing page, full of sections, route /landing,
+  no link for now"): frontend/src/app/landing/{layout.tsx (metadata, robots noindex), page.tsx}. Client page, motion/react
+  + page-scoped CSS. Sections: glass sticky nav (anchors + Sign in → /login), scroll-progress bar, navy aurora hero with
+  blur-in headline, animated gradient text, CTAs and a 3D-tilted live dashboard mockup (bars grow, SVG path draws,
+  floating notification cards); module marquee; count-up stats (product facts only: 16 roles, 20+ modules, 6 portals,
+  100% mobile-ready); 4-col bento of 9 features with animated mini-visuals (attendance segments, OTP flip, fee meter,
+  payslip, roll call); interactive role switcher (6 roles, shared-layout pill, blur transitions); scroll-drawn
+  5-step workflow timeline; phone showcase (auto-cycling screens, tappable bottom nav); trust cards; FAQ accordion;
+  final CTA band; footer. No fabricated testimonials/customers. MotionConfig reducedMotion="user" + CSS reduced-motion
+  fallbacks. public/school-banner.jpg NOT used (third-party clip art with a watermark).
+  Verified locally (next build OK, 17 kB route): desktop 1440 + phone 390 screenshots, 0 page errors, 0 sideways
+  scroll. Nothing links to /landing. Not deployed / not committed (not asked).
+- 2026-10-25 /landing round 2 (Jayanth: "footer not good, UI okay, enhance more, add geometrical shapes"): NEW
+  frontend/src/app/landing/shapes.tsx — line-art SVG geometry (ring, dashed ring, triangle, filled triangle, rounded
+  square, diamond, hexagon, plus, dot grid, half-circle, zig-zag, isometric cube) via GeoField (drift + spin CSS vars,
+  optional pointer-depth parallax with springs), Orbits (3 rotating orbit rings with glowing dots behind the hero
+  mockup), presets HERO/LIGHT/DARK/CTA, and a new Footer (dark navy, glow + grid + shapes, brand block with chips,
+  4 link columns → page anchors / /login, CTA strip with Sign in + back-to-top, giant gradient "GENESIS" wordmark,
+  bottom bar). Geometry placed in every section; feature cards got a hexagon corner that rotates on hover; trust
+  section got id="trust". Reduced motion stops all shape animation. Verified: build OK (20.4 kB route), desktop/phone
+  screenshots, 0 page errors, 0 sideways scroll. Served locally on :5180. Not deployed/committed.
+- 2026-10-25 /landing round 3 (Jayanth: "completely redesign Everything connected / Safe by design / FAQ"): NEW
+  frontend/src/app/landing/sections.tsx — ConnectedSection (hub-and-spoke SystemMap: Genesis core + 8 colour-coded
+  module nodes on an ellipse with dashed pulse lines, hover/focus a node selects the module; module explorer with
+  auto-advance (6 s progress bar, pauses on interaction, only while in view), 8 animated illustrative previews:
+  attendance marking, gate-pass approval stepper + parent OTP, invoice paid stamp + receipt, timetable filling +
+  substitute, report-card bars, hostel bed grid + roll-call counts, payslip deductions, safeguarding timeline; phones
+  get a chip scroller), TrustSection (dark security console: 4 pillars with spring check badges, glowing shield with
+  conic radar sweep + rings, live audit-trail console streaming sample entries), FaqSection (sticky editorial heading
+  + "Still curious?" card, numbered 01–05 accordion with gradient border on the open item, plus→minus morph).
+  page.tsx: old bento/trust/FAQ + their data/mini-visuals removed; CSS lp-pulse / lp-ping / lp-radar (+ reduced
+  motion). Fixed phone overflow (grid items without grid-cols-1 grew to the chip scroller's width) on these grids and
+  the hero/mobile grids. Verified: build OK (25.7 kB), desktop + phone section screenshots, 0 page errors, 0 sideways
+  scroll, per-element edge check OK at 360 and 390 px. Stale :5180 process (pre-reap) was serving the old build —
+  killed and restarted. Not deployed/committed.
+- 2026-10-25 commit + PR (Jayanth: "beautiful commit message, push to my branch, raise a PR"): upstream check found
+  Prashanth's PR #6 merged to main (leaves approvals widget nav fix + .github/workflows/sync-upstream.yml + FLOW_AND_ROLES
+  guide; touches ui.tsx, leaves panels, RoleWidgets) and 2 deploy commits on this branch from another session (backend
+  now on Render: genesislumia-erp-demo.onrender.com, KV BACKEND_URL). `git merge-tree` HEAD vs origin/main = clean.
+  Committed ONLY frontend/src/app/landing/* + this log; left the other session's uncommitted docs/DEPLOY.md,
+  frontend/.env.example, frontend/package.json (cf:* scripts) untouched for it.
