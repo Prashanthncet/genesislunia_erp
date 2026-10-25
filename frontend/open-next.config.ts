@@ -1,6 +1,3 @@
-// @ts-nocheck
-import { defineCloudflareConfig } from "@opennextjs/cloudflare";
-
 /**
  * Cloudflare Worker build for the Next.js frontend.
  *
@@ -12,4 +9,4 @@ import { defineCloudflareConfig } from "@opennextjs/cloudflare";
  * BACKEND_URL must be present when this build runs: Next bakes `rewrites()` into
  * the routes manifest at build time.
  */
-export default defineCloudflareConfig({});
+export default {};
