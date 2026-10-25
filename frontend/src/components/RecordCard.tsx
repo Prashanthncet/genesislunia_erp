@@ -258,7 +258,7 @@ export function Meter({
   return (
     <div className="min-w-0">
       {(label || caption) && (
-        <div className="mb-1.5 flex items-baseline justify-between gap-2 text-[11.5px]">
+        <div className="mb-1.5 flex items-baseline justify-between gap-2 text-[11.5px] max-md:text-[12.5px]">
           {label && <span className="font-medium text-ink-2">{label}</span>}
           {caption && <span className="tnum font-semibold text-ink">{caption}</span>}
         </div>

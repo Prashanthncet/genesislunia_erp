@@ -123,7 +123,7 @@ export function StudentCalendar({ studentId, showName = true, allowFuture = fals
                     } ${d.date === today ? "outline outline-2 outline-offset-1 outline-brand-500" : ""}`}
                   >
                     {Number(d.date.slice(8))}
-                    {meta && <span className="text-[9px] font-bold leading-none">{meta.short}</span>}
+                    {meta && <span className="text-[9px] font-bold leading-none max-md:!text-[11px]">{meta.short}</span>}
                     {d.note && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-brand-500" aria-hidden />}
                   </span>
                 );

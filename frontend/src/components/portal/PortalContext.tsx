@@ -117,7 +117,7 @@ export function ChildSwitcher() {
             </span>
             <span className="min-w-0">
               <span className="block max-w-[11rem] truncate text-[13px] max-md:max-w-[9.5rem] font-semibold text-ink">{c.full_name}</span>
-              <span className="block text-[11px] text-ink-3">{classLabel(c.class)}</span>
+              <span className="block text-[11px] text-ink-3 max-md:!text-[12px]">{classLabel(c.class)}</span>
             </span>
           </button>
         );

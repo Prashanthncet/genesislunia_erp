@@ -623,7 +623,7 @@ function RoleHero({ me, subtitle }: { me: Me; subtitle: string }) {
       <p className="text-[11.5px] font-semibold uppercase tracking-[0.14em] text-brand-300">
         {formatLongDate(today)} · {ROLE_LABEL[me.role] ?? me.role}
       </p>
-      <h1 className="mt-1.5 font-display text-[24px] font-extrabold leading-tight tracking-tight sm:text-[28px] max-md:break-words max-md:!text-[21px]">
+      <h1 className="mt-1.5 font-display text-[24px] font-extrabold leading-tight tracking-tight sm:text-[28px] max-md:!text-[22px] max-md:break-words max-md:!text-[21px]">
         {greeting(today)}{me.name ? `, ${me.name}` : ""}.
       </h1>
       <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-white/70 max-md:mt-1 max-md:text-[12.5px] max-md:leading-snug">{subtitle}</p>

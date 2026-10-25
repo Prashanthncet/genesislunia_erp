@@ -272,7 +272,7 @@ export function CardHead({
           </span>
         )}
         <div className="min-w-0">
-          <h2 className="font-display text-[18px] font-semibold leading-snug text-ink">{title}</h2>
+          <h2 className="font-display text-[18px] font-semibold leading-snug text-ink max-md:!text-[16px]">{title}</h2>
           {subtitle && (
             <p className="mt-0.5 line-clamp-2 text-[12.5px] leading-snug text-ink-3">{subtitle}</p>
           )}
@@ -362,7 +362,7 @@ export function Button({
   return (
     <button
       className={`${BTN_VARIANTS[variant]} disabled:pointer-events-none disabled:opacity-50 ${
-        size === "sm" ? "!min-h-8 !px-2.5 !py-1.5 !text-[12.5px] max-md:!min-h-10 max-md:!px-3" : ""
+        size === "sm" ? "!min-h-8 !px-2.5 !py-1.5 !text-[12.5px] max-md:!min-h-10 max-md:!px-3 max-md:!text-[13.5px]" : ""
       } ${className}`}
       disabled={disabled || loading}
       {...rest}

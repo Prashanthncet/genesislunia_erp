@@ -59,7 +59,7 @@ function ProfileHeader({ name, lines, me, chips }: { name: string; lines: React.
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-[11.5px] font-semibold uppercase tracking-[0.14em] text-brand-300">{me.branch_name}</p>
-          <h1 className="mt-1 truncate font-display text-[24px] font-extrabold leading-tight tracking-tight sm:text-[28px] max-md:whitespace-normal max-md:[overflow-wrap:anywhere]">{name}</h1>
+          <h1 className="mt-1 truncate font-display text-[24px] font-extrabold leading-tight tracking-tight max-md:!text-[22px] sm:text-[28px] max-md:whitespace-normal max-md:[overflow-wrap:anywhere]">{name}</h1>
           {lines.filter(Boolean).map((l, i) => <p key={i} className="mt-0.5 text-[13px] text-white/70">{l}</p>)}
           <div className="mt-2.5 flex flex-wrap gap-2">
             <span className="badge badge-brand">{ROLE_LABEL[me.role] ?? me.role}</span>

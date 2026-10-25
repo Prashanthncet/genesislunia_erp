@@ -431,7 +431,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                   </span>
                 )}
                 <div className="min-w-0">
-                  <h1 className="truncate font-display text-[19px] font-bold leading-tight text-ink">
+                  <h1 className="truncate font-display text-[19px] font-bold leading-tight text-ink max-lg:!text-[17px]">
                     {current?.name ?? (onAccount ? "My account" : "Dashboard")}
                   </h1>
                   <p className="mt-0.5 truncate text-[11.5px] leading-tight text-ink-3">
