@@ -61,13 +61,13 @@ export const ADMISSION_QUEUE: Record<string, { statuses: string[]; step: string 
   [ROLE.PRINCIPAL]: { statuses: ["VP Approved"], step: "Final approval" },
 };
 
-export function AdmissionQueueWidget({ role }: { role: string }) {
+export function AdmissionQueueWidget({ role, className }: { role: string; className?: string }) {
   const q = ADMISSION_QUEUE[role];
   const rows = useSafe<Admission[]>(hasRole({ role }, R.ADMISSION_READ) ? "/api/admissions" : null);
   if (!q || rows === null) return null;
   const mine = (rows ?? []).filter((a) => q.statuses.includes(a.status));
   return (
-    <Card>
+    <Card className={className}>
       <CardHead icon="admissions" title="Your admissions queue" subtitle={q.step}
         actions={<Link href="/admissions" className="btn-soft">Open<Icon name="chevronRight" className="h-3.5 w-3.5" /></Link>} />
       {rows === undefined ? <Loading /> : (
@@ -81,8 +81,8 @@ export function AdmissionQueueWidget({ role }: { role: string }) {
           {mine.length > 0 && (
             <ul className="border-t border-line px-5 py-3 text-[12.5px] text-ink-2 max-md:px-4 max-md:py-1 max-md:text-[13px]">
               {mine.slice(0, 5).map((a) => (
-                <li key={a.id} className="flex justify-between gap-3 py-1 max-md:min-h-11 max-md:items-center">
-                  <span className="truncate">{a.studentName ?? "Unnamed applicant"}</span>
+                <li key={a.id} className="flex justify-between gap-3 py-1.5 max-md:min-h-11 max-md:items-center">
+                  <span className="truncate font-medium">{a.studentName ?? "Unnamed applicant"}</span>
                   <span className="shrink-0 text-ink-3">{a.status}</span>
                 </li>
               ))}
@@ -100,7 +100,7 @@ type Leave = { id: string; status: string; can_decide?: boolean };
 type Pass = { id: string; status: string };
 type Incident = { id: string; status: string; severity?: string };
 
-export function ApprovalsWidget({ me }: { me: Me }) {
+export function ApprovalsWidget({ me, className }: { me: Me; className?: string }) {
   const staffLeaves = useSafe<Leave[]>(hasRole(me, R.LEAVE_APPROVE) ? "/api/staff-leaves?status=Pending" : null);
   const studentLeaves = useSafe<Leave[]>(hasRole(me, R.STUDENT_LEAVE_APPROVE) ? "/api/student-leaves?status=Pending" : null);
   const passes = useSafe<Pass[]>(hasRole(me, R.GATE_PASS_APPROVE) ? "/api/gate-passes" : null);
@@ -118,7 +118,7 @@ export function ApprovalsWidget({ me }: { me: Me }) {
   const loading = [staffLeaves, studentLeaves, passes, incidents].some((x) => x === undefined);
   if (!loading && items.length === 0) return null;
   return (
-    <Card>
+    <Card className={className}>
       <CardHead icon="check" title="Approvals waiting" subtitle="Decisions that are with you or your office." />
       {loading && items.length === 0 ? <Loading /> : (
         <div className="divide-y divide-line">
