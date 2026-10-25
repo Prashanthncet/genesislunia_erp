@@ -90,7 +90,7 @@ export function StudentLeavePanel({ me, students }: { me: Me; students: StudentO
         </Card>
       )}
 
-      <Card>
+      <Card id="student-leave-requests">
         <CardHead
           title="Student leave requests"
           icon="clipboard"

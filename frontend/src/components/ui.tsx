@@ -247,11 +247,11 @@ export function PageHeader({
  * an inner wrapper.
  */
 export function Card({
-  children, className = "", hover = false, delay = 0,
-}: { children: ReactNode; className?: string; hover?: boolean; delay?: number }) {
+  children, className = "", hover = false, delay = 0, id,
+}: { children: ReactNode; className?: string; hover?: boolean; delay?: number; id?: string }) {
   const { ref, style } = useReveal(delay, 14);
   return (
-    <div ref={ref} style={style} className={`card ${hover ? "card-hover" : ""} ${className}`}>
+    <div id={id} ref={ref} style={style} className={`card ${hover ? "card-hover" : ""} ${className}`}>
       {children}
     </div>
   );

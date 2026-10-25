@@ -107,8 +107,8 @@ export function ApprovalsWidget({ me }: { me: Me }) {
   const incidents = useSafe<Incident[]>(hasRole(me, R.SAFEGUARDING) ? "/api/discipline/incidents" : null);
 
   const items: { href: string; icon: string; label: string; value: number }[] = [];
-  if (Array.isArray(staffLeaves)) items.push({ href: "/leaves", icon: "leaves", label: "Staff leave to decide", value: staffLeaves.filter((l) => l.can_decide ?? l.status === "Pending").length });
-  if (Array.isArray(studentLeaves)) items.push({ href: "/leaves", icon: "students", label: "Student leave pending", value: studentLeaves.length });
+  if (Array.isArray(staffLeaves)) items.push({ href: "/leaves?tab=approvals#awaiting-decision", icon: "leaves", label: "Staff leave to decide", value: staffLeaves.filter((l) => l.can_decide ?? l.status === "Pending").length });
+  if (Array.isArray(studentLeaves)) items.push({ href: "/leaves?tab=student#student-leave-requests", icon: "students", label: "Student leave pending", value: studentLeaves.length });
   if (Array.isArray(passes)) {
     const waiting = me.role === ROLE.PRINCIPAL ? ["Warden Approved"] : me.role === ROLE.WARDEN ? ["Pending"] : ["Pending", "Warden Approved"];
     items.push({ href: "/gate", icon: "door", label: "Gate passes awaiting approval", value: passes.filter((p) => waiting.includes(p.status)).length });

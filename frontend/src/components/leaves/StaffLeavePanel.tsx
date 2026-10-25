@@ -246,7 +246,7 @@ export function LeaveApprovalPanel({ me, refreshKey, onChanged }: { me: Me; refr
 
   return (
     <div className="space-y-4">
-      <Card>
+      <Card id="awaiting-decision">
         <CardHead title="Awaiting your decision" icon="check" subtitle={`Pending leave for ${scope}. You can't decide your own leave.`} />
         <ul className="divide-y divide-line">
           {queue.map((l) => (

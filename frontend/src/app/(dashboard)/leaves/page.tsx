@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { hasRole, isPortal, R, useMe } from "@/lib/auth";
 import { EmptyState, Icon, PageHeader, Reveal, Skeleton, Tabs } from "@/components/ui";
@@ -20,11 +21,40 @@ type Tab = "mine" | "approvals" | "student" | "gate";
  * verifies and audits passes on /gate, so this screen only keeps the "Gate passes" tab for
  * teaching staff (teacher/HOD) who request and track passes but have no Gate Desk.
  */
-export default function LeavesPage() {
+function LeavesContent() {
   const { me, loading } = useMe();
-  const [tab, setTab] = useState<Tab>("mine");
+  const searchParams = useSearchParams();
+  const queryTab = searchParams.get("tab") as Tab | null;
+
+  const [tab, setTab] = useState<Tab>(() => {
+    if (queryTab && ["mine", "approvals", "student", "gate"].includes(queryTab)) {
+      return queryTab;
+    }
+    return "mine";
+  });
+
   const [students, setStudents] = useState<StudentOption[]>([]);
   const [tick, setTick] = useState(0);
+
+  // Sync tab state when URL search params change
+  useEffect(() => {
+    if (queryTab && ["mine", "approvals", "student", "gate"].includes(queryTab)) {
+      setTab(queryTab);
+    }
+  }, [queryTab]);
+
+  // Smooth-scroll to target section if hash or query is present
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const hash = window.location.hash;
+      if (hash) {
+        const el = document.querySelector(hash);
+        if (el) {
+          setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+        }
+      }
+    }
+  }, [tab]);
 
   const tabs = useMemo(() => {
     const t: { id: Tab; label: string }[] = [];
@@ -35,6 +65,16 @@ export default function LeavesPage() {
     if (hasRole(me, GATE_READ) && !hasRole(me, R.GATE_DESK)) t.push({ id: "gate", label: "Gate passes" });
     return t;
   }, [me]);
+
+  const handleTabChange = (nextTab: Tab) => {
+    setTab(nextTab);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", nextTab);
+      url.hash = "";
+      window.history.replaceState(null, "", url.toString());
+    }
+  };
 
   const gateDesk = hasRole(me, R.GATE_DESK);
   const needStudents = !!me && (hasRole(me, STUDENT_LEAVE_FILE) || (hasRole(me, GATE_REQUEST) && !gateDesk));
@@ -88,7 +128,7 @@ export default function LeavesPage() {
 
       {tabs.length > 1 && (
         <Reveal delay={40}>
-          <Tabs tabs={tabs} value={tab} onChange={setTab} />
+          <Tabs tabs={tabs} value={tab} onChange={handleTabChange} />
         </Reveal>
       )}
 
@@ -99,5 +139,13 @@ export default function LeavesPage() {
         {tab === "gate" && <GatePassPanel me={me} students={students} refreshKey={tick} />}
       </div>
     </div>
+  );
+}
+
+export default function LeavesPage() {
+  return (
+    <Suspense fallback={<div className="space-y-4"><Skeleton className="h-12 w-72" /><Skeleton className="h-64 w-full" /></div>}>
+      <LeavesContent />
+    </Suspense>
   );
 }
