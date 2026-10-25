@@ -59,3 +59,24 @@ Thumbs.db
 .playwright-mcp/
 .qoder/
 .shots/
+
+# Deploy scratch: cloudflared binary, wrangler OAuth backup (holds a token!), OpenNext build
+.bin/
+frontend/.deploy-backup/
+frontend/.open-next/
+frontend/.wrangler-dry*/
+*.db-shm
+*.db-wal
+.claude/
+
+# Playwright browser profile — holds live cookies/session for deploy automation
+.pw/
+frontend/.pw/
+
+# Local wrangler/workerd caches
+frontend/.wrangler/
+frontend/.wrangler-live/
+frontend/.testworker/
+
+# Agent skills installed locally by `neon skills` (not part of the app)
+skills-lock.json

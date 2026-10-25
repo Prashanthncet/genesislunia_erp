@@ -824,3 +824,157 @@ Deps installed once by lead: pdf-lib 1.17.1, exceljs 4.4.0, qrcode 1.5.4 (+@type
   calendar day letters 9→11 (StudentCalendar); portal child-chip class 11→12; gate student class 11.5→12.5; meter
   captions 11.5→12.5 (RecordCard Meter); Button sm 12.5→13.5 and .btn-* 14px on phones.
   Worker rebuilt + deployed (version 57ea3031-d687-41d6-9774-16b1e784c9d7) against the same quick tunnel.
+- 2026-10-25 LIVE-SITE 530 FIX (Jayanth: "y 530 fix it globally"): backend + tunnel had died again when the Claude
+  session ended. Made the live site self-sufficient:
+  - NEW frontend/cf-worker.mjs = worker entry (wrangler.jsonc main): proxies /api/* to the URL in Workers KV
+    (binding CONFIG, namespace 95131be16e4943d08c2bcee75557ee8c, key BACKEND_URL, read per request, cacheTtl 30s);
+    everything else → OpenNext handler; re-exports its Durable Object classes. Tunnel/backend down → clean JSON
+    502/503 instead of Cloudflare 530 HTML. Deployed version 15fce6e3-d947-4097-bc82-11f289f2ad84. The baked Next
+    rewrite (old tunnel) is now irrelevant — the worker intercepts /api first.
+  - NEW .bin/keepalive.ps1 (laptop, independent of Claude): every 30 s ensures backend (node dist/src/main, backend/.env
+    → dev.db) and cloudflared quick tunnel (`--metrics 127.0.0.1:45678`) are up, restarts dead ones, reads the tunnel
+    hostname from http://127.0.0.1:45678/quicktunnel and `npx wrangler@4 kv key put BACKEND_URL … --remote` when it
+    changes. Single-instance mutex. Logs .bin/keepalive.log (+ backend.*.log, tunnel.log).
+    Autostart: %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\GenesisERP-KeepAlive.vbs (hidden).
+  - Verified: all 6 roles log in on the live URL; /api/auth/me 200; killed backend+tunnel at 09:27:56 → keep-alive
+    restarted both, new tunnel published to KV, live login 200 at 09:29:20 (no rebuild/redeploy).
+  - Still laptop-dependent (must be on/awake). Durable fix = DEPLOY.md: backend on Render + Neon, then set KV
+    BACKEND_URL to the Render URL (one command, no redeploy) and remove the Startup .vbs.
+  - cf-worker.mjs + wrangler.jsonc changes NOT committed (not asked); wrangler.jsonc was staged by the other session.
+- 2026-10-25 NEW /landing (Jayanth: "most beautiful, enhanced, animated landing page, full of sections, route /landing,
+  no link for now"): frontend/src/app/landing/{layout.tsx (metadata, robots noindex), page.tsx}. Client page, motion/react
+  + page-scoped CSS. Sections: glass sticky nav (anchors + Sign in → /login), scroll-progress bar, navy aurora hero with
+  blur-in headline, animated gradient text, CTAs and a 3D-tilted live dashboard mockup (bars grow, SVG path draws,
+  floating notification cards); module marquee; count-up stats (product facts only: 16 roles, 20+ modules, 6 portals,
+  100% mobile-ready); 4-col bento of 9 features with animated mini-visuals (attendance segments, OTP flip, fee meter,
+  payslip, roll call); interactive role switcher (6 roles, shared-layout pill, blur transitions); scroll-drawn
+  5-step workflow timeline; phone showcase (auto-cycling screens, tappable bottom nav); trust cards; FAQ accordion;
+  final CTA band; footer. No fabricated testimonials/customers. MotionConfig reducedMotion="user" + CSS reduced-motion
+  fallbacks. public/school-banner.jpg NOT used (third-party clip art with a watermark).
+  Verified locally (next build OK, 17 kB route): desktop 1440 + phone 390 screenshots, 0 page errors, 0 sideways
+  scroll. Nothing links to /landing. Not deployed / not committed (not asked).
+- 2026-10-25 /landing round 2 (Jayanth: "footer not good, UI okay, enhance more, add geometrical shapes"): NEW
+  frontend/src/app/landing/shapes.tsx — line-art SVG geometry (ring, dashed ring, triangle, filled triangle, rounded
+  square, diamond, hexagon, plus, dot grid, half-circle, zig-zag, isometric cube) via GeoField (drift + spin CSS vars,
+  optional pointer-depth parallax with springs), Orbits (3 rotating orbit rings with glowing dots behind the hero
+  mockup), presets HERO/LIGHT/DARK/CTA, and a new Footer (dark navy, glow + grid + shapes, brand block with chips,
+  4 link columns → page anchors / /login, CTA strip with Sign in + back-to-top, giant gradient "GENESIS" wordmark,
+  bottom bar). Geometry placed in every section; feature cards got a hexagon corner that rotates on hover; trust
+  section got id="trust". Reduced motion stops all shape animation. Verified: build OK (20.4 kB route), desktop/phone
+  screenshots, 0 page errors, 0 sideways scroll. Served locally on :5180. Not deployed/committed.
+- 2026-10-25 /landing round 3 (Jayanth: "completely redesign Everything connected / Safe by design / FAQ"): NEW
+  frontend/src/app/landing/sections.tsx — ConnectedSection (hub-and-spoke SystemMap: Genesis core + 8 colour-coded
+  module nodes on an ellipse with dashed pulse lines, hover/focus a node selects the module; module explorer with
+  auto-advance (6 s progress bar, pauses on interaction, only while in view), 8 animated illustrative previews:
+  attendance marking, gate-pass approval stepper + parent OTP, invoice paid stamp + receipt, timetable filling +
+  substitute, report-card bars, hostel bed grid + roll-call counts, payslip deductions, safeguarding timeline; phones
+  get a chip scroller), TrustSection (dark security console: 4 pillars with spring check badges, glowing shield with
+  conic radar sweep + rings, live audit-trail console streaming sample entries), FaqSection (sticky editorial heading
+  + "Still curious?" card, numbered 01–05 accordion with gradient border on the open item, plus→minus morph).
+  page.tsx: old bento/trust/FAQ + their data/mini-visuals removed; CSS lp-pulse / lp-ping / lp-radar (+ reduced
+  motion). Fixed phone overflow (grid items without grid-cols-1 grew to the chip scroller's width) on these grids and
+  the hero/mobile grids. Verified: build OK (25.7 kB), desktop + phone section screenshots, 0 page errors, 0 sideways
+  scroll, per-element edge check OK at 360 and 390 px. Stale :5180 process (pre-reap) was serving the old build —
+  killed and restarted. Not deployed/committed.
+- 2026-10-25 commit + PR (Jayanth: "beautiful commit message, push to my branch, raise a PR"): upstream check found
+  Prashanth's PR #6 merged to main (leaves approvals widget nav fix + .github/workflows/sync-upstream.yml + FLOW_AND_ROLES
+  guide; touches ui.tsx, leaves panels, RoleWidgets) and 2 deploy commits on this branch from another session (backend
+  now on Render: genesislumia-erp-demo.onrender.com, KV BACKEND_URL). `git merge-tree` HEAD vs origin/main = clean.
+  Committed ONLY frontend/src/app/landing/* + this log; left the other session's uncommitted docs/DEPLOY.md,
+  frontend/.env.example, frontend/package.json (cf:* scripts) untouched for it.
+
+### 2026-10-25 — Landing round 4: "How it flows" (#flow) redesigned
+- Jayanth: the old alternating vertical timeline "is very bad / not satisfied".
+- New `frontend/src/app/landing/flow.tsx` → `FlowSection({ head })`: a metro line with 5 stations (Admission, Fees, Daily school life, Assessment, Insight). The line fills with each stage's colour and a glowing marker travels along it. The section auto-plays every 6.5s while in view, pauses on hover, and stations are clickable; prev/next buttons and a timer bar sit below.
+- The stage card shows: what happens (4 checks), who's involved, what it creates, and a "Hands off to <next>" button. The last stage loops back ("And the cycle continues").
+- Phones: same layout. Stations use short labels (Admit/Fees/Daily/Assess/Insight) and the card stacks.
+- `page.tsx`: removed `FLOW` data, `flowRef`/`flowP`/`flowLine`, and the old section block; it now renders `<FlowSection head={<SectionHead ... sub=.../>} />`.
+- An earlier draft of flow.tsx was cut off mid-write; that partial file was deleted before this version.
+- Verified: tsc clean, next build OK (/landing 28.2 kB), desktop and phone screenshots of #flow (stage 1 and stage 5), clipcheck 360/390 all ok, no sideways scroll, 0 page errors. Server restarted on :5180. Not committed.
+
+### 2026-10-25 — Landing: stats strip redesigned
+- Jayanth (screenshot of the 4 pale stat boxes): "this ui is very bad".
+- New `frontend/src/app/landing/stats.tsx` → `StatsBand`: one dark navy rounded panel (grid texture, blue and emerald glows) with 4 stats split by straight 1px rules. Each number has a matching visual that animates when it scrolls into view: 16 role dots light up, 20 module tiles flip in colour, 6 portal screens power on (3 desktop, 3 phone), and a ring fills to 100%. Numbers count up in white→sky gradient text.
+- Layout: 1 column on phones, 2 at sm, 4 at lg. The first version used borders on rounded cells, which drew curved dividers; replaced with absolute 1px spans.
+- `page.tsx`: the old stats grid became `<StatsBand />`. Removed the now-unused `CountUp` and the `animate`/`useInView` imports.
+- Verified: tsc clean, build OK (/landing 29 kB), desktop and 360px screenshots, clipcheck 360/390 ok, 0 page errors. Not committed.
+
+### 2026-10-25 — Landing: stats → bento, then slimmed
+- The dark stats band was "not good". Jayanth picked "Bento with visuals" (AskUserQuestion).
+- v1 bento (`stats.tsx`): a big 20+ modules card with all 20 module tiles, a 16 roles cloud, 6 portal windows, and a full-width 100% card with 3 mini phones.
+- Jayanth: "100% is good but modules, roles, portals has too much content". He interrupted my edit that added a sync strip; it had already written to the file, and the slimming below removed it.
+- Now: 3 equal cards in a row (md:grid-cols-3), each with number + title + one short line + one compact visual. Modules = 7 overlapping icon tiles + "+13". Roles = 4 chips + violet "+12 more". Portals = 6 small icon tiles. The 100% card is unchanged (md:col-span-3): attendance, fee-paid and report-card phones; the attendance phone is hidden below sm.
+- Verified: tsc clean, build OK (/landing 30.2 kB), desktop and 360px screenshots (natural scroll), clipcheck 360/390 ok, 0 page errors. Not committed.
+
+### 2026-10-25 — Landing: separate app-like phone design (MobileLanding)
+- Jayanth: "desktop is superb, but not satisfied with mobile. I need Flutter-type animated, a separate mobile-compatible design."
+- New `frontend/src/app/landing/mobile.tsx` → `MobileLanding({ modules, roles })`. `page.tsx` renders it in `lg:hidden`; the whole existing desktop tree is wrapped in `hidden lg:block`, otherwise unchanged.
+- Phone design:
+  - App bar that turns solid on scroll.
+  - Dark rounded hero with spring word-in and a live notification stack (5 generic school events cycling).
+  - Swipeable stat carousel with a dot indicator.
+  - 4-column app-launcher module grid with spring pop-in.
+  - Roles as a swipeable PageView (drag or tap a chip; layoutId pill).
+  - Expandable "How it flows" stepper with a growing rail.
+  - Trust card (2x2), FAQ expansion tiles, a CTA, and the shared Footer.
+  - A floating bottom nav (Home/Modules/Roles/Flow/FAQ) with a Material-style moving pill. It tracks the section in view via `[data-tab]`; CTA and footer count as FAQ.
+  - A `Tap` helper gives every tappable thing an ink ripple and a spring press.
+- To share data: exported `FAQ`, `PILLARS` (sections.tsx) and `STAGES` (flow.tsx). MODULES/ROLES are passed as props, because page.tsx can't have extra exports.
+- Fixes found while verifying: the role card clipped its 4th point (300px → 372px, and 408px under 400px wide); the nav stuck on "Flow" at the FAQ (data-tab).
+- Verified: tsc and build OK (/landing 34.4 kB). Pixel 7 frames end to end. Role swipe changes the role. Every role card fits at 360/375/390/412. The FAQ tab is active at the bottom. No sideways scroll, 0 page errors. At 1440 the mobile tree is hidden and the desktop hero is visible.
+- NOTE: clipcheck.js checks the desktop section ids, which are hidden on phones now, so it no longer covers the mobile tree; use mob.js/mob2.js/mob3.js. Not committed.
+
+### 2026-10-25 — Mobile landing v2: "App showcase" (replaced the app-like v1)
+- Jayanth: "no need of mobile footer… not only footer, everything is bad". Picked **App showcase** (AskUserQuestion). Worst parts of v1: "animations feel cheap" and "colours / dark blocks".
+- `mobile.tsx` rewritten. Light palette only, no dark sections. No ripple, bouncy pops, bottom tab bar or footer.
+  - Pastel intro: "Run your school from your pocket." + Get started.
+  - A pinned phone (sticky 100svh, section 440svh). Its screen pushes iOS-style (spring, no bounce) through 5 screens as you scroll: Attendance (rows auto-marking P/A), Fees (UPI → Paid), Gate pass (Warden → Principal → code 4829), Timetable (current period highlighted), Report card (bars grow).
+  - Caption and a progress pill under the phone; the background tint follows each screen.
+  - Then a light role-chips row, a plain FAQ accordion, and an end CTA.
+- Phone screen designed at 290x600 and scaled to `min(600px, 62svh)` via ResizeObserver.
+- `MobileLanding` now takes only `roles`. Reverted the `PILLARS`/`STAGES` exports (FAQ is still exported).
+- Verified: tsc and build OK (/landing 33.5 kB). Pixel 7 and iPhone SE: scrolling shows all 5 screens in order, no sideways scroll, 0 page errors. Screenshots reviewed. Not committed.
+
+### 2026-10-25 — Mobile landing v3: dark + light, more info, swipeable phone
+- Jayanth (phone screenshot of v2): "add dark too, not only light; why less info; I can swipe the section in mobile; enhanced UI, best UI for mobile".
+- `mobile.tsx` v3, still `lg:hidden`; desktop untouched. Sections alternate dark (#071630 + aurora/grid) and light:
+  1. Dark hero: headline with blur-in words, full description, Get started / See the app, 2x2 glass stats (20+ / 16 / 6 / 100%).
+  2. Light showcase (#m-show): tab chips (Attendance/Fees/Gate pass/Timetable/Report card) with a sliding layoutId pill, and a **swipeable phone** (drag x; 50px or a flick), side arrows and tappable dots. It auto-advances every 4.2s while in view and pauses 9s after any touch. The 5 screens are kept from v2, with the iOS push transition; the background tint and glow follow the screen.
+  3. Light modules: 2-column cards with icon, name and one-line description; 6 shown, "Show all 12 modules" toggles the rest.
+  4. Dark roles: snap carousel of all role cards (head + 4 points) with dots.
+  5. Light flow: the 5 STAGES as a timeline whose rail fills on scroll.
+  6. Dark trust: 4 PILLARS with descriptions, shield + ping.
+  7. Light FAQ accordion.
+  8. Dark closing card + © line. Still no footer.
+- Re-exported `PILLARS` (sections.tsx) and `STAGES` (flow.tsx) for this.
+- Verified: tsc and build OK (/landing 35.7 kB). Pixel 7 and iPhone SE: swipe left → Fees, swipe right → back to Attendance, the Report card tab works. No sideways scroll, 0 page errors. Full-page frames reviewed. Not committed.
+
+### 2026-10-25 — Mobile landing: section-by-section redesigns (mobile.tsx only)
+- **Everything connected** (Jayanth: "not satisfied"): a hub. A "Student record" core with two slowly counter-rotating rings of 8 + 4 module icons (icons stay upright) and dashed lines; the active line pulses. A detail card shows the module's description and a "Shares data with" chip list (tap to jump). It auto-cycles every 2.8s and pauses 8s after a tap. Jayanth: "gud".
+- **Built for every role**: a stories-style avatar row (conic ring on the active role) plus a Tinder-style swipe deck (3 stacked cards, drag to throw, prev/next buttons).
+- **Safe by design**: a radar shield with 4 orbiting pillar icons. A live "Security check" ticks each pillar (spinner → check) with a progress bar, then shows "All checks passed".
+- **FAQ**: a support chat. The first Q&A is pre-answered; question chips post a user bubble, show typing dots for 1.2s, then the answer.
+- Verified for those three (Pixel 7 + iPhone SE): the deck swipe went Principal → Teacher with no card overflow, the security check completed, the chat showed typing then answered, no sideways scroll, 0 errors. Jayanth: "gud".
+- **How it flows**: v1 was an Instagram-stories card with full stage gradients. Jayanth: "very bad, don't add too much colour". v2 (current) is calm: off-white section, ink + a single accent blue. A vertical line fills as you scroll and a blue dot travels it; the step at the centre of the screen becomes a white card showing what it creates and the hand-off; the others stay muted grey. Verified the active step advances while scrolling, no sideways scroll, 0 errors.
+- Lesson: Jayanth prefers restrained colour on mobile. Don't use full-bleed multi-colour gradients.
+- Build OK (/landing 39.1 kB). Not committed.
+
+### 2026-10-25 — Mobile landing: smoothness pass
+- Jayanth: "add some smoothness for the animations in mobile view".
+- `mobile.tsx`:
+  - Hero words no longer animate a blur filter (transform + opacity only, 0.9–1s).
+  - Showcase background and glows, and the hub glow, crossfade opacity layers (AnimatePresence) instead of repainting backgroundColor on blurred elements; the old showcase gradient jumped.
+  - The trust shield crossfades blue → green instead of jumping between gradients.
+  - Removed backdrop-blur from in-content cards (stat tiles, security card, showcase arrows); the header keeps it.
+  - The flow line and dot are spring-smoothed (useSpring 90/24).
+  - FadeUp is 0.9s / 22px; section heads stagger kicker → title → sub.
+  - Softer phone push spring (220/32).
+  - will-change hints on the deck cards, phone screens and rotating rings.
+- `page.tsx` CSS: below 1024px `.lp-aurora` uses blur 60px (was 90) and 32s drift. Desktop is unaffected since its tree is hidden there.
+- Verified: tsc and build OK (/landing 39.2 kB). Pixel 7 with CPU throttled 4x, scrolling the whole page: median frame 16.7 ms (60 fps), p95 49.9 ms, 11 of 378 frames over 50 ms. Headless Chromium renders in software, so these numbers are rough. No before-measurement was taken. Showcase tab still works, no sideways scroll, 0 errors. Not committed.
+
+### 2026-10-25 — Committed + pushed landing round 4
+- Before committing: `git fetch` showed the branch level with origin and nothing new on main beyond PR #6 (already reported; it doesn't touch the landing page). PR #7 is open and mergeable.
+- Commit "feat(landing): a calmer desktop story and a phone-first landing" contains only frontend/src/app/landing/* (flow.tsx, stats.tsx, mobile.tsx, page.tsx, sections.tsx) and this file. No watermark or co-author lines.
+- Left unstaged (another session's work): docs/DEPLOY.md, frontend/.env.example, frontend/package.json.
+- Pushed to jayanth/mobile-responsive, so it updates PR #7.

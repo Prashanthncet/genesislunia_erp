@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "genesis-erp-web",
+  "main": "cf-worker.mjs",
+  "compatibility_date": "2026-10-24",
+  // nodejs_compat gives the worker the Node APIs Next's server code expects.
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  // CONFIG.BACKEND_URL = where /api/* is proxied (read at request time by cf-worker.mjs).
+  "kv_namespaces": [{ "binding": "CONFIG", "id": "95131be16e4943d08c2bcee75557ee8c" }],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "NEXT_PUBLIC_APP_NAME": "Genesis ERP"
+  }
+}
