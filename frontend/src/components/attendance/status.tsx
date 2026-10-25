@@ -96,22 +96,22 @@ export function AttendanceLegend({ showRule = true, extra }: { showRule?: boolea
           <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-700">
             <Icon name="book" className="h-7 w-7" />
           </span>
-          <h2 className="text-[20px] font-bold leading-tight text-brand-900">Attendance Legend &amp; Calculation</h2>
+          <h2 className="text-[20px] font-bold leading-tight text-brand-900 max-md:!text-[16px]">Attendance Legend &amp; Calculation</h2>
         </div>
         <ul className="px-4" aria-label="Attendance legend">
           {ATT_STATUSES.map((s) => (
             <li key={s} className="flex items-center gap-3 border-b border-line py-3 last:border-0">
-              <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl text-[15px] font-bold ${STATUS_META[s].cell} ring-1 ring-inset`} aria-hidden>
+              <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl text-[15px] max-md:!text-[13.5px] font-bold ${STATUS_META[s].cell} ring-1 ring-inset`} aria-hidden>
                 {STATUS_META[s].short}
               </span>
-              <span className="min-w-0 text-[15px] text-ink">{STATUS_LONG[s]}</span>
+              <span className="min-w-0 text-[15px] max-md:!text-[13.5px] text-ink">{STATUS_LONG[s]}</span>
             </li>
           ))}
           {extra}
         </ul>
         {showRule && (
           <div className="m-3 rounded-2xl bg-brand-50/70 p-3">
-            <p className="flex items-center gap-2 text-[15px] font-bold text-ink">
+            <p className="flex items-center gap-2 text-[15px] max-md:!text-[13.5px] font-bold text-ink">
               <span className="grid h-8 w-8 place-items-center rounded-lg bg-white text-brand-700"><Icon name="reports" className="h-4 w-4" /></span>
               Attendance %
             </p>

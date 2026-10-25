@@ -380,7 +380,7 @@ export default function AcademicsPage() {
                         <Icon name={look.icon} className="h-6 w-6" />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="text-[17px] font-bold leading-snug text-ink [overflow-wrap:anywhere]">{p.topic}</p>
+                        <p className="text-[17px] font-bold leading-snug text-ink [overflow-wrap:anywhere] max-md:!text-[15px]">{p.topic}</p>
                         <p className="mt-1 text-[13.5px] leading-snug text-ink-2">
                           {[p.syllabus?.title, p.syllabus?.subject?.name, className(p.syllabus?.class)].filter(Boolean).join(" · ")}
                         </p>

@@ -223,7 +223,7 @@ export default function PortalHome() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-[24px] font-bold leading-tight text-brand-700 sm:text-[28px]">
+        <h1 className="font-display text-[24px] font-bold leading-tight text-brand-700 max-md:!text-[22px] sm:text-[28px]">
           {greeting()}{first ? `, ${first}` : ""}
         </h1>
         <p className="mt-1 text-[13px] text-ink-3">

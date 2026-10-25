@@ -196,7 +196,7 @@ function MarksEntry({ classes, subjects, exams, teaching, isTeacher, onSaved }: 
         <div className="card overflow-hidden max-md:overflow-visible">
           <div className="card-head">
             <div>
-              <h2 className="font-display text-[18px] font-semibold text-ink">{grid.exam.name} · {grid.subject.name}</h2>
+              <h2 className="font-display text-[18px] font-semibold text-ink max-md:!text-[16px]">{grid.exam.name} · {grid.subject.name}</h2>
               <p className="text-[12.5px] text-ink-3">Max marks {max} · weight {grid.exam.weight} · {grid.rows.length} students · {changed.length} unsaved</p>
             </div>
             <Button variant="primary" onClick={save} loading={saving} disabled={!changed.length || errors > 0} className="max-md:w-full"><Icon name="check" className="h-4 w-4" /> Save marks</Button>
@@ -648,7 +648,7 @@ function BandEditor({ bands, canEdit, onSaved }: { bands: GradeBand[]; canEdit: 
     <div className="card overflow-hidden">
       <div className="card-head">
         <div>
-          <h2 className="font-display text-[18px] font-semibold text-ink">Grade scale</h2>
+          <h2 className="font-display text-[18px] font-semibold text-ink max-md:!text-[16px]">Grade scale</h2>
           <p className="text-[12.5px] text-ink-3">A percentage gets the band with the highest threshold it reaches. Used by report cards and the performance report.</p>
         </div>
         {canEdit && (

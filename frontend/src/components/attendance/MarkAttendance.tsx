@@ -196,7 +196,7 @@ export function MarkAttendance({
               type="button"
               onClick={() => onOpenStudent({ id: s.id, name: s.full_name })}
               title="Open attendance calendar"
-              className="block max-w-full truncate text-left text-[17px] font-bold leading-snug text-ink active:text-brand-700"
+              className="block max-w-full truncate text-left text-[17px] font-bold leading-snug max-md:!text-[15px] text-ink active:text-brand-700"
             >
               {s.full_name}
             </button>

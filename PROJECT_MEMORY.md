@@ -794,3 +794,33 @@ Deps installed once by lead: pdf-lib 1.17.1, exceljs 4.4.0, qrcode 1.5.4 (+@type
     bars, legend) — not restyled.
   - tsc 0, `next build` clean, `next start` restarted on :5174. Committed + pushed to `jayanth/mobile-responsive`
     (Jayanth asked for it this time).
+- 2026-10-25 (Jayanth: "record whole workflow on https://genesis-erp-web.jayanth-m.workers.dev with playwright"):
+  - Found commit 5341016 "feat(mobile): phone-first redesign…" (by another session, pushed) containing all round-4 work
+    incl. the 4 mockup cards (students / gate pass records / roll call / payslips via TableView `mobileCards`). Also
+    staged-not-committed deploy files from that session: frontend/wrangler.jsonc, open-next.config.ts, render.yaml,
+    docs/DEPLOY.md, backend/scripts/sqlite-to-postgres-import.js (+ untracked .wrangler*, .open-next, .deploy-backup,
+    backend/.pgtest). Not touched.
+  - LIVE SITE ARCHITECTURE (temporary): Cloudflare Worker `genesis-erp-web` (OpenNext) → `/api` rewritten to a
+    cloudflared QUICK TUNNEL (`.bin/cloudflared.exe tunnel --url http://127.0.0.1:3001`, log `.bin/tunnel.log`) → local
+    backend `node dist/src/main` on dev.db. Quick-tunnel hostnames change on every start and BACKEND_URL is baked into
+    the worker at build time → any tunnel restart needs a worker rebuild + deploy. The site was down (530) because the
+    local backend + tunnel had been killed by the low-memory reaper.
+  - Restored: backend + new tunnel (https://stanley-mills-jumping-leather.trycloudflare.com), `npm i --no-save
+    @opennextjs/cloudflare@1 wrangler@4` (package.json untouched; this pruned the no-save playwright from
+    frontend/node_modules), `BACKEND_URL=<tunnel> npx opennextjs-cloudflare build`, `npx wrangler deploy` → version
+    fcfcf27d-3a45-436d-8046-dda7b1f98810. All 6 demo roles log in via the worker URL.
+  - Durable fix still pending (DEPLOY.md plan): backend on Render + Neon Postgres, or a NAMED cloudflared tunnel with
+    a fixed hostname, so the live site doesn't depend on this laptop staying awake.
+  - Recording: scratchpad/rec/record.js (Playwright in a scratch folder), desktop 1440x900, one .webm per role into
+    C:\Users\princ\Downloads\genesis-erp-recordings, 3 at a time; all non-GET /api calls except login are aborted
+    (walkthrough cannot write data); dialogs opened then cancelled.
+- 2026-10-25 mobile font-size pass (Jayanth: "in mobile view across all places check the font size and fix it, then push
+  and deploy"): measured 19,934 rendered text nodes at 360px (every role, page, tab) on the live site with
+  scratchpad/rec/fontaudit.js. Target scale (phones): page title 22, card/section title 16–17, body 14, secondary 13,
+  labels 12 (11 uppercase), buttons/inputs 14, badges 12, KPI 22–24, app bar 17, nav 11.5, floor 11.
+  Fixes (all max-md:/max-lg: — desktop unchanged): app-bar title 19→17 (DashboardShell); page titles 24→22 (account,
+  dashboard hero, portal greeting); CardHead titles 18→16 (ui.tsx) + exams h2s; attendance legend 20/15→16/13.5
+  (status.tsx); academics list titles 17→15; MarkAttendance card names 17→15; student/staff card names 18→17;
+  calendar day letters 9→11 (StudentCalendar); portal child-chip class 11→12; gate student class 11.5→12.5; meter
+  captions 11.5→12.5 (RecordCard Meter); Button sm 12.5→13.5 and .btn-* 14px on phones.
+  Worker rebuilt + deployed (version 57ea3031-d687-41d6-9774-16b1e784c9d7) against the same quick tunnel.

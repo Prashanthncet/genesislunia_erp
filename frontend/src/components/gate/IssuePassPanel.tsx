@@ -173,7 +173,7 @@ export function IssuePassPanel({ me, onIssued }: { me: Me; onIssued?: () => void
                       >
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[13px] font-semibold text-ink">{s.fullName}</span>
-                          <span className="block text-[11.5px] text-ink-3">
+                          <span className="block text-[11.5px] text-ink-3 max-md:!text-[12.5px]">
                             <span className="font-mono">{s.admissionNo}</span>{classLabel(s.class) && ` · ${classLabel(s.class)}`}
                           </span>
                         </span>

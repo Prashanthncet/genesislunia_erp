@@ -1095,6 +1095,7 @@ html[data-motion="reduced"] .record-card.is-interactive:hover { transform: none;
     min-height: 2.75rem;
     padding-left: 1rem;
     padding-right: 1rem;
+    font-size: 0.875rem;
   }
   /* 16px stops iOS Safari zooming the whole page when a field gets focus. */
   /* Compact, readable form controls (14px, 42px tall). iOS Safari zooms the page when a

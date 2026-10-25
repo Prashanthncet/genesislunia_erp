@@ -153,7 +153,7 @@ export function DirectoryPanel() {
         <div className="flex items-start gap-3.5">
           <MAvatar name={s.name} tone={tone} size={60} variant="soft" />
           <div className="min-w-0 flex-1 pt-0.5">
-            <p className="text-[18px] font-bold leading-snug text-ink">{s.name}</p>
+            <p className="text-[18px] font-bold leading-snug text-ink max-md:!text-[17px]">{s.name}</p>
             <p className="mt-0.5 text-[13px] text-ink-3">{s.role}{s.department ? ` · ${s.department}` : ""}</p>
             <div className="mt-2"><StatusPill status={s.isActive ? "Active" : "Inactive"} /></div>
           </div>
