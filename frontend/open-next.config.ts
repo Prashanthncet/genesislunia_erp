@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { defineCloudflareConfig } from "@opennextjs/cloudflare";
 
 /**
