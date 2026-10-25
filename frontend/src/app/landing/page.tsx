@@ -10,11 +10,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  AnimatePresence, MotionConfig, animate, motion, useInView, useMotionValueEvent, useScroll, useSpring, useTransform,
+  AnimatePresence, MotionConfig, motion, useMotionValueEvent, useScroll, useSpring, useTransform,
 } from "motion/react";
 import { Icon } from "@/components/ui";
 import { CTA_SHAPES, DARK_SHAPES, Footer, GeoField, HERO_SHAPES, LIGHT_SHAPES, Orbits } from "./shapes";
 import { ConnectedSection, FaqSection, TrustSection } from "./sections";
+import { FlowSection } from "./flow";
+import { StatsBand } from "./stats";
+import { MobileLanding } from "./mobile";
 
 /* ── Shared bits ─────────────────────────────────────────────────────────── */
 
@@ -53,18 +56,6 @@ function SectionHead({ eyebrow, title, sub, dark = false, center = true }: { eye
   );
 }
 
-function CountUp({ to, suffix = "", duration = 1.6 }: { to: number; suffix?: string; duration?: number }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const inView = useInView(ref, { once: true, margin: "-60px" });
-  const [v, setV] = useState(0);
-  useEffect(() => {
-    if (!inView) return;
-    const c = animate(0, to, { duration, ease: EASE, onUpdate: (x) => setV(Math.round(x)) });
-    return () => c.stop();
-  }, [inView, to, duration]);
-  return <span ref={ref} className="tabular-nums">{v}{suffix}</span>;
-}
-
 /* ── Data (product facts only — no invented customers or numbers) ───────── */
 
 const MODULES = [
@@ -82,14 +73,6 @@ const ROLES = [
   { id: "parent", label: "Parent", icon: "user", head: "Your child's school day, in your pocket.", points: ["Attendance calendar and absence alerts", "Pay fees online and download receipts", "Timetable, results and report cards", "Request leave and track gate passes"] },
   { id: "student", label: "Student", icon: "cbt", head: "Everything you need, nothing you don't.", points: ["Today's timetable and attendance", "Take online tests from any device", "Results and report cards", "Notices from your teachers"] },
 ] as const;
-
-const FLOW = [
-  { icon: "admissions", title: "Admission", body: "Parents apply online; documents, fee and roll number flow through each office in order." },
-  { icon: "fees", title: "Fees", body: "Invoices go out, parents pay online, receipts arrive instantly — defaulters update themselves." },
-  { icon: "attendance", title: "Daily school life", body: "Attendance, timetable, hostel roll call and the gate desk run the day — parents stay informed." },
-  { icon: "exams", title: "Assessment", body: "Exams, online tests and marks become report cards with a single publish." },
-  { icon: "reports", title: "Insight", body: "Leadership sees attendance, fees and results trends — and every action has an audit trail." },
-];
 
 /* ── Hero product mockup ─────────────────────────────────────────────────── */
 
@@ -216,9 +199,6 @@ export default function LandingPage() {
   const progress = useSpring(scrollYProgress, { stiffness: 120, damping: 30 });
   const heroY = useTransform(scrollY, [0, 600], [0, 120]);
 
-  const flowRef = useRef<HTMLDivElement>(null);
-  const { scrollYProgress: flowP } = useScroll({ target: flowRef, offset: ["start 75%", "end 55%"] });
-  const flowLine = useSpring(flowP, { stiffness: 90, damping: 25 });
 
   const current = ROLES.find((r) => r.id === role)!;
 
@@ -226,6 +206,10 @@ export default function LandingPage() {
     <MotionConfig reducedMotion="user">
       <style>{CSS}</style>
       <div className="lp min-h-dvh overflow-x-clip bg-white text-ink antialiased">
+        {/* phones and tablets get their own app-like design */}
+        <div className="lg:hidden"><MobileLanding roles={ROLES} /></div>
+
+        <div className="hidden lg:block">
         {/* scroll progress */}
         <motion.div className="fixed inset-x-0 top-0 z-[60] h-[3px] origin-left bg-gradient-to-r from-accent-500 via-sky-400 to-amber-400" style={{ scaleX: progress }} />
 
@@ -309,21 +293,8 @@ export default function LandingPage() {
         {/* ── Stats ── */}
         <section className="relative overflow-hidden bg-white py-20">
           <GeoField shapes={LIGHT_SHAPES.slice(0, 4)} />
-          <div className="mx-auto grid max-w-6xl grid-cols-2 gap-4 px-5 sm:px-8 lg:grid-cols-4">
-            {[
-              { n: 16, s: "", l: "Roles, each with exactly the screens it needs" },
-              { n: 20, s: "+", l: "Connected modules, one source of truth" },
-              { n: 6, s: "", l: "Portals — leadership to parents and students" },
-              { n: 100, s: "%", l: "Mobile-ready, from roll call to fee payment" },
-            ].map((x, k) => (
-              <Reveal key={x.l} delay={k * 0.08}>
-                <div className="group relative h-full overflow-hidden rounded-3xl border border-line bg-gradient-to-b from-white to-surface-2/60 p-6 transition-shadow hover:shadow-[0_20px_50px_-20px_rgba(20,43,74,0.25)]">
-                  <span aria-hidden className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-accent-500/10 blur-2xl transition-transform duration-700 group-hover:scale-150" />
-                  <p className="font-display text-[44px] font-extrabold leading-none tracking-tight text-brand-700 sm:text-[56px]"><CountUp to={x.n} suffix={x.s} /></p>
-                  <p className="mt-3 text-[14px] leading-snug text-ink-2">{x.l}</p>
-                </div>
-              </Reveal>
-            ))}
+          <div className="relative mx-auto max-w-6xl px-4 sm:px-8">
+            <StatsBand />
           </div>
         </section>
 
@@ -368,37 +339,7 @@ export default function LandingPage() {
         </section>
 
         {/* ── How it works ── */}
-        <section id="flow" className="relative scroll-mt-20 overflow-hidden bg-white py-24 sm:py-32">
-          <GeoField shapes={[
-            { kind: "dashRing", color: "#3b82f6", size: 160, at: "-right-16 top-[30%]", spin: 60, bob: 14, opacity: 0.18 },
-            { kind: "triangle", color: "#0d9488", size: 56, at: "left-[6%] top-[22%]", spin: 44, bob: 10, opacity: 0.22 },
-            { kind: "square", color: "#6366f1", size: 44, at: "left-[10%] bottom-[16%]", spin: 30, bob: 11, opacity: 0.2 },
-            { kind: "plus", color: "#f59e0b", size: 26, at: "right-[12%] bottom-[10%]", spin: 22, bob: 8, opacity: 0.45 },
-          ]} />
-          <div className="mx-auto max-w-6xl px-5 sm:px-8">
-            <SectionHead eyebrow="How it flows" title={<>From admission to report card, <span className="lp-gradient-text-dark">one continuous story.</span></>} />
-            <div ref={flowRef} className="relative mx-auto mt-16 max-w-3xl">
-              <div aria-hidden className="absolute bottom-0 left-[27px] top-0 w-[3px] rounded-full bg-line sm:left-1/2 sm:-translate-x-1/2" />
-              <motion.div aria-hidden className="absolute left-[27px] top-0 w-[3px] origin-top rounded-full bg-gradient-to-b from-accent-500 via-sky-400 to-emerald-400 sm:left-1/2 sm:-translate-x-1/2" style={{ scaleY: flowLine, height: "100%" }} />
-              <div className="space-y-10">
-                {FLOW.map((s, k) => (
-                  <Reveal key={s.title} y={20}>
-                    <div className={`relative flex items-start gap-5 sm:w-1/2 ${k % 2 ? "sm:ml-auto sm:pl-12" : "sm:flex-row-reverse sm:pr-12 sm:text-right"}`}>
-                      <span className={`relative z-10 grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-white text-accent-600 shadow-[0_10px_30px_-10px_rgba(59,130,246,0.5)] ring-1 ring-accent-500/20 sm:absolute sm:top-0 ${k % 2 ? "sm:-left-7" : "sm:-right-7"}`}>
-                        <Icon name={s.icon} className="h-6 w-6" />
-                      </span>
-                      <div className="rounded-3xl border border-line bg-white p-5 shadow-sm sm:p-6">
-                        <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-accent-600">Step {k + 1}</p>
-                        <h3 className="mt-1.5 font-display text-[20px] font-bold text-ink">{s.title}</h3>
-                        <p className="mt-2 text-[14.5px] leading-relaxed text-ink-2">{s.body}</p>
-                      </div>
-                    </div>
-                  </Reveal>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
+        <FlowSection head={<SectionHead eyebrow="How it flows" title={<>From admission to report card, <span className="lp-gradient-text-dark">one continuous story.</span></>} sub="Follow one student through the school year. Every stage hands its work to the next, so nothing is typed twice." />} />
 
         {/* ── Mobile ── */}
         <section id="mobile" className="relative scroll-mt-20 overflow-hidden bg-gradient-to-b from-[#eef4ff] to-white py-24 sm:py-32">
@@ -454,6 +395,7 @@ export default function LandingPage() {
 
         {/* ── Footer ── */}
         <Footer />
+        </div>
       </div>
     </MotionConfig>
   );
@@ -467,6 +409,7 @@ const CSS = `
 .lp-a1 { width:620px; height:620px; left:-140px; top:-180px; background: radial-gradient(circle at 30% 30%, #3b82f6, transparent 65%); animation: lp-drift1 18s ease-in-out infinite; }
 .lp-a2 { width:560px; height:560px; right:-160px; top:60px; background: radial-gradient(circle at 60% 40%, #14b8a6, transparent 65%); animation: lp-drift2 22s ease-in-out infinite; }
 .lp-a3 { width:520px; height:520px; left:30%; bottom:-260px; background: radial-gradient(circle at 50% 50%, #f59e0b, transparent 62%); opacity:.35; animation: lp-drift3 26s ease-in-out infinite; }
+@media (max-width: 1023px) { .lp-aurora { filter: blur(60px); animation-duration: 32s; } }
 @keyframes lp-drift1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(120px,60px) scale(1.12); } }
 @keyframes lp-drift2 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-100px,80px) scale(.92); } }
 @keyframes lp-drift3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-80px,-60px) scale(1.15); } }

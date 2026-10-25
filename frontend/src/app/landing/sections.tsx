@@ -394,7 +394,7 @@ export function ConnectedSection() {
 
 /* ═══════════════════════════ 2. SAFE BY DESIGN ═══════════════════════════ */
 
-const PILLARS = [
+export const PILLARS = [
   { icon: "lock", title: "Role-based access", body: "Sixteen roles, each sees only what it should. Parents see only their own children." },
   { icon: "clipboard", title: "Complete audit trail", body: "Approvals, payments and record changes are logged with who did it and when." },
   { icon: "shield", title: "Confirm before change", body: "Every update and delete asks first — no accidental clicks, no silent edits." },
@@ -502,7 +502,7 @@ export function TrustSection() {
 
 /* ═══════════════════════════════ 3. FAQ ═══════════════════════════════ */
 
-const FAQ = [
+export const FAQ = [
   { q: "Does it work on phones?", a: "Yes — it was redesigned phone-first. Teachers mark attendance, wardens run roll call and parents pay fees from their phones, with bottom navigation, full-screen forms and large touch targets." },
   { q: "Who can see what?", a: "Sixteen roles, each with exactly the screens it needs. A warden sees hostel and gate, a parent sees only their own children, and every sensitive action asks for confirmation and is logged." },
   { q: "Can parents pay fees online?", a: "Yes. Parents pay from the portal through the payment gateway, receipts are generated as PDFs immediately, and the school's ledger and defaulter list update on their own." },
