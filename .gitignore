@@ -59,3 +59,12 @@ Thumbs.db
 .playwright-mcp/
 .qoder/
 .shots/
+
+# Deploy scratch: cloudflared binary, wrangler OAuth backup (holds a token!), OpenNext build
+.bin/
+frontend/.deploy-backup/
+frontend/.open-next/
+frontend/.wrangler-dry*/
+*.db-shm
+*.db-wal
+.claude/

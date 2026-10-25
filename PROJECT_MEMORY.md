@@ -824,3 +824,20 @@ Deps installed once by lead: pdf-lib 1.17.1, exceljs 4.4.0, qrcode 1.5.4 (+@type
   calendar day letters 9→11 (StudentCalendar); portal child-chip class 11→12; gate student class 11.5→12.5; meter
   captions 11.5→12.5 (RecordCard Meter); Button sm 12.5→13.5 and .btn-* 14px on phones.
   Worker rebuilt + deployed (version 57ea3031-d687-41d6-9774-16b1e784c9d7) against the same quick tunnel.
+- 2026-10-25 LIVE-SITE 530 FIX (Jayanth: "y 530 fix it globally"): backend + tunnel had died again when the Claude
+  session ended. Made the live site self-sufficient:
+  - NEW frontend/cf-worker.mjs = worker entry (wrangler.jsonc main): proxies /api/* to the URL in Workers KV
+    (binding CONFIG, namespace 95131be16e4943d08c2bcee75557ee8c, key BACKEND_URL, read per request, cacheTtl 30s);
+    everything else → OpenNext handler; re-exports its Durable Object classes. Tunnel/backend down → clean JSON
+    502/503 instead of Cloudflare 530 HTML. Deployed version 15fce6e3-d947-4097-bc82-11f289f2ad84. The baked Next
+    rewrite (old tunnel) is now irrelevant — the worker intercepts /api first.
+  - NEW .bin/keepalive.ps1 (laptop, independent of Claude): every 30 s ensures backend (node dist/src/main, backend/.env
+    → dev.db) and cloudflared quick tunnel (`--metrics 127.0.0.1:45678`) are up, restarts dead ones, reads the tunnel
+    hostname from http://127.0.0.1:45678/quicktunnel and `npx wrangler@4 kv key put BACKEND_URL … --remote` when it
+    changes. Single-instance mutex. Logs .bin/keepalive.log (+ backend.*.log, tunnel.log).
+    Autostart: %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\GenesisERP-KeepAlive.vbs (hidden).
+  - Verified: all 6 roles log in on the live URL; /api/auth/me 200; killed backend+tunnel at 09:27:56 → keep-alive
+    restarted both, new tunnel published to KV, live login 200 at 09:29:20 (no rebuild/redeploy).
+  - Still laptop-dependent (must be on/awake). Durable fix = DEPLOY.md: backend on Render + Neon, then set KV
+    BACKEND_URL to the Render URL (one command, no redeploy) and remove the Startup .vbs.
+  - cf-worker.mjs + wrangler.jsonc changes NOT committed (not asked); wrangler.jsonc was staged by the other session.
