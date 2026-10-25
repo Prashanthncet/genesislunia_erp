@@ -17,7 +17,7 @@ import { CHART_SERIES } from "@/lib/chart";
 import { R, ROLE, ROLE_LABEL, hasRole, useMe, type Me } from "@/lib/auth";
 import { canAccess } from "@/lib/nav";
 import {
-  AdmissionQueueWidget, ApprovalsWidget, ClassesToMarkWidget, FeesWidget, GateDeskWidget,
+  ADMISSION_QUEUE, AdmissionQueueWidget, ApprovalsWidget, ClassesToMarkWidget, FeesWidget, GateDeskWidget,
   LeaveApprovalsWidget, LessonPlansWidget, SafeguardingWidget, StudentLeaveWidget, TodayScheduleWidget, WardenHostelWidget,
 } from "./_home/RoleWidgets";
 
@@ -286,8 +286,8 @@ function LeadershipBoard({ me }: { me: Me }) {
       )}
 
       {/* ── What is waiting on this leader ───────────────────────── */}
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2 max-md:order-3 max-md:gap-4">
-        <ApprovalsWidget me={me} />
+      <div className={`grid grid-cols-1 items-start gap-5 max-md:order-3 max-md:gap-4 ${ADMISSION_QUEUE[me.role] ? "lg:grid-cols-2" : "w-full"}`}>
+        <ApprovalsWidget me={me} className={!ADMISSION_QUEUE[me.role] ? "w-full col-span-full" : undefined} />
         <AdmissionQueueWidget role={me.role} />
       </div>
 
@@ -345,12 +345,12 @@ function LeadershipBoard({ me }: { me: Me }) {
             <TiltCard key={a.label} maxTilt={8} scale={1.03} glare={false} className="h-full">
               <Link
                 href={a.href}
-                className="group flex h-full flex-col items-center gap-2.5 px-2 py-4 text-center max-md:min-h-[84px] max-md:gap-2 max-md:px-0.5 max-md:py-2"
+                className="group flex h-full flex-col items-center justify-center gap-2.5 rounded-2xl border border-line bg-surface p-3 text-center transition-all duration-200 hover:border-brand-200 hover:shadow-soft max-md:min-h-[84px] max-md:gap-2 max-md:px-0.5 max-md:py-2"
               >
                 <span className={`grid h-11 w-11 place-items-center rounded-xl transition-transform duration-200 group-hover:scale-105 ${a.tone}`}>
                   <Icon name={a.icon} className="h-5 w-5" />
                 </span>
-                <span className="text-[12px] font-semibold leading-tight text-ink-2 max-md:text-[11.5px]">{a.label}</span>
+                <span className="text-[12px] font-semibold leading-tight text-ink-2 group-hover:text-ink max-md:text-[11.5px] max-md:line-clamp-2">{a.label}</span>
               </Link>
             </TiltCard>
           ))}
@@ -631,30 +631,47 @@ function RoleHero({ me, subtitle }: { me: Me; subtitle: string }) {
   );
 }
 
-/** Shortcuts every staff member has (Leaves, Staff and Discipline are open to all staff). */
+/** Shortcuts for staff roles — styled as modern action tiles matching the Quick access UI. */
 function MyShortcuts({ me }: { me: Me }) {
-  const links = [
-    { href: "/gate", icon: "door", label: "Gate Desk" },
-    { href: "/leaves", icon: "leaves", label: "Apply for leave" },
-    { href: "/staff", icon: "wallet", label: "My payslips" },
-    { href: "/discipline", icon: "shield", label: "Report a concern" },
-    { href: "/timetable", icon: "timetable", label: "Timetable" },
-    { href: "/students", icon: "students", label: "Students" },
-    { href: "/attendance", icon: "attendance", label: "Attendance" },
-    { href: "/fees", icon: "fees", label: "Fees" },
-    { href: "/admissions", icon: "admissions", label: "Admissions" },
-    { href: "/hostel", icon: "hostel", label: "Hostel" },
-    { href: "/reports", icon: "reports", label: "Reports" },
-  ].filter((l) => canAccess(l.href, me.role)).slice(0, 8);
+  const allShortcuts = [
+    { href: "/admissions", icon: "admissions", label: "Admissions", tone: "bg-info-soft text-info-ink" },
+    { href: "/students", icon: "students", label: "Add student", tone: "bg-brand-50 text-brand-700" },
+    { href: "/attendance", icon: "attendance", label: "Roll call", tone: "bg-ok-soft text-ok-ink" },
+    { href: "/fees", icon: "receipt", label: "Collect fee", tone: "bg-warn-soft text-warn-ink" },
+    { href: "/classes", icon: "layers", label: "Classes", tone: "bg-accent-50 text-accent-600" },
+    { href: "/timetable", icon: "timetable", label: "Timetable", tone: "bg-teal-50 text-teal-700" },
+    { href: "/leaves", icon: "leaves", label: "Apply for leave", tone: "bg-ok-soft text-ok-ink" },
+    { href: "/staff", icon: "wallet", label: "My payslips", tone: "bg-warn-soft text-warn-ink" },
+    { href: "/discipline", icon: "shield", label: "Report a concern", tone: "bg-danger-soft text-danger" },
+    { href: "/notifications", icon: "bell", label: "Announce", tone: "bg-danger-soft text-danger" },
+    { href: "/reports", icon: "reports", label: "Reports", tone: "bg-surface-2 text-ink-2" },
+    { href: "/gate", icon: "door", label: "Gate Desk", tone: "bg-surface-2 text-ink-2" },
+  ];
+
+  const links = allShortcuts.filter((l) => canAccess(l.href, me.role)).slice(0, 8);
+
   return (
-    <Card>
-      <CardHead icon="sparkles" title="Quick access" subtitle="Only the screens your role can open." />
-      <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4 sm:p-5 max-md:!grid-cols-4 max-md:!p-4">
-        {links.map((l) => (
-          <Link key={l.href} href={l.href} className="flex items-center gap-2.5 rounded-xl border border-line px-3 py-3 text-[12.5px] font-semibold text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink max-md:min-h-[84px] max-md:min-w-0 max-md:flex-col max-md:justify-center max-md:gap-2 max-md:px-1 max-md:py-2.5 max-md:text-center max-md:text-[11.5px] max-md:leading-tight">
-            <Icon name={l.icon} className="h-4 w-4 shrink-0 text-brand-700 max-md:h-5 max-md:w-5" />
-            <span className="truncate max-md:line-clamp-2 max-md:whitespace-normal">{l.label}</span>
-          </Link>
+    <Card delay={210}>
+      <CardHead
+        icon="sparkles"
+        title="Quick access"
+        subtitle="Jump straight to the task you came here for."
+      />
+      <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 max-md:!grid-cols-4 max-md:gap-x-2 max-md:gap-y-3 max-md:p-4">
+        {links.map((a) => (
+          <TiltCard key={a.label} maxTilt={8} scale={1.03} glare={false} className="h-full">
+            <Link
+              href={a.href}
+              className="group flex h-full flex-col items-center justify-center gap-2.5 rounded-2xl border border-line bg-surface p-3 text-center transition-all duration-200 hover:border-brand-200 hover:shadow-soft max-md:min-h-[84px] max-md:gap-2 max-md:px-0.5 max-md:py-2"
+            >
+              <span className={`grid h-11 w-11 place-items-center rounded-xl transition-transform duration-200 group-hover:scale-105 ${a.tone}`}>
+                <Icon name={a.icon} className="h-5 w-5" />
+              </span>
+              <span className="text-[12px] font-semibold leading-tight text-ink-2 group-hover:text-ink max-md:text-[11.5px] max-md:line-clamp-2">
+                {a.label}
+              </span>
+            </Link>
+          </TiltCard>
         ))}
       </div>
     </Card>
@@ -676,20 +693,27 @@ const SUBTITLE: Record<string, string> = {
 function RoleDashboard({ me }: { me: Me }) {
   const r = me.role;
   const teaching = r === ROLE.TEACHER || r === ROLE.HOD;
+  const isAo = r === ROLE.ADMISSION_OFFICER;
+
+  const widgets: React.ReactNode[] = [];
+  if (teaching) widgets.push(<TodayScheduleWidget key="sched" me={me} />);
+  if (hasRole(me, R.ATTENDANCE_MARK)) widgets.push(<ClassesToMarkWidget key="mark" />);
+  if (teaching) widgets.push(<LessonPlansWidget key="plans" me={me} />);
+  if (ADMISSION_QUEUE[r]) widgets.push(<AdmissionQueueWidget key="admissions" role={r} className={isAo ? "w-full col-span-full" : undefined} />);
+  if (r === ROLE.ACCOUNTS || r === ROLE.OFFICE_SUPERINTENDENT) widgets.push(<FeesWidget key="fees" me={me} />);
+  if (r === ROLE.HR || r === ROLE.HOD) widgets.push(<LeaveApprovalsWidget key="leave" />);
+  if (r === ROLE.WARDEN || r === ROLE.SECURITY) widgets.push(<GateDeskWidget key="gate" me={me} />);
+  if (r === ROLE.WARDEN) widgets.push(<WardenHostelWidget key="hostel" me={me} />);
+  if (r === ROLE.WARDEN || r === ROLE.TEACHER) widgets.push(<StudentLeaveWidget key="stu_leave" />);
+  if (r === ROLE.DISCIPLINE_OFFICER) widgets.push(<SafeguardingWidget key="safeguarding" />);
+
+  const isSingle = widgets.length <= 1;
+
   return (
     <div className="space-y-5 max-md:space-y-4">
       <RoleHero me={me} subtitle={SUBTITLE[r] ?? "Your work for today."} />
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2 max-md:gap-4">
-        {teaching && <TodayScheduleWidget me={me} />}
-        {hasRole(me, R.ATTENDANCE_MARK) && <ClassesToMarkWidget />}
-        {teaching && <LessonPlansWidget me={me} />}
-        <AdmissionQueueWidget role={r} />
-        {(r === ROLE.ACCOUNTS || r === ROLE.OFFICE_SUPERINTENDENT) && <FeesWidget me={me} />}
-        {(r === ROLE.HR || r === ROLE.HOD) && <LeaveApprovalsWidget />}
-        {(r === ROLE.WARDEN || r === ROLE.SECURITY) && <GateDeskWidget me={me} />}
-        {r === ROLE.WARDEN && <WardenHostelWidget me={me} />}
-        {(r === ROLE.WARDEN || r === ROLE.TEACHER) && <StudentLeaveWidget />}
-        {r === ROLE.DISCIPLINE_OFFICER && <SafeguardingWidget />}
+      <div className={`grid grid-cols-1 items-start gap-5 max-md:gap-4 ${isSingle ? "w-full" : "lg:grid-cols-2"}`}>
+        {widgets}
       </div>
       <MyShortcuts me={me} />
     </div>
