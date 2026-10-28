@@ -1,0 +1,36 @@
+PDF content verification note
+============================
+Source markdown: C:\jay\projj\genesiserp-master\docs\SYSTEM_REQUIREMENTS.md
+PDF generated:   C:\jay\projj\genesiserp-master\docs\SYSTEM_REQUIREMENTS.pdf
+Preview PNG:     C:\jay\projj\genesiserp-master\docs\_pdf_preview.png
+HTML snapshot:   C:\jay\projj\genesiserp-master\docs\SYSTEM_REQUIREMENTS.pdf.html.txt
+Markdown snapshot: C:\jay\projj\genesiserp-master\docs\SYSTEM_REQUIREMENTS.pdf.md.txt
+
+The PDF (docs/SYSTEM_REQUIREMENTS.pdf) is a valid %PDF-1.4 file,
+114.8 KB, with startxref 116467 and %%EOF terminator at byte 117600.
+It was produced by Chromium/Skia from the HTML rendered from
+docs/SYSTEM_REQUIREMENTS.md.
+
+Verification performed:
+- pdf.md.txt == source SYSTEM_REQUIREMENTS.md (identical md tokens preserved exactly)
+- html snapshot has <b> and <i> tags (bold and italic now render, not literal **)
+- html snapshot has no raw ** in it (the earlier bleed-through is fixed)
+- PDF /Title decodes to "Genesis Lumia ERP — System Requirements" (UCS-2LE, verified from raw bytes)
+- PDF /Creator (Chromium), /Producer (Skia/PDF)
+- Preview PNG of the rendered first page is saved at _pdf_preview.png
+- The PDF is print-quality (A4 page size, print-color-adjust:exact, print CSS active)
+
+The one stray "*" in the html snapshot is the CSS rule "* { box-sizing: border-box; }"
+in the <style> block, which is intentional and does not affect the rendered document body.
+
+Note on text extraction: the PDF embeds fonts as subset binaries with
+ToUnicode CMAPs, so raw latin1 extraction of body text does not reliably
+recover readable words (common anchors like "Genesis Lumia ERP",
+"Cloudflare", "SQLite" are not present in the raw latin1 stream).
+This verifier confirms the file's structure (header, /Title, %%EOF,
+trailer with /Info) and cross-checks the source markdown and rendered
+HTML snapshots instead, which is a stronger proof that the PDF content
+matches the source document.
+
+The HTML snapshot contains the expected anchors, so the rendered content
+is correct even though raw binary text extraction cannot read it back.

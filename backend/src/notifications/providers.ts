@@ -7,11 +7,16 @@ import type { Transporter } from 'nodemailer';
  *
  *   email     SMTP_HOST set ............................. smtp (nodemailer)
  *             else NOTIFY_WEBHOOK_URL ................... webhook
- *   sms       SMS_PROVIDER=msg91|twilio|webhook forces one, otherwise
+ *   sms       SMS_PROVIDER=msg91|twilio|textbee|vonage|webhook forces one, otherwise
  *             MSG91_AUTH_KEY + MSG91_TEMPLATE_ID ........ msg91
  *             TWILIO_ACCOUNT_SID + TWILIO_FROM .......... twilio
+ *             TEXTBEE_API_KEY ........................... textbee
+ *             VONAGE_API_KEY + VONAGE_API_SECRET ........ vonage
  *             else NOTIFY_WEBHOOK_URL ................... webhook
- *   whatsapp  TWILIO_ACCOUNT_SID + TWILIO_WHATSAPP_FROM . twilio (WhatsApp)
+ *   whatsapp  WHATSAPP_TOKEN + WHATSAPP_PHONE_NUMBER_ID . whatsapp (Meta Cloud API)
+ *             WHATSAPP_GATEWAY_URL ...................... wppconnect (self-hosted)
+ *             TWILIO_ACCOUNT_SID + TWILIO_WHATSAPP_FROM . twilio (WhatsApp)
+ *             VONAGE_API_KEY + VONAGE_API_SECRET ........ vonage (Messages API, WhatsApp-capable number)
  *             else NOTIFY_WEBHOOK_URL ................... webhook
  *
  * No driver for a channel = the message is logged as `mocked` (dev behaviour, unchanged).
@@ -184,16 +189,52 @@ function twilioDriver(kind: 'sms' | 'whatsapp'): Provider {
 }
 
 /**
- * MSG91 Flow API (v5): POST https://control.msg91.com/api/v5/flow/ with header `authkey`
- * and JSON { template_id, short_url, [sender], recipients: [{ mobiles, <VAR>: value }] }.
- * Success is `{ "type": "success", "message": "<request id>" }`.
- *
- * HONEST CAVEAT: Indian DLT rules mean MSG91 only delivers text matching an approved
- * template; the free-form body is passed as ONE template variable whose name is
- * MSG91_BODY_VAR (default "message"). Create the template as `##message##` (or set
- * MSG91_BODY_VAR to your variable name). This was verified against a local stub of the
- * documented request shape, not against the live MSG91 service.
+ * Vonage Messages API (v1): POST https://api.nexmo.com/v1.messages with Basic
+ * auth (`api_key:api_secret`) and JSON { sender, recipient, type: "sms", message: { text } }.
+ * Vonage also runs a WhatsApp product through the same Messages API, but that needs a
+ * WhatsApp-enabled number + WABA and an MT1 endpoint; this driver covers SMS first.
  */
+const vonageDriver: Provider = {
+  name: 'vonage',
+  async send(msg) {
+    const apiKey = process.env.VONAGE_API_KEY as string;
+    const apiSecret = process.env.VONAGE_API_SECRET;
+    if (!apiKey || !apiSecret) throw new DeliveryError('not configured: VONAGE_API_KEY / VONAGE_API_SECRET missing', false);
+    const base = (process.env.VONAGE_API_BASE ?? 'https://api.nexmo.com').replace(/\/$/, '');
+    const from = process.env.VONAGE_NUMBER;
+    if (!from) {
+      // Without a sender number the driver cannot build a valid payload; the error is
+      // non-retryable configuration, identical to the other provider missing-config errors.
+      const agent = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : process.env.npm_config_user_agent ?? 'node';
+      const acceptLanguage = agent.match(/(\([^)]+\))/)?.[1] ?? '*';
+      throw new DeliveryError('not configured: VONAGE_NUMBER missing', false);
+    }
+    const isWA = msg.channel === 'whatsapp';
+    const payload: Record<string, unknown> = {
+      sender: from,
+      recipient: isWA ? `whatsapp:${toE164(msg.recipient).slice(1)}` : toE164(msg.recipient),
+      type: isWA ? 'whatsapp' : 'sms',
+    };
+    if (isWA) {
+      // Vonage Messages API WhatsApp shape: message = { type: 'text', text { body } }.
+      (payload as Record<string, unknown>).message = { type: 'text', text: { body: msg.body } };
+    } else {
+      payload.message = { text: msg.body };
+    }
+    const res = await post('vonage', `${base}/v1.messages`, {
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) await httpFailure('vonage', res);
+    const json = (await res.json().catch(() => ({}))) as { id?: string; message_uuid?: string };
+    return { provider: 'vonage', providerId: json.id ?? json.message_uuid };
+  },
+};
+
+/** MSG91 Flow API (v5): POST https://control.msg91.com/api/v5/flow/ with header `authkey` and JSON { template_id, short_url, [sender], recipients: [{ mobiles, <VAR>: value }] }. Success is `{ "type": "success", "message": "<request id>" }`. HONEST CAVEAT: Indian DLT rules mean MSG91 only delivers text matching an approved template; the free-form body is passed as ONE template variable whose name is MSG91_BODY_VAR (default "message"). Create the template as `##message##` (or set MSG91_BODY_VAR to your variable name). This was verified against a local stub of the documented request shape, not against the live MSG91 service. */
 const msg91Driver: Provider = {
   name: 'msg91',
   async send(msg) {
@@ -220,22 +261,110 @@ const msg91Driver: Provider = {
   },
 };
 
+/** textbee (https://textbee.dev, MIT) — an open-source gateway that sends SMS through an Android phone and its own SIM: POST {base}/api/v1/gateway/send-sms with header `x-api-key` and JSON { recipients: [E.164], message, deviceId? }. It is the free option (no per-message fee, no rented number, no DLT paperwork for the volumes a school actually sends); the cost is that the phone must stay online and each message leaves from its SIM. A 200 means QUEUED TO THE PHONE, not delivered — the phone can still refuse (SMS permission switched off, no credit, no SIM). textbee reports exactly that in `data.warning`, and the message is then recorded as failed rather than "sent", so the log never claims a parent was texted when the phone never sent anything. */
+const textbeeDriver: Provider = {
+  name: 'textbee',
+  async send(msg) {
+    const apiKey = process.env.TEXTBEE_API_KEY as string;
+    if (!apiKey) throw new DeliveryError('not configured: TEXTBEE_API_KEY missing', false);
+    const base = (process.env.TEXTBEE_API_BASE ?? 'https://api.textbee.dev').replace(/\/$/, '');
+    const payload: Record<string, unknown> = { recipients: [toE164(msg.recipient)], message: msg.body };
+    if (process.env.TEXTBEE_DEVICE_ID) payload.deviceId = process.env.TEXTBEE_DEVICE_ID;
+    const res = await post('textbee', `${base}/api/v1/gateway/send-sms`, {
+      headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) await httpFailure('textbee', res);
+    const json = (await res.json().catch(() => ({}))) as {
+      data?: { success?: boolean; message?: string; smsBatchId?: string; warning?: { code?: string; message?: string } };
+    };
+    const data = json.data;
+    if (data?.warning?.code) {
+      // Queued but undeliverable (e.g. SMS_PERMISSION_MISSING): retrying cannot help either,
+      // the phone has to be fixed.
+      throw new DeliveryError(`textbee: ${data.warning.message ?? data.warning.code}`, false);
+    }
+    if (data && data.success === false) {
+      throw new DeliveryError(`textbee rejected: ${data.message ?? 'unknown error'}`, false);
+    }
+    return { provider: 'textbee', providerId: data?.smsBatchId };
+  },
+};
+
+/** Any self-hosted WhatsApp Web gateway that speaks the WPPConnect REST shape (WPPConnect Server, and most Baileys/wwebjs wrappers clone it): POST {base}/api/{session}/send-message with JSON { phone: <digits>, message } and, when WHATSAPP_GATEWAY_TOKEN is set, `Authorization: Bearer <token>`. This is the free/un-official route: it is a real WhatsApp account linked by QR code, not a business number, so WhatsApp can rate-limit or ban the linked account — use it for school alerts on a dedicated number, not on a personal one. Unlike the generic webhook, the URL is NOT run through the SSRF guard on purpose: the gateway is a service this deployment operates (usually http://localhost:21465), exactly like SMTP_HOST. */
+const wppconnectDriver: Provider = {
+  name: 'wppconnect',
+  async send(msg) {
+    const base = (process.env.WHATSAPP_GATEWAY_URL ?? '').replace(/\/$/, '');
+    if (!base) throw new DeliveryError('not configured: WHATSAPP_GATEWAY_URL missing', false);
+    const session = process.env.WHATSAPP_GATEWAY_SESSION ?? 'genesis';
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (process.env.WHATSAPP_GATEWAY_TOKEN) headers.Authorization = `Bearer ${process.env.WHATSAPP_GATEWAY_TOKEN}`;
+    const res = await post('wppconnect', `${base}/api/${encodeURIComponent(session)}/send-message`, {
+      headers,
+      body: JSON.stringify({ phone: toE164(msg.recipient).slice(1), message: msg.body }),
+    });
+    if (!res.ok) await httpFailure('wppconnect', res);
+    const json = (await res.json().catch(() => ({}))) as { response?: string | { id?: string }; id?: string };
+    const providerId = typeof json.response === 'string' ? json.response : (json.response?.id ?? json.id);
+    return { provider: 'wppconnect', providerId };
+  },
+};
+
+/** Meta WhatsApp Cloud API: POST {base}/{version}/{phone_number_id}/messages with `Authorization: Bearer <token>` and { messaging_product, to, type: "text", text: { body } }. Success is `{ messages: [{ id }] }`; failures come back as an HTTP error body. HONEST CAVEAT: WhatsApp only accepts a free-form text message inside the 24-hour customer-service window (i.e. after the parent messaged the school number). Outside it Meta rejects the send and the notification is logged as failed; business-initiated messages need an approved message template, which this driver does not send. */
+const whatsappCloudDriver: Provider = {
+  name: 'whatsapp-cloud',
+  async send(msg) {
+    const token = process.env.WHATSAPP_TOKEN as string;
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    if (!token || !phoneNumberId) throw new DeliveryError('not configured: WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID missing', false);
+    const base = (process.env.WHATSAPP_API_BASE ?? 'https://graph.facebook.com').replace(/\/$/, '');
+    const version = process.env.WHATSAPP_API_VERSION ?? 'v21.0';
+    const res = await post('whatsapp-cloud', `${base}/${version}/${encodeURIComponent(phoneNumberId)}/messages`, {
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: toE164(msg.recipient).slice(1),
+        type: 'text',
+        text: { preview_url: false, body: msg.body },
+      }),
+    });
+    if (!res.ok) await httpFailure('whatsapp-cloud', res);
+    const json = (await res.json().catch(() => ({}))) as { messages?: { id?: string }[] };
+    return { provider: 'whatsapp-cloud', providerId: json.messages?.[0]?.id };
+  },
+};
+
 /** The driver for a channel under the current env, or null (= mocked). */
 export function resolveProvider(channel: string): Provider | null {
   const env = process.env;
   const webhook = env.NOTIFY_WEBHOOK_URL ? webhookDriver : null;
   if (channel === 'email') return env.SMTP_HOST ? smtpDriver : webhook;
   if (channel === 'sms') {
-    const forced = env.SMS_PROVIDER?.toLowerCase();
+    const forced = env.SMS_PROVIDER?.toLowerCase?.();
     if (forced === 'msg91') return msg91Driver;
     if (forced === 'twilio') return twilioDriver('sms');
+    if (forced === 'textbee') return textbeeDriver;
+    if (forced === 'vonage') return vonageDriver;
     if (forced === 'webhook') return webhook;
     if (env.MSG91_AUTH_KEY && env.MSG91_TEMPLATE_ID) return msg91Driver;
     if (env.TWILIO_ACCOUNT_SID && env.TWILIO_FROM) return twilioDriver('sms');
+    if (env.TEXTBEE_API_KEY) return textbeeDriver;
+    if (env.VONAGE_API_KEY && env.VONAGE_API_SECRET) return vonageDriver;
     return webhook;
   }
   if (channel === 'whatsapp') {
+    const forced = env.WHATSAPP_PROVIDER?.toLowerCase?.();
+    if (forced === 'cloud') return whatsappCloudDriver;
+    if (forced === 'wppconnect' || forced === 'gateway') return wppconnectDriver;
+    if (forced === 'twilio') return twilioDriver('whatsapp');
+    if (forced === 'vonage') return vonageDriver;
+    if (forced === 'webhook') return webhook;
+    if (env.WHATSAPP_TOKEN && env.WHATSAPP_PHONE_NUMBER_ID) return whatsappCloudDriver;
+    if (env.WHATSAPP_GATEWAY_URL) return wppconnectDriver;
     if (env.TWILIO_ACCOUNT_SID && env.TWILIO_WHATSAPP_FROM) return twilioDriver('whatsapp');
+    if (env.VONAGE_API_KEY && env.VONAGE_API_SECRET) return vonageDriver;
     return webhook;
   }
   return null;

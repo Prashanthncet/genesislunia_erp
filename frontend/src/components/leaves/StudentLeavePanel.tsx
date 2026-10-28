@@ -28,9 +28,10 @@ export function StudentLeavePanel({ me, students }: { me: Me; students: StudentO
 
   const file = async () => {
     if (!form.student_id || !form.start_date || !form.end_date) return toast.push("Student and dates are required", "error");
+    if (!form.reason.trim()) return toast.push("A reason is required — the approver and the parent both read it", "error");
     setBusy(true);
     try {
-      await apiFetch("/api/student-leaves", { method: "POST", body: JSON.stringify({ ...form, reason: form.reason || undefined }) });
+      await apiFetch("/api/student-leaves", { method: "POST", body: JSON.stringify({ ...form, reason: form.reason.trim() }) });
       setForm((f) => ({ ...f, start_date: "", end_date: "", reason: "" }));
       toast.push("Student leave submitted");
       await load();
@@ -84,7 +85,11 @@ export function StudentLeavePanel({ me, students }: { me: Me; students: StudentO
             </Field>
             <Field label="From" required><Input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} /></Field>
             <Field label="To" required><Input type="date" value={form.end_date} min={form.start_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} /></Field>
-            <div className="sm:col-span-2"><Field label="Reason"><Input value={form.reason} maxLength={500} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></Field></div>
+            <div className="sm:col-span-2">
+              <Field label="Reason" required hint="Shown to the approver and in the parent's copy of the request.">
+                <Input value={form.reason} maxLength={500} required onChange={(e) => setForm({ ...form, reason: e.target.value })} />
+              </Field>
+            </div>
           </div>
           <div className="px-4 pb-4"><Button variant="primary" onClick={file} loading={busy} className="max-md:w-full"><Icon name="check" className="h-4 w-4" /> Submit</Button></div>
         </Card>

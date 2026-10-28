@@ -15,6 +15,14 @@ import { Icon } from "@/components/ui";
 export type AttStatus = "Present" | "Absent" | "Late" | "OD" | "Leave";
 export const ATT_STATUSES: AttStatus[] = ["Present", "Absent", "Late", "OD", "Leave"];
 
+/**
+ * What the mark sheet puts in front of a teacher: Present or Absent, nothing else.
+ * The other three are still recorded and displayed everywhere (Late/OD rows from earlier
+ * terms, approved leave pre-filled from the leave register), so ATT_STATUSES stays the
+ * full set for rendering, tallies and filters.
+ */
+export const MARK_STATUSES: AttStatus[] = ["Present", "Absent"];
+
 type Meta = {
   label: string;
   /** one/two-letter code for dense grids */

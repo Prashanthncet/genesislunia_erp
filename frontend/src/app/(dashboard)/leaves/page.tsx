@@ -8,18 +8,17 @@ import { hasRole, isPortal, R, useMe } from "@/lib/auth";
 import { EmptyState, Icon, PageHeader, Reveal, Skeleton, Tabs } from "@/components/ui";
 import { LeaveApprovalPanel, MyLeavePanel } from "@/components/leaves/StaffLeavePanel";
 import { StudentLeavePanel } from "@/components/leaves/StudentLeavePanel";
-import { GatePassPanel } from "@/components/leaves/GatePassPanel";
-import { GATE_READ, GATE_REQUEST, STUDENT_LEAVE_FILE, STUDENT_LEAVE_READ, type StudentOption } from "@/components/leaves/shared";
+import { STUDENT_LEAVE_FILE, STUDENT_LEAVE_READ, type StudentOption } from "@/components/leaves/shared";
 
-type Tab = "mine" | "approvals" | "student" | "gate";
+type Tab = "mine" | "approvals" | "student";
+const TABS: Tab[] = ["mine", "approvals", "student"];
 
 /**
- * Leaves — staff only. Parents request leave / see passes from the parent portal, which calls
- * the same endpoints (the backend scopes them to their own children).
+ * Leaves — staff only: your own leave, the staff requests waiting on you, and student leave
+ * (the only screen that files and decides it; the student profile links here).
  *
- * Gate passes: everyone with the Gate Desk (warden, security, leadership) issues, approves,
- * verifies and audits passes on /gate, so this screen only keeps the "Gate passes" tab for
- * teaching staff (teacher/HOD) who request and track passes but have no Gate Desk.
+ * Gate passes are NOT here: everyone who can issue, approve, verify or audit a pass does it
+ * on the Gate Desk (/gate), so this screen only points there.
  */
 function LeavesContent() {
   const { me, loading } = useMe();
@@ -27,7 +26,7 @@ function LeavesContent() {
   const queryTab = searchParams.get("tab") as Tab | null;
 
   const [tab, setTab] = useState<Tab>(() => {
-    if (queryTab && ["mine", "approvals", "student", "gate"].includes(queryTab)) {
+    if (queryTab && TABS.includes(queryTab)) {
       return queryTab;
     }
     return "mine";
@@ -38,7 +37,7 @@ function LeavesContent() {
 
   // Sync tab state when URL search params change
   useEffect(() => {
-    if (queryTab && ["mine", "approvals", "student", "gate"].includes(queryTab)) {
+    if (queryTab && TABS.includes(queryTab)) {
       setTab(queryTab);
     }
   }, [queryTab]);
@@ -62,7 +61,6 @@ function LeavesContent() {
     if (hasRole(me, R.STAFF)) t.push({ id: "mine", label: "My leave" });
     if (hasRole(me, R.LEAVE_APPROVE)) t.push({ id: "approvals", label: "Approvals" });
     if (hasRole(me, STUDENT_LEAVE_READ)) t.push({ id: "student", label: "Student leave" });
-    if (hasRole(me, GATE_READ) && !hasRole(me, R.GATE_DESK)) t.push({ id: "gate", label: "Gate passes" });
     return t;
   }, [me]);
 
@@ -77,7 +75,7 @@ function LeavesContent() {
   };
 
   const gateDesk = hasRole(me, R.GATE_DESK);
-  const needStudents = !!me && (hasRole(me, STUDENT_LEAVE_FILE) || (hasRole(me, GATE_REQUEST) && !gateDesk));
+  const needStudents = !!me && hasRole(me, STUDENT_LEAVE_FILE);
   useEffect(() => {
     if (!needStudents || !hasRole(me, R.STUDENT_READ)) return;
     apiFetch<{ data: StudentOption[] }>("/api/students?page_size=200")
@@ -103,10 +101,10 @@ function LeavesContent() {
       <Reveal>
         <PageHeader
           icon="leaves"
-          title={gateDesk ? "Leaves" : "Leaves & Gate Passes"}
+          title="Leaves"
           subtitle={gateDesk
-            ? "Apply for leave and decide the leave requests in your queue."
-            : "Apply for leave, decide requests in your queue, and request gate passes for students."}
+            ? "Apply for leave, decide the leave requests in your queue and track student leave."
+            : "Apply for leave, decide the requests in your queue and track student leave."}
         />
       </Reveal>
 
@@ -136,7 +134,6 @@ function LeavesContent() {
         {tab === "mine" && <MyLeavePanel me={me} onChanged={() => setTick((t) => t + 1)} />}
         {tab === "approvals" && <LeaveApprovalPanel me={me} refreshKey={tick} onChanged={() => setTick((t) => t + 1)} />}
         {tab === "student" && <StudentLeavePanel me={me} students={students} />}
-        {tab === "gate" && <GatePassPanel me={me} students={students} refreshKey={tick} />}
       </div>
     </div>
   );

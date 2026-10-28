@@ -34,7 +34,7 @@ services:
       # The browser talks to the Worker, which proxies /api/* server-side, so this
       # only needs the public frontend origin.
       - key: CORS_ORIGINS
-        value: https://genesislumia-erp-demo.vercel.app,https://genesis-erp-web.jayanth-m.workers.dev,http://localhost:5173,http://localhost:3000
+        value: https://genesislumia-erp-demo.vercel.app
       - key: FRONTEND_URL
         value: https://genesislumia-erp-demo.vercel.app
       # Render terminates TLS in front of the service.

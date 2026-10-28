@@ -15,7 +15,11 @@ import { TeacherWeekView } from "@/components/timetable/TeacherWeekView";
 import { SubstitutionDesk } from "@/components/timetable/SubstitutionDesk";
 import { CardBody, CardEmpty, CardFooter, CardGrid, CardTitle, Chip, Meter, Monogram, RecordCard, StatusPill, initials, toneClasses, toneFor } from "@/components/RecordCard";
 type ClassItem = { id: string; name: string; section: string | null };
-type Teacher = { id: string; name: string; email: string | null; subjects: string | null; isActive: boolean; maxPeriodsPerDay: number };
+type Teacher = {
+  id: string; name: string; email: string | null; subjects: string | null; isActive: boolean; maxPeriodsPerDay: number;
+  /** Classes this teacher is timetabled in, with the subject they take there. */
+  classes?: { class_id: string; class_label: string; subject: string }[];
+};
 type Room = { id: string; name: string; type: string; capacity: number };
 type PeriodConfig = { id: string; periodNumber: number; startTime: string; endTime: string; isBreak: boolean; breakName: string | null };
 type Slot = { period_number: number; subject: string; teacher_name: string; room_name: string | null; cover_requested?: boolean; substitution: { substitute_name: string; reason: string | null } | null };
@@ -252,6 +256,7 @@ export default function TimetablePage() {
     <CardGrid min="18rem" empty={<CardEmpty title="No teachers found" hint="Teachers added to the timetable module will appear here." icon="staff" />}>
       {teachers.map((t) => {
         const subjects = (t.subjects ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+        const classes = t.classes ?? [];
         const loadTone = t.maxPeriodsPerDay >= 7 ? "warn" : t.maxPeriodsPerDay >= 5 ? "navy" : "teal";
         return (
           <RecordCard key={t.id} rail={t.isActive ? "ok" : "slate"}>
@@ -267,6 +272,20 @@ export default function TimetablePage() {
                   ? subjects.map((s) => <Chip key={s} tone={toneFor(s)} icon="book">{s}</Chip>)
                   : <Chip>No subjects assigned</Chip>}
               </div>
+              {/* Subject + class pairs come from the timetable itself, so the card shows
+                  where each subject is actually taught, not just the free-text subjects. */}
+              {classes.length > 0 && (
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-ink-2">
+                  <span className="flex items-center gap-1.5 font-semibold text-ink-3">
+                    <Icon name="layers" className="h-3.5 w-3.5" /> Classes
+                  </span>
+                  {classes.map((c) => (
+                    <span key={`${c.class_id}-${c.subject}`} className="rounded-md bg-surface-2 px-1.5 py-0.5 ring-1 ring-line">
+                      {c.subject} · <strong className="font-semibold text-ink">{c.class_label}</strong>
+                    </span>
+                  ))}
+                </div>
+              )}
               <Meter value={t.maxPeriodsPerDay} max={8} tone={loadTone} label="Max periods / day" caption={`${t.maxPeriodsPerDay} / 8`} />
             </CardBody>
             {isAdmin && <CardFooter>

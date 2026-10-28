@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { hasRole, R, ROLE, useMe } from "@/lib/auth";
+import { plainName } from "@/lib/format";
 import { TableView } from "@/components/TableView";
 import { confirmAction } from "@/components/confirm";
 import {
@@ -339,7 +340,7 @@ export default function ClassesPage() {
               <Meter value={strength} max={maxStrength} tone="navy" label="Share of largest class" caption={`${share}%`} />
               <p className="flex items-center gap-1.5 text-[12.5px] text-ink-2">
                 <Icon name="user" className="h-3.5 w-3.5 text-ink-3" />
-                Class teacher: {c.classTeacher ? <strong className="text-ink">{c.classTeacher.name}</strong> : <span className="text-ink-3">not assigned</span>}
+                Class teacher: {c.classTeacher ? <strong className="text-ink">{plainName(c.classTeacher.name)}</strong> : <span className="text-ink-3">not assigned</span>}
               </p>
             </CardBody>
             <CardFooter>
@@ -538,7 +539,7 @@ export default function ClassesPage() {
                         </span>
                       </td>
                       <td>{c.section ? <Badge tone="slate">{c.section}</Badge> : <span className="text-ink-3">—</span>}</td>
-                      <td>{c.classTeacher ? c.classTeacher.name : <span className="text-ink-3">Not assigned</span>}</td>
+                      <td>{c.classTeacher ? plainName(c.classTeacher.name) : <span className="text-ink-3">Not assigned</span>}</td>
                       <td>
                         <span className="font-semibold text-ink">{strength}</span>
                         <span className="text-ink-3"> students</span>

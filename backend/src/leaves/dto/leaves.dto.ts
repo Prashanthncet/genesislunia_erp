@@ -47,8 +47,12 @@ export class CreateStudentLeaveDto {
   @IsString() @Matches(ISO_DATE, { message: 'end_date must be YYYY-MM-DD' })
   end_date!: string;
 
-  @IsOptional() @IsString() @MaxLength(500)
-  reason?: string;
+  /**
+   * Required: the approver decides on this text and it is copied to the parent, so an
+   * empty "Sick leave" request gives them nothing to act on. Staff leave keeps it optional.
+   */
+  @IsString() @IsNotEmpty() @MaxLength(500)
+  reason!: string;
 }
 
 /* ── Gate pass ───────────────────────────────────────────────────── */

@@ -2,7 +2,7 @@
 
 /**
  * Mark attendance for one class (one section) on one date.
- * - Roster rows: roll, initials, name, segmented status P / A / L / OD / Leave.
+ * - Roster rows: roll, initials, name, segmented status P / A (see MARK_STATUSES in status.tsx).
  * - Keyboard: Tab into a row's control, ←/→ to move, P A L O V to set, ↑/↓ to change row.
  * - OD needs a reason (inline input) — Save stays disabled until every OD has one.
  * - Students on approved leave that day are pre-filled as Leave.
@@ -18,7 +18,7 @@ import { CardEmpty, Monogram, initials, toneFor } from "@/components/RecordCard"
 import { MAvatar, MLabel } from "@/components/mobile/MobileCard";
 import { TableView } from "@/components/TableView";
 import { ClassSectionSelect, resolveClass, selFor, type ClassOpt, type ClassSel } from "./ClassSectionSelect";
-import { ATT_STATUSES, AttendanceLegend, STATUS_LONG, STATUS_META, StatusTag, todayLocal, type AttStatus } from "./status";
+import { ATT_STATUSES, MARK_STATUSES, AttendanceLegend, STATUS_LONG, STATUS_META, StatusTag, todayLocal, type AttStatus } from "./status";
 
 type SheetStudent = {
   id: string; full_name: string; roll_no: string | null; admission_no: string;
@@ -169,11 +169,11 @@ export function MarkAttendance({
   const onRowKey = (e: KeyboardEvent<HTMLDivElement>, id: string, index: number) => {
     if (!canMark) return;
     const cur = entries[id]?.status ?? "Present";
-    const i = ATT_STATUSES.indexOf(cur);
-    const byKey = ATT_STATUSES.find((s) => STATUS_META[s].key === e.key.toLowerCase());
+    const i = MARK_STATUSES.indexOf(cur);
+    const byKey = MARK_STATUSES.find((s) => STATUS_META[s].key === e.key.toLowerCase());
     if (byKey && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); setStatus(id, byKey); return; }
-    if (e.key === "ArrowRight") { e.preventDefault(); setStatus(id, ATT_STATUSES[(i + 1) % ATT_STATUSES.length]); }
-    else if (e.key === "ArrowLeft") { e.preventDefault(); setStatus(id, ATT_STATUSES[(i - 1 + ATT_STATUSES.length) % ATT_STATUSES.length]); }
+    if (e.key === "ArrowRight") { e.preventDefault(); setStatus(id, MARK_STATUSES[(i + 1) % MARK_STATUSES.length]); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); setStatus(id, MARK_STATUSES[(i - 1 + MARK_STATUSES.length) % MARK_STATUSES.length]); }
     else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       rowRefs.current[index + (e.key === "ArrowDown" ? 1 : -1)]?.focus();
@@ -217,7 +217,7 @@ export function MarkAttendance({
           onKeyDown={(ev) => onRowKey(ev, s.id, idx)}
           className="mt-2 flex items-stretch gap-0.5 rounded-xl border border-line bg-surface-2 p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
         >
-          {ATT_STATUSES.map((st) => {
+          {MARK_STATUSES.map((st) => {
             const on = e.status === st;
             return (
               <button
@@ -379,7 +379,7 @@ export function MarkAttendance({
                               onKeyDown={(ev) => onRowKey(ev, s.id, idx)}
                               className="inline-flex flex-wrap gap-1 max-md:flex max-md:w-full max-md:flex-nowrap rounded-lg border border-line bg-surface-2 p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                             >
-                              {ATT_STATUSES.map((st) => {
+                              {MARK_STATUSES.map((st) => {
                                 const on = e.status === st;
                                 return (
                                   <button
