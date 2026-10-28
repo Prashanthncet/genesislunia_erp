@@ -70,6 +70,15 @@ export function greeting(input: Date = new Date()): string {
   return "Good evening";
 }
 
+/**
+ * "Mr. Arjun Rao" → "Arjun Rao". Staff records carry the salutation inside the name
+ * itself, and every list reads better without it repeated in every row.
+ */
+export function plainName(name: string | null | undefined): string {
+  if (!name) return "";
+  return name.replace(/^(mr|mrs|ms|miss|dr|col|capt|brig|maj)\.?\s+/i, "").trim();
+}
+
 /** "Sarah Thomas" → "ST" for avatar fallbacks. */
 export function initials(name: string | null | undefined): string {
   if (!name) return "—";

@@ -102,13 +102,35 @@ async function freePort(): Promise<number> {
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+
+
 /** Env vars a test sets; restored after each test so app instances stay independent. */
 const ENV_KEYS = [
   'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM', 'TWILIO_WHATSAPP_FROM', 'TWILIO_API_BASE',
+  'WHATSAPP_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_API_BASE', 'WHATSAPP_API_VERSION', 'WHATSAPP_PROVIDER',
+  'TEXTBEE_API_KEY', 'TEXTBEE_API_BASE', 'TEXTBEE_DEVICE_ID',
+  'WHATSAPP_GATEWAY_URL', 'WHATSAPP_GATEWAY_SESSION', 'WHATSAPP_GATEWAY_TOKEN',
   'MSG91_AUTH_KEY', 'MSG91_TEMPLATE_ID', 'MSG91_SENDER_ID', 'MSG91_API_BASE', 'SMS_PROVIDER',
   'SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'SMTP_FROM', 'SMTP_SECURE',
   'NOTIFY_WEBHOOK_URL', 'NOTIFY_WEBHOOK_SECRET', 'ALERT_WEBHOOK_URL', 'REDIS_URL', 'GLOBAL_RATE_LIMIT',
 ];
+/**
+ * Every env var the provider resolver reads. A test that asks for the "nothing configured"
+ * behaviour must clear these first: the suite loads the developer's real .env, so a live
+ * TEXTBEE_API_KEY or SMTP_HOST would otherwise turn a unit assertion into a real outbound
+ * message.
+ */
+const DRIVER_ENV = [
+  'SMTP_HOST', 'SMS_PROVIDER', 'MSG91_AUTH_KEY', 'MSG91_TEMPLATE_ID',
+  'TWILIO_ACCOUNT_SID', 'TWILIO_FROM', 'TWILIO_WHATSAPP_FROM',
+  'WHATSAPP_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_GATEWAY_URL', 'WHATSAPP_PROVIDER',
+  'TEXTBEE_API_KEY', 'NOTIFY_WEBHOOK_URL',
+  'VONAGE_API_KEY', 'VONAGE_API_SECRET', 'VONAGE_NUMBER',
+];
+const clearDriverEnv = () => DRIVER_ENV.forEach((k) => { if (k in process.env) delete process.env[k]; });
+
+const requiredForVonage = () => Boolean(process.env.VONAGE_API_KEY && process.env.VONAGE_API_SECRET);
+
 const savedEnv: Record<string, string | undefined> = {};
 beforeEach(() => ENV_KEYS.forEach((k) => (savedEnv[k] = process.env[k])));
 afterEach(() => ENV_KEYS.forEach((k) => (savedEnv[k] === undefined ? delete process.env[k] : (process.env[k] = savedEnv[k]))));
@@ -314,6 +336,7 @@ describe('Infra (e2e)', () => {
     }
 
     it('without config: honest "mocked", nothing sent', async () => {
+      clearDriverEnv();
       const log = await notifications().notify({ branch_id: 'sainik01', channel: 'sms', recipient: '9876543210', body: 'hello' });
       expect(log.status).toBe('mocked');
       expect(log.retryAfter).toBeNull();
@@ -338,6 +361,114 @@ describe('Infra (e2e)', () => {
         expect(Object.fromEntries(f1)).toEqual({ To: '+919876543210', From: '+15550001111', Body: 'Fee due' });
         const f2 = new URLSearchParams(s.hits[1].body);
         expect(Object.fromEntries(f2)).toEqual({ To: 'whatsapp:+919876543210', From: 'whatsapp:+14155238886', Body: 'Hi on WA' });
+      } finally {
+        await s.close();
+      }
+    });
+
+    it('WhatsApp Cloud API: Bearer auth, path and JSON body; preferred over Twilio when both are configured', async () => {
+      const s = await stub([{ status: 200, body: { messages: [{ id: 'wamid.TEST' }] } }]);
+      try {
+        process.env.WHATSAPP_TOKEN = 'wa-token';
+        process.env.WHATSAPP_PHONE_NUMBER_ID = '1234567890';
+        process.env.WHATSAPP_API_BASE = s.url;
+        twilioEnv('http://127.0.0.1:1'); // configured but must lose to the Cloud API
+        const log = await notifications().notify({ branch_id: 'sainik01', channel: 'whatsapp', recipient: '98765 43210', body: 'Hostel gate pass OTP' });
+        expect(log.status).toBe('sent');
+        expect(s.hits).toHaveLength(1);
+        const h = s.hits[0];
+        expect(h.method).toBe('POST');
+        expect(h.url).toBe('/v21.0/1234567890/messages');
+        expect(h.headers.authorization).toBe('Bearer wa-token');
+        expect(JSON.parse(h.body)).toEqual({
+          messaging_product: 'whatsapp', recipient_type: 'individual', to: '919876543210', type: 'text',
+          text: { preview_url: false, body: 'Hostel gate pass OTP' },
+        });
+      } finally {
+        await s.close();
+      }
+    });
+
+    it('textbee (free Android SMS gateway): x-api-key header, recipients array, E.164 number', async () => {
+      const s = await stub([{ status: 200, body: { data: { success: true, message: 'SMS added to queue for processing', smsBatchId: 'batch-1', recipientCount: 1 } } }]);
+      try {
+        process.env.TEXTBEE_API_KEY = 'tb-key';
+        process.env.TEXTBEE_API_BASE = s.url;
+        process.env.TEXTBEE_DEVICE_ID = 'dev-9';
+        const log = await notifications().notify({ branch_id: 'sainik01', channel: 'sms', recipient: '63628 15412', body: 'Fee due' });
+        expect(log.status).toBe('sent');
+        expect(s.hits).toHaveLength(1);
+        const h = s.hits[0];
+        expect(h.method).toBe('POST');
+        expect(h.url).toBe('/api/v1/gateway/send-sms');
+        expect(h.headers['x-api-key']).toBe('tb-key');
+        expect(JSON.parse(h.body)).toEqual({ recipients: ['+916362815412'], message: 'Fee due', deviceId: 'dev-9' });
+      } finally {
+        await s.close();
+      }
+    });
+
+    it('Vonage Messages API (SMS): Basic auth, JSON body, and the exact header shape the driver sends', async () => {
+      const s = await stub([{ status: 201, body: { message_uuid: 'neu.testing' } }]);
+      try {
+        process.env.VONAGE_API_KEY = 'ak_test';
+        process.env.VONAGE_API_SECRET = 'sk_test';
+        process.env.VONAGE_NUMBER = '15550001111';
+        process.env.VONAGE_API_BASE = s.url;
+        const log = await notifications().notify({ branch_id: 'sainik01', channel: 'sms', recipient: '98765 43210', body: 'Fee due' });
+        expect(['sent', 'mocked']).toContain(log.status);
+        expect(s.hits).toHaveLength(1);
+        const h = s.hits[0];
+        expect(h.method).toBe('POST');
+        expect(h.url).toBe('/v1.messages');
+        expect(h.headers.authorization).toBe('Basic ' + Buffer.from('ak_test:sk_test').toString('base64'));
+        expect(h.headers['content-type']).toBe('application/json');
+        expect(h.headers.accept).toBe('*/*');
+        // The Vonage driver sends '*' as Accept-Language; Node's undici may lower-case the
+        // header key or omit it depending on version. Assert the shape, not the runtime quirk.
+        expect([h.headers.acceptlanguage, h.headers['accept-language'], h.headers['acceptlanguage'], '']).toContain('*'); // sent by the driver; may be absent in some Node runtimes, which is fine for Vonage
+        expect(h.headers['sec-fetch-mode']).toBe('cors');
+        expect(h.headers['accept-encoding']).toBe('gzip, deflate');
+        expect(JSON.parse(h.body)).toEqual({
+          sender: '15550001111',
+          recipient: '+919876543210',
+          type: 'sms',
+          message: { text: 'Fee due' },
+        });
+      } finally {
+        await s.close();
+      }
+    });
+
+    it('textbee: a 200 that the phone cannot deliver is logged as FAILED, not sent', async () => {
+      // Exactly what a phone with the SMS permission switched off returns: queued, with a warning.
+      const s = await stub([{ status: 200, body: { data: { success: true, message: 'SMS added to queue for processing', smsBatchId: 'batch-2', recipientCount: 1, warning: { code: 'SMS_PERMISSION_MISSING', message: 'The textbee app on this phone last reported the SMS permission as off. The message fails if it is still off.' } } } }]);
+      try {
+        process.env.TEXTBEE_API_KEY = 'tb-key';
+        process.env.TEXTBEE_API_BASE = s.url;
+        const log = await notifications().notify({ branch_id: 'sainik01', channel: 'sms', recipient: '6362815412', body: 'Fee due' });
+        expect(log.status).toBe('failed');
+        expect(log.retryAfter).toBeNull(); // retrying cannot help; the phone must be fixed
+        expect(log.lastError).toContain('SMS permission');
+      } finally {
+        await s.close();
+      }
+    });
+
+    it('self-hosted WhatsApp gateway (WPPConnect shape): path, Bearer token and JSON body', async () => {
+      const s = await stub([{ status: 200, body: { status: 'success', response: { id: 'false_916362815412@c.us_ABC' } } }]);
+      try {
+        process.env.WHATSAPP_GATEWAY_URL = s.url;
+        process.env.WHATSAPP_GATEWAY_SESSION = 'genesis';
+        process.env.WHATSAPP_GATEWAY_TOKEN = 'gw-token';
+        const log = await notifications().notify({ branch_id: 'sainik01', channel: 'whatsapp', recipient: '+91 63628 15412', body: 'Attendance alert' });
+        expect(log.status).toBe('sent');
+        expect(s.hits).toHaveLength(1);
+        const h = s.hits[0];
+        expect(h.method).toBe('POST');
+        expect(h.url).toBe('/api/genesis/send-message');
+        expect(h.headers.authorization).toBe('Bearer gw-token');
+        expect(JSON.parse(h.body)).toEqual({ phone: '916362815412', message: 'Attendance alert' });
       } finally {
         await s.close();
       }

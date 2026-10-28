@@ -75,13 +75,37 @@ export class TimetableController {
 
   // ─── Teachers ────────────────────────────────────────────────
 
+  /**
+   * Teachers plus the classes each one actually stands in front of. The timetable slots
+   * give the (class, subject) pairs, so the teacher cards can show "Maths · Class 10 A"
+   * rather than only the free-text `subjects` field.
+   */
   @Get('teachers')
   @Roles(...R.ACADEMIC_STAFF)
-  listTeachers(@Req() req: ReqWithUser) {
-    return this.prisma.staff.findMany({
-      where: { branchId: req.user.branch_id, role: 'Teacher' },
+  async listTeachers(@Req() req: ReqWithUser) {
+    const branchId = req.user.branch_id;
+    const teachers = await this.prisma.staff.findMany({
+      where: { branchId, role: 'Teacher' },
       orderBy: { name: 'asc' },
     });
+    if (teachers.length === 0) return teachers.map((t) => ({ ...t, classes: [] }));
+
+    const slots = await this.prisma.timetableSlot.findMany({
+      where: { branchId, teacherId: { in: teachers.map((t) => t.id) } },
+      select: { teacherId: true, subject: true, class: { select: { id: true, name: true, section: true } } },
+    });
+    const load = new Map<string, { class_id: string; class_label: string; subject: string }[]>();
+    for (const s of slots) {
+      const list = load.get(s.teacherId) ?? [];
+      if (list.some((e) => e.class_id === s.class.id && e.subject === s.subject)) continue;
+      list.push({
+        class_id: s.class.id,
+        class_label: `${s.class.name}${s.class.section ? ` ${s.class.section}` : ''}`,
+        subject: s.subject,
+      });
+      load.set(s.teacherId, list);
+    }
+    return teachers.map((t) => ({ ...t, classes: load.get(t.id) ?? [] }));
   }
 
   @Post('teachers')

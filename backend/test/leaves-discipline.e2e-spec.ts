@@ -147,6 +147,9 @@ describe('Leaves, gate passes & safeguarding (e2e)', () => {
   describe('student leave', () => {
     let parentLeave = '';
     it('parent requests leave for own child ok; for another child → 403', async () => {
+      // A reason is mandatory: the approver decides on it and it is copied to the parent.
+      expect((await as('parent').post('/api/student-leaves', { ...leave(), student_id: 'stu_001', reason: '' })).status).toBe(400);
+      expect((await as('parent').post('/api/student-leaves', { ...leave({ reason: undefined }), student_id: 'stu_001' })).status).toBe(400);
       const ok = await as('parent').post('/api/student-leaves', { ...leave(), student_id: 'stu_001' });
       expect(ok.status).toBe(201);
       parentLeave = ok.body.id;

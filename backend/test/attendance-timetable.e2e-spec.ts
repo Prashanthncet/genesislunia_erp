@@ -227,6 +227,34 @@ describe('Attendance & Timetable (e2e)', () => {
     expect((await as('teacher').post('/api/timetable/generate', {})).status).toBe(403);
   });
 
+  it('teacher list carries the class + subject each teacher is timetabled in', async () => {
+    const admin = as('admin');
+    const classes = (await admin.get('/api/timetable/classes')).body as { id: string; name: string; section: string | null }[];
+    expect(classes.length).toBeGreaterThan(0);
+
+    // Any slot already in the master grid is proof: read one, then demand it on the card.
+    type Slot = { subject: string; teacher_id: string };
+    let found: { cls: (typeof classes)[number]; slot: Slot } | null = null;
+    for (const cls of classes) {
+      const slots = (await admin.get(`/api/timetable/master/${cls.id}`)).body as Slot[];
+      if (slots?.length) { found = { cls, slot: slots[0] }; break; }
+    }
+    expect(found).toBeTruthy();
+
+    const teachers = (await admin.get('/api/timetable/teachers')).body as {
+      id: string; classes: { class_id: string; class_label: string; subject: string }[];
+    }[];
+    // Everyone carries the field, so the card never has to guess.
+    expect(teachers.every((t) => Array.isArray(t.classes))).toBe(true);
+    const teacher = teachers.find((t) => t.id === found!.slot.teacher_id);
+    expect(teacher).toBeTruthy();
+    expect(teacher!.classes).toContainEqual({
+      class_id: found!.cls.id,
+      class_label: `${found!.cls.name}${found!.cls.section ? ` ${found!.cls.section}` : ''}`,
+      subject: found!.slot.subject,
+    });
+  });
+
   // ─── Timetable: substitution conflicts & notifications ───────
 
   it('manual substitute: assignment notifies substitute (email) and the class (notice)', async () => {

@@ -153,9 +153,17 @@ export function MonthlyRegister({
                   {students.map((s) => (
                     <tr key={s.id} className="group">
                       <th scope="row" className="sticky left-0 z-10 border-b border-r border-line bg-surface px-3 py-1.5 max-md:px-2.5 text-left font-medium group-hover:bg-brand-50">
-                        <span className="tnum mr-2 inline-block w-6 text-right text-ink-3 max-md:mr-0 max-md:block max-md:w-auto max-md:min-w-6 max-md:text-left max-md:text-[11px] max-md:leading-tight">{s.rollNo ?? "—"}</span>
-                        <button type="button" onClick={() => onOpenStudent({ id: s.id, name: s.fullName })} className="max-w-[10rem] truncate align-middle max-md:block max-md:max-w-[7.5rem] max-md:min-h-10 max-md:leading-10 text-ink hover:text-brand-700 hover:underline" title="Open attendance calendar">
-                          {s.fullName}
+                        {/* Phones stack roll over name (each on its own line, name truncated)
+                            instead of running them together in a single squeezed line. */}
+                        <span className="tnum mr-2 inline-block w-6 text-right text-ink-3 max-md:hidden">{s.rollNo ?? "—"}</span>
+                        <button
+                          type="button"
+                          onClick={() => onOpenStudent({ id: s.id, name: s.fullName })}
+                          className="max-w-[10rem] truncate align-middle text-ink hover:text-brand-700 hover:underline max-md:flex max-md:min-h-11 max-md:w-full max-md:max-w-none max-md:flex-col max-md:items-start max-md:justify-center max-md:gap-0 max-md:text-left"
+                          title="Open attendance calendar"
+                        >
+                          <span className="tnum hidden text-[10px] font-semibold uppercase leading-tight tracking-wide text-ink-3 max-md:block">Roll {s.rollNo ?? "—"}</span>
+                          <span className="block max-w-full truncate">{s.fullName}</span>
                         </button>
                       </th>
                       {allDays.map((d) => {
