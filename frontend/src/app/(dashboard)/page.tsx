@@ -1,253 +1,729 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { AnimatedNumber, Badge, Card, EmptyState, Icon, PageHeader, ProgressBar, Reveal, Skeleton } from "@/components/ui";
+import { Badge, Button, Card, CardHead, EmptyState, Icon, Skeleton } from "@/components/ui";
+import { TiltCard } from "@/components/motion/AnimatedCards";
+import { DonutRing } from "@/components/charts/DonutRing";
+import { RingGrid, type RingDatum } from "@/components/charts/RingGrid";
+import { GroupedBars, type BarSeries } from "@/components/charts/GroupedBars";
+import { KpiCard, type KpiDelta } from "@/components/charts/KpiCard";
+import { SparkArea } from "@/components/charts/SparkArea";
+import type { Notice } from "@/components/NotificationStackPopover";
+import { formatLongDate, greeting, inr, inrCompact, relativeTime } from "@/lib/format";
+import { CHART_SERIES } from "@/lib/chart";
+import { R, ROLE, ROLE_LABEL, hasRole, useMe, type Me } from "@/lib/auth";
+import { canAccess } from "@/lib/nav";
+import {
+  ADMISSION_QUEUE, AdmissionQueueWidget, ApprovalsWidget, ClassesToMarkWidget, FeesWidget, GateDeskWidget,
+  LeaveApprovalsWidget, LessonPlansWidget, SafeguardingWidget, StudentLeaveWidget, TodayScheduleWidget, WardenHostelWidget,
+} from "./_home/RoleWidgets";
+
+/* ── API shapes ───────────────────────────────────────────────── */
 
 type Dashboard = {
-  students_active: number; staff_active: number; classes: number; incidents_open: number;
-  staff_leaves_pending: number; gate_passes_pending: number; admissions_in_progress: number;
-  fees: { invoiced: number; collected: number; collection_pct: number | null };
+  students_active: number;
+  staff_active: number;
+  classes: number;
+  incidents_open: number;
+  staff_leaves_pending: number;
+  gate_passes_pending: number;
+  admissions_in_progress: number;
+  fees: { invoiced: number; collected: number; collection_pct: number | null } | null;
 };
-type AttendanceRow = { class_id: string; class_name: string; section: string | null; attendance_pct: number | null; total_records: number };
-type FeesReport = { invoiced: number; collected: number; outstanding: number; collection_pct: number | null; invoice_count: number };
-type NotificationLog = { id: string; channel: string; recipient: string; subject: string | null; body: string; refType: string | null; status: string; createdAt: string };
 
-const MODULES = [
-  { href: "/students", name: "Students", icon: "students", desc: "Master records, profiles, attendance %" },
-  { href: "/admissions", name: "Admissions", icon: "admissions", desc: "9-step workflow to enrolment" },
-  { href: "/fees", name: "Fees", icon: "fees", desc: "Structures, invoices, receipts" },
-  { href: "/attendance", name: "Attendance", icon: "attendance", desc: "Daily marking + monthly register" },
-  { href: "/timetable", name: "Timetable", icon: "timetable", desc: "Periods & auto substitutions" },
-  { href: "/academics", name: "Academics", icon: "academics", desc: "Subjects, syllabus, assignments" },
-  { href: "/exams", name: "Exams", icon: "exams", desc: "Marks ledger & report cards" },
-  { href: "/cbt", name: "CBT Tests", icon: "cbt", desc: "Question bank & timed exams" },
-  { href: "/leaves", name: "Leaves & Passes", icon: "leaves", desc: "Leave approvals, gate passes" },
-  { href: "/hostel", name: "Hostel", icon: "hostel", desc: "Rooms, allocation, visitors" },
-  { href: "/staff", name: "Staff & Payroll", icon: "staff", desc: "Staff, salaries, payslips" },
-  { href: "/discipline", name: "Discipline", icon: "discipline", desc: "Incidents & audit trail" },
-  { href: "/reports", name: "Reports", icon: "reports", desc: "Dashboards & CSV exports" },
+type FeesReport = {
+  invoiced: number;
+  collected: number;
+  outstanding: number;
+  collection_pct: number | null;
+  invoice_count: number;
+  by_status?: Record<string, number>;
+};
+
+type AttendanceRow = {
+  class_id: string;
+  class_name: string;
+  section: string | null;
+  attendance_pct: number | null;
+  present: number;
+  total_records: number;
+};
+
+type ExamClassRow = {
+  class_id: string;
+  class_name: string;
+  section: string | null;
+  avg_score_pct: number | null;
+  marks_count: number;
+};
+
+type ExamScores = {
+  exam_id: string;
+  exam_name: string;
+  exam_date: string;
+  classes: ExamClassRow[];
+};
+
+type TrendPoint = {
+  month: string;
+  label: string;
+  year: number;
+  invoiced: number;
+  collected: number;
+  outstanding: number;
+  enrollments: number;
+  classes: number;
+  attendance_pct: number | null;
+  attendance_records: number;
+};
+
+type Summary = {
+  hostel: { capacity: number; allocated: number; occupancy_pct: number | null };
+  payroll_total_net: number;
+  payslip_count: number;
+};
+
+/** The handful of tasks this branch does every day — one tap from the dashboard. */
+const QUICK_ACTIONS = [
+  { href: "/attendance", icon: "attendance", label: "Roll call", tone: "bg-ok-soft text-ok-ink" },
+  { href: "/students", icon: "students", label: "Add student", tone: "bg-brand-50 text-brand-700" },
+  { href: "/fees", icon: "receipt", label: "Collect fee", tone: "bg-warn-soft text-warn-ink" },
+  { href: "/admissions", icon: "admissions", label: "Admissions", tone: "bg-info-soft text-info-ink" },
+  { href: "/classes", icon: "layers", label: "Classes", tone: "bg-accent-50 text-accent-600" },
+  { href: "/timetable", icon: "timetable", label: "Timetable", tone: "bg-teal-50 text-teal-700" },
+  { href: "/notifications", icon: "bell", label: "Announce", tone: "bg-danger-soft text-danger" },
+  { href: "/reports", icon: "reports", label: "Reports", tone: "bg-surface-2 text-ink-2" },
 ];
 
-function greeting() {
-  const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
-  return "Good evening";
+const NOTICE_META: Record<string, { icon: string; label: string }> = {
+  admission: { icon: "admissions", label: "Admission" },
+  attendance: { icon: "attendance", label: "Attendance" },
+  gate_pass: { icon: "door", label: "Gate pass" },
+  payroll: { icon: "wallet", label: "Payroll" },
+  cbt: { icon: "cbt", label: "CBT" },
+  fees: { icon: "fees", label: "Fees" },
+  discipline: { icon: "shield", label: "Discipline" },
+  leave: { icon: "leaves", label: "Leave" },
+};
+
+/** Change between the last two points of a real series — null when unknowable. */
+function momDelta(series: number[], label: string): KpiDelta | null {
+  const vals = series.filter((v) => Number.isFinite(v));
+  if (vals.length < 2) return null;
+  const latest = vals[vals.length - 1];
+  const prev = vals[vals.length - 2];
+  // A percentage change from zero is not a number; say so rather than invent one.
+  if (!prev) return null;
+  return { ratio: (latest - prev) / prev, label };
 }
 
-export default function DashboardHome() {
+/**
+ * School-wide analytics board. Rendered only for leadership (every endpoint it
+ * calls is in R.REPORTS / R.NOTIFICATION_LOG, which include R.LEADERSHIP).
+ */
+function LeadershipBoard({ me }: { me: Me }) {
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [fees, setFees] = useState<FeesReport | null>(null);
-  const [attendance, setAttendance] = useState<AttendanceRow[]>([]);
-  const [notes, setNotes] = useState<NotificationLog[]>([]);
-  const [error, setError] = useState("");
+  const [attendance, setAttendance] = useState<AttendanceRow[] | null>(null);
+  const [examScores, setExamScores] = useState<ExamScores[] | null>(null);
+  const [trends, setTrends] = useState<TrendPoint[] | null>(null);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const role = me.name?.split(" ").filter((p) => !/^(mr|mrs|ms|dr|col|brig)\.?$/i.test(p))[0] ?? ROLE_LABEL[me.role] ?? "there";
+  const [error, setError] = useState<string | null>(null);
+  const [today] = useState(() => new Date());
 
-  useEffect(() => {
-    Promise.all([
-      apiFetch<Dashboard>("/api/reports/dashboard"),
-      apiFetch<FeesReport>("/api/reports/fees"),
-      apiFetch<AttendanceRow[]>("/api/reports/attendance"),
-      apiFetch<NotificationLog[]>("/api/notifications"),
-    ])
-      .then(([d, f, a, n]) => { setDash(d); setFees(f); setAttendance(a ?? []); setNotes((n ?? []).slice(0, 5)); })
-      .catch((e) => setError(e instanceof Error ? e.message : "Could not load dashboard"));
+  const load = useCallback(async () => {
+    setError(null);
+
+    try {
+      const [d, f] = await Promise.all([
+        apiFetch<Dashboard>("/api/reports/dashboard"),
+        apiFetch<FeesReport>("/api/reports/fees"),
+      ]);
+      setDash(d);
+      setFees(f);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reach the reports API");
+    }
+
+    // Secondary panels degrade independently — one failure must not blank the page.
+    apiFetch<AttendanceRow[]>("/api/reports/attendance").then(setAttendance).catch(() => setAttendance([]));
+    apiFetch<ExamScores[]>("/api/reports/exam-scores").then(setExamScores).catch(() => setExamScores([]));
+    apiFetch<{ points: TrendPoint[] }>("/api/reports/trends")
+      .then((r) => setTrends(Array.isArray(r?.points) ? r.points : []))
+      .catch(() => setTrends([]));
+    apiFetch<Summary>("/api/reports/summary").then(setSummary).catch(() => setSummary(null));
+    apiFetch<Notice[]>("/api/notifications")
+      .then((rows) => setNotices(Array.isArray(rows) ? rows : []))
+      .catch(() => setNotices([]));
   }, []);
 
-  const role = (typeof window !== "undefined" ? localStorage.getItem("role") ?? "" : "").toUpperCase();
-  const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
+  useEffect(() => { load(); }, [load]);
+
+  /* ── Derived, never invented ────────────────────────────────── */
+
+  const points = trends ?? [];
+  const monthsLoading = trends === null;
+
+  // Only months that actually carry billing — leading empty months would be a
+  // run of flat bars that just adds noise.
+  const feePoints = points.filter((p) => p.invoiced > 0 || p.collected > 0 || p.outstanding > 0);
+
+  const collectedSeries = points.filter((p) => typeof p.collected === "number").map((p) => p.collected);
+  const enrollmentSeries = points.map((p) => p.enrollments);
+  const classSeries = points.map((p) => p.classes);
+  const attendanceSeries = points.map((p) => p.attendance_pct).filter((v): v is number => v !== null);
+
+  const attendanceTotal = (attendance ?? []).reduce((sum, r) => sum + r.total_records, 0);
+  const attendancePresent = (attendance ?? []).reduce((sum, r) => sum + r.present, 0);
+  const attendanceWeighted = attendanceTotal > 0 ? (attendancePresent / attendanceTotal) * 100 : null;
+
+  // "Class 10 A", not "Class 10 · A": the middot created an orphaned section
+  // letter on its own line in a narrow column.
+  const classLabel = (c: { class_name: string; section: string | null }) =>
+    c.section ? `${c.class_name} ${c.section}` : c.class_name;
+
+  const rings: RingDatum[] = (attendance ?? []).map((r) => ({
+    id: r.class_id,
+    label: classLabel(r),
+    value: r.attendance_pct,
+    caption: r.total_records > 0 ? `${r.present} / ${r.total_records}` : "no roll call yet",
+  }));
+
+  const feeSeries: BarSeries[] = [
+    { label: "Collected", color: CHART_SERIES[0], values: feePoints.map((p) => p.collected) },
+    { label: "Outstanding", color: CHART_SERIES[4], values: feePoints.map((p) => p.outstanding) },
+  ];
+
+  // Compare the two exams that actually carry marks; the rest would be empty bars.
+  const rankedExams = (examScores ?? [])
+    .map((e) => ({ ...e, marks: e.classes.reduce((s, c) => s + c.marks_count, 0) }))
+    .filter((e) => e.marks > 0)
+    .sort((a, b) => b.marks - a.marks)
+    .slice(0, 2);
+  const examCategories = (examScores?.[0]?.classes ?? []).map(classLabel);
+  const examSeries: BarSeries[] = rankedExams.map((e, i) => ({
+    label: e.exam_name,
+    color: CHART_SERIES[i],
+    values: e.classes.map((c) => c.avg_score_pct),
+  }));
+
+  const collected = fees?.collected ?? 0;
+  const outstanding = fees?.outstanding ?? 0;
+
+  const attention = dash
+    ? [
+        { label: "Admissions in progress", value: dash.admissions_in_progress, href: "/admissions", icon: "admissions" },
+        { label: "Leaves pending", value: dash.staff_leaves_pending, href: "/leaves", icon: "leaves" },
+        { label: "Gate passes", value: dash.gate_passes_pending, href: "/leaves", icon: "door" },
+        { label: "Open incidents", value: dash.incidents_open, href: "/discipline", icon: "shield" },
+      ]
+    : [];
+
+  const loadingCore = !dash && !error;
 
   return (
-    <div className="space-y-7 pb-4">
-      <Reveal>
-        <PageHeader
-          icon="home"
-          title={`${greeting()}${role ? `, ${role.replace(/_/g, " ")}` : ""}`}
-          subtitle="Here is what needs your attention across the school today."
-          actions={
-            <>
-              <Link href="/reports" className="btn-soft">
-                <Icon name="reports" className="h-4 w-4" /> Reports
-              </Link>
-              <Link href="/admissions" className="btn-primary">
-                <Icon name="plus" className="h-4 w-4" /> New Admission
-              </Link>
-            </>
-          }
+    <div className="space-y-5 max-md:flex max-md:flex-col max-md:gap-4 max-md:space-y-0">
+      {/* ── Hero ─────────────────────────────────────────────────── */}
+      <section className="relative overflow-hidden rounded-panel border border-navy-800 bg-navy-900 text-white shadow-card max-md:order-1">
+        <Image
+          src="/school-banner.jpg"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover object-center opacity-25"
         />
-      </Reveal>
-
-      {error && (
-        <div className="card flex items-center gap-2 border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
-          <Icon name="alert" className="h-4 w-4" /> {error}
-        </div>
-      )}
-
-      {/* KPI row */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {!dash ? (
-          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24" />)
-        ) : (
-          <>
-            <Reveal delay={0}><Kpi label="Active Students" value={dash.students_active} icon="students" tone="brand" hint={`${dash.classes} classes`} /></Reveal>
-            <Reveal delay={60}><Kpi label="Active Staff" value={dash.staff_active} icon="staff" tone="violet" hint="teaching + non-teaching" /></Reveal>
-            <Reveal delay={120}><Kpi label="Admissions In Progress" value={dash.admissions_in_progress} icon="admissions" tone="sky" hint="not yet confirmed" /></Reveal>
-            <Reveal delay={180}>
-              <Kpi
-                label="Fee Collected"
-                value={dash.fees.collection_pct}
-                suffix="%"
-                decimals={1}
-                icon="fees"
-                tone={dash.fees.collection_pct !== null && dash.fees.collection_pct < 70 ? "rose" : "emerald"}
-                hint={`${inr(dash.fees.collected)} of ${inr(dash.fees.invoiced)}`}
-              />
-            </Reveal>
-          </>
-        )}
-      </div>
-
-      {/* Attention + money */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2" hover>
-          <div className="flex items-center justify-between p-5 pb-3">
-            <div>
-              <h2 className="font-bold text-slate-800">Attendance this term</h2>
-              <p className="text-xs text-slate-400">Present share per class</p>
-            </div>
-            <Link href="/reports" className="text-xs font-semibold text-brand-600 transition-colors duration-200 hover:text-brand-800 hover:underline">View report →</Link>
+        <div className="absolute inset-0 bg-gradient-to-r from-navy-950/95 via-navy-900/80 to-navy-800/40" aria-hidden />
+        <div className="relative flex flex-col gap-5 p-5 sm:p-7 lg:flex-row lg:items-center lg:justify-between max-md:!p-4 max-md:gap-4">
+          <div className="min-w-0">
+            <p className="text-[11.5px] font-semibold uppercase tracking-[0.14em] text-brand-300">
+              {formatLongDate(today)}
+            </p>
+            <h1 className="mt-1.5 font-display text-[26px] font-extrabold leading-tight tracking-tight sm:text-[30px] max-md:break-words max-md:!text-[22px]">
+              {greeting(today)}, {role}.
+            </h1>
+            <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-white/70 max-md:hidden">
+              Here&apos;s what&apos;s happening across this branch today.
+            </p>
           </div>
-          <div className="space-y-3 px-5 pb-5">
-            {attendance.length === 0 && <EmptyState title="No attendance recorded yet" hint="Mark a class to see percentages here." icon="attendance" />}
-            {attendance.map((a, i) => (
-              <div key={a.class_id} className="flex items-center gap-3">
-                <span className="w-28 shrink-0 truncate text-sm font-semibold text-slate-700">
-                  {a.class_name} {a.section ?? ""}
+
+          <div className="grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-4 lg:max-w-xl">
+            {attention.map((a) => (
+              <Link
+                key={a.label}
+                href={a.href}
+                className="group rounded-xl border border-white/10 bg-white/[0.06] p-3 transition-colors duration-200 hover:border-white/25 hover:bg-white/[0.12] max-md:min-w-0"
+              >
+                <span className="flex items-center gap-1.5 text-white/60">
+                  <Icon name={a.icon} className="h-3.5 w-3.5" />
                 </span>
-                <ProgressBar value={a.attendance_pct ?? 0} tone={(a.attendance_pct ?? 100) >= 75 ? "emerald" : (a.attendance_pct ?? 100) >= 60 ? "amber" : "rose"} className="flex-1" />
-                <span className="w-12 text-right text-xs font-bold text-slate-500 tnum">
-                  {a.attendance_pct === null ? "—" : `${a.attendance_pct}%`}
+                <span className="mt-1.5 block font-display text-[20px] font-extrabold leading-none tabular-nums max-md:text-[24px]">
+                  {loadingCore ? "–" : a.value}
                 </span>
-              </div>
+                <span className="mt-1 block text-[10.5px] font-medium leading-tight text-white/60 max-md:mt-1.5 max-md:text-[12px] max-md:text-white/70">{a.label}</span>
+              </Link>
             ))}
           </div>
-        </Card>
-
-        <div className="space-y-4">
-          <Card hover delay={80}>
-            <div className="p-5">
-              <h2 className="font-bold text-slate-800">Needs attention</h2>
-              <ul className="mt-3 space-y-2.5">
-                {dash && [
-                  { label: "Pending staff leaves", value: dash.staff_leaves_pending, href: "/leaves", tone: "amber" as const },
-                  { label: "Gate passes awaiting approval", value: dash.gate_passes_pending, href: "/leaves", tone: "amber" as const },
-                  { label: "Open incidents", value: dash.incidents_open, href: "/discipline", tone: "rose" as const },
-                  { label: "Fee outstanding", value: fees ? Math.round(fees.outstanding) : 0, money: true, href: "/fees", tone: "rose" as const },
-                ].map((row) => (
-                  <li key={row.label}>
-                    <Link href={row.href} className="group flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2.5 transition hover:border-brand-200 hover:bg-brand-50">
-                      <span className="text-sm text-slate-600">{row.label}</span>
-                      <span className="flex items-center gap-1 text-sm font-bold text-slate-800 group-hover:text-brand-700">
-                        {"money" in row && row.money ? <AnimatedNumber value={row.value} prefix="₹" /> : <AnimatedNumber value={row.value} />}
-                        <span className="transition-transform group-hover:translate-x-0.5">→</span>
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </Card>
-
-          <Card hover delay={140}>
-            <div className="p-5">
-              <div className="mb-2 flex items-center justify-between">
-                <h2 className="font-bold text-slate-800">Fee collection</h2>
-                <Badge tone={fees && fees.collection_pct !== null && fees.collection_pct < 70 ? "rose" : "emerald"}>
-                  {fees?.collection_pct === null || fees === null ? "—" : `${fees.collection_pct}%`}
-                </Badge>
-              </div>
-              <ProgressBar value={fees?.collection_pct ?? 0} tone={fees && fees.collection_pct !== null && fees.collection_pct < 70 ? "rose" : "emerald"} />
-              <div className="mt-3 flex justify-between text-xs text-slate-500">
-                <span>Collected <b className="text-emerald-700">{fees ? inr(fees.collected) : "—"}</b></span>
-                <span>Invoiced <b>{fees ? inr(fees.invoiced) : "—"}</b></span>
-              </div>
-            </div>
-          </Card>
-        </div>
-      </div>
-
-      {/* Module grid */}
-      <section>
-        <Reveal>
-          <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-slate-400">All modules</h2>
-        </Reveal>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {MODULES.map((m, i) => (
-            <Reveal key={m.href} delay={i * 40}>
-              <Link href={m.href} className="card card-hover group flex h-full flex-col p-4">
-                <span className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-brand-50 to-white text-brand-600 ring-1 ring-brand-100 transition-transform duration-300 group-hover:scale-110 group-hover:ring-brand-200">
-                  <Icon name={m.icon} />
-                </span>
-                <span className="mt-3 text-sm font-bold text-slate-800 transition-colors group-hover:text-brand-700">{m.name}</span>
-                <span className="mt-0.5 text-xs text-slate-400">{m.desc}</span>
-              </Link>
-            </Reveal>
-          ))}
         </div>
       </section>
 
-      {/* Recent notifications */}
-      <Card hover>
-        <div className="flex items-center justify-between p-5 pb-2">
-          <h2 className="font-bold text-slate-800">Recent parent communication</h2>
-          <Link href="/notifications" className="text-xs font-semibold text-brand-600 transition-colors duration-200 hover:text-brand-800 hover:underline">Open log →</Link>
+      {error && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-panel border border-danger/30 bg-danger-soft px-4 py-3.5 max-md:order-2">
+          <p className="flex items-center gap-2 text-[13px] font-medium text-danger">
+            <Icon name="alert" className="h-4 w-4 shrink-0" />
+            {error}
+          </p>
+          <Button variant="danger" onClick={load}>
+            <Icon name="refresh" className="h-4 w-4" />
+            Retry
+          </Button>
         </div>
-        <ul className="divide-y divide-slate-100">
-          {notes.length === 0 && <li><EmptyState title="Nothing sent yet" hint="SMS/email events from every module appear here." icon="bell" /></li>}
-          {notes.map((n) => (
-            <li key={n.id} className="flex items-start gap-3 px-5 py-3 row-hover">
-              <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-500">
-                <Icon name={n.channel === "email" ? "admissions" : "bell"} className="h-4 w-4" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-slate-700">{n.subject ?? n.body.slice(0, 60)}</p>
-                <p className="truncate text-xs text-slate-400">{n.recipient} · {n.channel}{n.refType ? ` · ${n.refType}` : ""}</p>
-              </div>
-              <Badge tone={n.status === "sent" ? "emerald" : n.status === "failed" ? "rose" : "slate"}>{n.status}</Badge>
-            </li>
+      )}
+
+      {/* ── What is waiting on this leader ───────────────────────── */}
+      <div className={`grid grid-cols-1 items-start gap-5 max-md:order-3 max-md:gap-4 ${ADMISSION_QUEUE[me.role] ? "lg:grid-cols-2" : "w-full"}`}>
+        <ApprovalsWidget me={me} className={!ADMISSION_QUEUE[me.role] ? "w-full col-span-full" : undefined} />
+        <AdmissionQueueWidget role={me.role} />
+      </div>
+
+      {/* ── KPI tiles with trend sparklines ──────────────────────── */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 max-md:order-4 max-md:grid-cols-2 max-md:gap-3 max-md:[&>.card>div:first-child]:p-3.5 max-md:[&>.card>div:first-child]:pb-1.5 max-md:[&>.card>div:first-child>span:first-child]:hidden max-md:[&>.card_p:first-child]:text-[11px] max-md:[&>.card_p:first-child]:leading-snug max-md:[&>.card_p:nth-child(2)]:mt-1.5 max-md:[&>.card_p:nth-child(2)]:text-[24px] max-md:[&>.card_p:last-child]:flex-wrap max-md:[&>.card_p:last-child]:text-[11px] max-md:[&>.card_p:last-child]:leading-snug">
+        <KpiCard
+          label="Total Students"
+          value={loadingCore ? "—" : String(dash?.students_active ?? 0)}
+          icon="students"
+          tone="brand"
+          spark={enrollmentSeries}
+          delta={momDelta(enrollmentSeries, "enrolments vs last month")}
+          delay={0}
+        />
+        <KpiCard
+          label="Total Classes"
+          value={loadingCore ? "—" : String(dash?.classes ?? 0)}
+          icon="layers"
+          tone="violet"
+          spark={classSeries}
+          delta={momDelta(classSeries, "new sections vs last month")}
+          delay={60}
+        />
+        <KpiCard
+          label="Attendance"
+          value={attendanceWeighted === null ? "—" : `${attendanceWeighted.toFixed(1)}%`}
+          icon="attendance"
+          tone={attendanceWeighted === null ? "sky" : attendanceWeighted >= 90 ? "emerald" : "amber"}
+          spark={attendanceSeries}
+          delta={momDelta(attendanceSeries, "vs last month")}
+          hint={attendanceTotal > 0 ? `${attendanceTotal.toLocaleString("en-IN")} roll-call records` : "No roll calls yet"}
+          delay={120}
+        />
+        <KpiCard
+          label="Total Fee Collected"
+          value={loadingCore ? "—" : inrCompact(fees?.collected ?? 0)}
+          icon="fees"
+          tone="emerald"
+          spark={collectedSeries}
+          delta={momDelta(collectedSeries, "vs last month")}
+          hint={fees ? `${fees.invoice_count} invoices raised` : undefined}
+          delay={180}
+        />
+      </div>
+
+      {/* ── Quick access ─────────────────────────────────────────── */}
+      <Card className="max-md:order-5" delay={210}>
+        <CardHead
+          icon="sparkles"
+          title="Quick access"
+          subtitle="Jump straight to the task you came here for."
+        />
+        <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4 lg:grid-cols-8 max-md:!grid-cols-4 max-md:gap-x-2 max-md:gap-y-3 max-md:p-4">
+          {QUICK_ACTIONS.filter((a) => canAccess(a.href, me.role)).map((a) => (
+            <TiltCard key={a.label} maxTilt={8} scale={1.03} glare={false} className="h-full">
+              <Link
+                href={a.href}
+                className="group flex h-full flex-col items-center justify-center gap-2.5 rounded-2xl border border-line bg-surface p-3 text-center transition-all duration-200 hover:border-brand-200 hover:shadow-soft max-md:min-h-[84px] max-md:gap-2 max-md:px-0.5 max-md:py-2"
+              >
+                <span className={`grid h-11 w-11 place-items-center rounded-xl transition-transform duration-200 group-hover:scale-105 ${a.tone}`}>
+                  <Icon name={a.icon} className="h-5 w-5" />
+                </span>
+                <span className="text-[12px] font-semibold leading-tight text-ink-2 group-hover:text-ink max-md:text-[11.5px] max-md:line-clamp-2">{a.label}</span>
+              </Link>
+            </TiltCard>
           ))}
-        </ul>
+        </div>
       </Card>
+
+      {/* ── Attendance rings · fee trend · collection status ─────── */}
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-12 max-md:contents">
+        <Card className="xl:col-span-4 max-md:order-8" delay={240}>
+          {/* No action button here on purpose: the header reads as one clean
+              block, and Roll call is already in Quick access. */}
+          <CardHead
+            icon="attendance"
+            title="Attendance by Class"
+            subtitle="Present rate across all recorded roll calls."
+          />
+          <div className="p-5 max-md:p-4">
+            {attendance === null ? (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="flex flex-col items-center gap-2">
+                    <Skeleton className="h-[86px] w-[86px] !rounded-full" />
+                    <Skeleton className="h-3 w-16" />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <RingGrid
+                data={rings}
+                emptyMessage="No classes yet — create one from Classes & Sections."
+              />
+            )}
+          </div>
+        </Card>
+
+        <Card className="xl:col-span-4 max-md:order-6" delay={270}>
+          <CardHead
+            icon="reports"
+            title="Fee Collection Trend"
+            subtitle="Collection vs outstanding, by invoice due month."
+            actions={
+              <Link href="/fees" className="btn-soft">
+                Open fees
+                <Icon name="chevronRight" className="h-3.5 w-3.5" />
+              </Link>
+            }
+          />
+          <div className="p-5 max-md:p-4">
+            {monthsLoading ? (
+              <div className="flex items-end gap-2 pb-6" style={{ height: 248 }}>
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <Skeleton key={i} className="w-full" style={{ height: `${25 + (i % 4) * 15}%` }} />
+                ))}
+              </div>
+            ) : (
+              <GroupedBars
+                categories={feePoints.map((p) => p.label)}
+                series={feeSeries}
+                formatValue={(v) => inrCompact(v)}
+                formatTick={(v) => inrCompact(v)}
+                ariaLabel="Monthly fee collection and outstanding"
+                emptyMessage="No invoices have been raised yet."
+              />
+            )}
+            {/* Phones: the chart scrolls sideways once the months don't fit — say so. */}
+            {!monthsLoading && feePoints.length > 5 && (
+              <p className="mt-2 hidden text-center text-[11px] font-medium text-ink-3 max-md:block">Swipe the chart sideways to see every month</p>
+            )}
+          </div>
+        </Card>
+
+        <Card className="xl:col-span-4 max-md:order-9" delay={300}>
+          <CardHead icon="wallet" title="Collection Status" subtitle="Where this branch's billing stands." />
+          <div className="p-5 max-md:p-4">
+            {!fees ? (
+              <div className="flex items-center gap-5">
+                <Skeleton className="h-[132px] w-[132px] !rounded-full" />
+                <div className="flex-1 space-y-3">
+                  {Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-3.5 w-full" />)}
+                </div>
+              </div>
+            ) : (
+              <>
+                <DonutRing
+                  layout="column"
+                  centerLabel="Collected"
+                  centerValue={fees.collection_pct === null ? "—" : `${fees.collection_pct.toFixed(0)}%`}
+                  showShare
+                  segments={[
+                    { label: "Collected", value: collected, color: CHART_SERIES[0] },
+                    { label: "Outstanding", value: outstanding, color: CHART_SERIES[4] },
+                  ]}
+                  caption={
+                    fees.invoice_count === 0
+                      ? "No invoices have been raised in this branch yet."
+                      : `${fees.invoice_count} invoice${fees.invoice_count === 1 ? "" : "s"} raised.`
+                  }
+                />
+                <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-4 py-3">
+                  <span>
+                    <span className="block text-[11px] font-semibold uppercase tracking-wide text-ink-3">
+                      Total invoiced
+                    </span>
+                    <span className="block font-display text-[15px] font-extrabold tabular-nums text-ink">
+                      {inr(fees.invoiced)}
+                    </span>
+                  </span>
+                  <Icon name="receipt" className="h-5 w-5 shrink-0 text-ink-3" />
+                </div>
+              </>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      {/* ── Exam comparison · operations · outbound log ──────────── */}
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-12 max-md:contents">
+        <Card className="xl:col-span-4 max-md:order-11" delay={330}>
+          <CardHead
+            icon="exams"
+            title="Average Score by Exam"
+            subtitle="Mean score per class, for the two largest exams."
+            actions={
+              <Link href="/exams" className="btn-soft">
+                Open exams
+                <Icon name="chevronRight" className="h-3.5 w-3.5" />
+              </Link>
+            }
+          />
+          <div className="p-5 max-md:p-4">
+            {examScores === null ? (
+              <div className="flex items-end gap-2 pb-6" style={{ height: 248 }}>
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <Skeleton key={i} className="w-full" style={{ height: `${30 + (i % 3) * 15}%` }} />
+                ))}
+              </div>
+            ) : examSeries.length === 0 ? (
+              <EmptyState
+                icon="exams"
+                title="No marks entered yet"
+                hint="Exam averages appear here once teachers record marks against an exam."
+              />
+            ) : (
+              <GroupedBars
+                categories={examCategories}
+                series={examSeries}
+                formatValue={(v) => `${v.toFixed(1)}%`}
+                formatTick={(v) => `${v}%`}
+                ariaLabel="Average score per class by exam"
+                emptyMessage="No marks entered yet."
+              />
+            )}
+            {examScores !== null && examSeries.length > 0 && examCategories.length > 5 && (
+              <p className="mt-2 hidden text-center text-[11px] font-medium text-ink-3 max-md:block">Swipe the chart sideways to see every class</p>
+            )}
+          </div>
+        </Card>
+
+        <Card className="xl:col-span-4 max-md:order-10" delay={360}>
+          <CardHead icon="activity" title="Operations Snapshot" subtitle="Live status at a glance." />
+          <div className="grid grid-cols-2 gap-px bg-line">
+            <div className="flex flex-col items-center gap-1 bg-surface p-4">
+              <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-50 text-brand-600">
+                <Icon name="hostel" className="h-4 w-4" />
+              </span>
+              <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-ink-3">Hostel</p>
+              {summary?.hostel.occupancy_pct === null || summary === null ? (
+                <>
+                  <p className="font-display text-[19px] font-extrabold leading-none text-ink-3">—</p>
+                  <p className="text-[10.5px] text-ink-3 max-md:text-[11.5px]">no beds configured</p>
+                </>
+              ) : (
+                <>
+                  <p className="font-display text-[19px] font-extrabold leading-none tabular-nums text-ink max-md:text-[22px]">
+                    {summary.hostel.occupancy_pct.toFixed(0)}%
+                  </p>
+                  <p className="text-[10.5px] tabular-nums text-ink-3 max-md:text-[11.5px]">
+                    {summary.hostel.allocated} of {summary.hostel.capacity} beds
+                  </p>
+                </>
+              )}
+            </div>
+
+            <div className="flex flex-col items-center gap-1 bg-surface p-4">
+              <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent-50 text-accent-600">
+                <Icon name="wallet" className="h-4 w-4" />
+              </span>
+              <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-ink-3">Payroll</p>
+              <p className="font-display text-[19px] font-extrabold leading-none tabular-nums text-ink max-md:text-[22px]">
+                {summary ? inrCompact(summary.payroll_total_net) : "—"}
+              </p>
+              <p className="text-[10.5px] tabular-nums text-ink-3 max-md:text-[11.5px]">
+                {summary ? `${summary.payslip_count} payslips` : "…"}
+              </p>
+            </div>
+
+            <div className="col-span-2 bg-surface p-4">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Admissions</span>
+                <span className="text-[11.5px] font-semibold tabular-nums text-ink">
+                  {dash?.admissions_in_progress ?? "—"} in progress
+                </span>
+              </div>
+              {enrollmentSeries.length < 2 ? (
+                <p className="mt-2 text-[11px] text-ink-3">Not enough history to plot a trend yet.</p>
+              ) : (
+                <SparkArea points={enrollmentSeries} color={CHART_SERIES[1]} height={40} label="Monthly enrolments" className="mt-1.5" />
+              )}
+            </div>
+
+          </div>
+        </Card>
+
+        <Card className="xl:col-span-4 max-md:order-7" delay={390}>
+          <CardHead
+            icon="bell"
+            title="Recent Outbound Messages"
+            subtitle="Latest entries from the notification log."
+            actions={
+              <Link href="/notifications" className="btn-soft">
+                View all
+                <Icon name="chevronRight" className="h-3.5 w-3.5" />
+              </Link>
+            }
+          />
+          {notices.length === 0 ? (
+            <EmptyState
+              icon="bell"
+              title="Nothing sent yet"
+              hint="Admission links, attendance alerts and payroll notices will show up here as they go out."
+            />
+          ) : (
+            <ul className="divide-y divide-line">
+              {notices.slice(0, 5).map((n) => {
+                const meta = NOTICE_META[n.refType ?? ""] ?? { icon: "bell", label: n.channel };
+                return (
+                  <li key={n.id} className="flex items-start gap-3 px-5 py-3.5 max-md:px-4">
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-2">
+                      <Icon name={meta.icon} className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p className="truncate text-[12.5px] font-semibold text-ink max-md:text-[13px]">
+                          {n.subject ?? `${meta.label} notification`}
+                        </p>
+                        <span className="shrink-0 text-[11px] text-ink-3">{relativeTime(n.createdAt)}</span>
+                      </div>
+                      <p className="mt-0.5 line-clamp-1 text-[11.5px] text-ink-2 max-md:text-[12px]">{n.body}</p>
+                    </div>
+                    <Badge tone={n.status === "sent" ? "emerald" : n.status === "failed" ? "rose" : "amber"}>
+                      {n.status}
+                    </Badge>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
 
-function Kpi({
-  label, value, icon, tone, hint, suffix = "", decimals = 0,
-}: {
-  label: string; value: number | null; icon: string; tone: "brand" | "emerald" | "rose" | "sky" | "violet";
-  hint?: string; suffix?: string; decimals?: number;
-}) {
-  const chips = {
-    brand: "bg-brand-50 text-brand-600",
-    emerald: "bg-emerald-50 text-emerald-600",
-    rose: "bg-rose-50 text-rose-600",
-    sky: "bg-sky-50 text-sky-600",
-    violet: "bg-violet-50 text-violet-600",
-  };
+/* ── Role dashboards ─────────────────────────────────────────── */
+
+function RoleHero({ me, subtitle }: { me: Me; subtitle: string }) {
+  const [today] = useState(() => new Date());
   return (
-    <div className="card card-hover group p-4">
-      <div className="flex items-start justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-        <span className={`grid h-9 w-9 place-items-center rounded-xl transition-transform duration-300 group-hover:scale-110 ${chips[tone]}`}>
-          <Icon name={icon} className="h-4.5 w-4.5" />
-        </span>
-      </div>
-      <p className="mt-2 text-2xl font-bold text-slate-900">
-        {value === null ? <span className="text-slate-300">—</span> : <AnimatedNumber value={value} suffix={suffix} decimals={decimals} />}
+    <section className="relative overflow-hidden rounded-panel border border-navy-800 bg-navy-900 p-5 text-white shadow-card sm:p-7 max-md:!p-4">
+      <p className="text-[11.5px] font-semibold uppercase tracking-[0.14em] text-brand-300">
+        {formatLongDate(today)} · {ROLE_LABEL[me.role] ?? me.role}
       </p>
-      {hint && <p className="mt-0.5 truncate text-xs text-slate-400">{hint}</p>}
+      <h1 className="mt-1.5 font-display text-[24px] font-extrabold leading-tight tracking-tight sm:text-[28px] max-md:!text-[22px] max-md:break-words max-md:!text-[21px]">
+        {greeting(today)}{me.name ? `, ${me.name}` : ""}.
+      </h1>
+      <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-white/70 max-md:mt-1 max-md:text-[12.5px] max-md:leading-snug">{subtitle}</p>
+    </section>
+  );
+}
+
+/** Shortcuts for staff roles — styled as modern action tiles matching the Quick access UI. */
+function MyShortcuts({ me }: { me: Me }) {
+  const allShortcuts = [
+    { href: "/admissions", icon: "admissions", label: "Admissions", tone: "bg-info-soft text-info-ink" },
+    { href: "/students", icon: "students", label: "Add student", tone: "bg-brand-50 text-brand-700" },
+    { href: "/attendance", icon: "attendance", label: "Roll call", tone: "bg-ok-soft text-ok-ink" },
+    { href: "/fees", icon: "receipt", label: "Collect fee", tone: "bg-warn-soft text-warn-ink" },
+    { href: "/classes", icon: "layers", label: "Classes", tone: "bg-accent-50 text-accent-600" },
+    { href: "/timetable", icon: "timetable", label: "Timetable", tone: "bg-teal-50 text-teal-700" },
+    { href: "/leaves", icon: "leaves", label: "Apply for leave", tone: "bg-ok-soft text-ok-ink" },
+    { href: "/staff", icon: "wallet", label: "My payslips", tone: "bg-warn-soft text-warn-ink" },
+    { href: "/discipline", icon: "shield", label: "Report a concern", tone: "bg-danger-soft text-danger" },
+    { href: "/notifications", icon: "bell", label: "Announce", tone: "bg-danger-soft text-danger" },
+    { href: "/reports", icon: "reports", label: "Reports", tone: "bg-surface-2 text-ink-2" },
+    { href: "/gate", icon: "door", label: "Gate Desk", tone: "bg-surface-2 text-ink-2" },
+  ];
+
+  const links = allShortcuts.filter((l) => canAccess(l.href, me.role)).slice(0, 8);
+
+  return (
+    <Card delay={210}>
+      <CardHead
+        icon="sparkles"
+        title="Quick access"
+        subtitle="Jump straight to the task you came here for."
+      />
+      <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 max-md:!grid-cols-4 max-md:gap-x-2 max-md:gap-y-3 max-md:p-4">
+        {links.map((a) => (
+          <TiltCard key={a.label} maxTilt={8} scale={1.03} glare={false} className="h-full">
+            <Link
+              href={a.href}
+              className="group flex h-full flex-col items-center justify-center gap-2.5 rounded-2xl border border-line bg-surface p-3 text-center transition-all duration-200 hover:border-brand-200 hover:shadow-soft max-md:min-h-[84px] max-md:gap-2 max-md:px-0.5 max-md:py-2"
+            >
+              <span className={`grid h-11 w-11 place-items-center rounded-xl transition-transform duration-200 group-hover:scale-105 ${a.tone}`}>
+                <Icon name={a.icon} className="h-5 w-5" />
+              </span>
+              <span className="text-[12px] font-semibold leading-tight text-ink-2 group-hover:text-ink max-md:text-[11.5px] max-md:line-clamp-2">
+                {a.label}
+              </span>
+            </Link>
+          </TiltCard>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+const SUBTITLE: Record<string, string> = {
+  [ROLE.OFFICE_SUPERINTENDENT]: "Admission approvals at your step, plus the fee picture.",
+  [ROLE.ADMISSION_OFFICER]: "Applications waiting for links or document checks.",
+  [ROLE.ACCOUNTS]: "Payments to verify, collections and who is overdue.",
+  [ROLE.HR]: "Leave decisions waiting for you.",
+  [ROLE.HOD]: "Your day, your department's leave and your lesson plans.",
+  [ROLE.TEACHER]: "Your periods today, roll calls to take and lesson plans due.",
+  [ROLE.WARDEN]: "The gate desk, passes waiting for you, hostel occupancy and tonight's roll call.",
+  [ROLE.SECURITY]: "Who is out on a gate pass, who is due back late and who is visiting.",
+  [ROLE.DISCIPLINE_OFFICER]: "Open and escalated safeguarding cases.",
+};
+
+function RoleDashboard({ me }: { me: Me }) {
+  const r = me.role;
+  const teaching = r === ROLE.TEACHER || r === ROLE.HOD;
+  const isAo = r === ROLE.ADMISSION_OFFICER;
+
+  const widgets: React.ReactNode[] = [];
+  if (teaching) widgets.push(<TodayScheduleWidget key="sched" me={me} />);
+  if (hasRole(me, R.ATTENDANCE_MARK)) widgets.push(<ClassesToMarkWidget key="mark" />);
+  if (teaching) widgets.push(<LessonPlansWidget key="plans" me={me} />);
+  if (ADMISSION_QUEUE[r]) widgets.push(<AdmissionQueueWidget key="admissions" role={r} className={isAo ? "w-full col-span-full" : undefined} />);
+  if (r === ROLE.ACCOUNTS || r === ROLE.OFFICE_SUPERINTENDENT) widgets.push(<FeesWidget key="fees" me={me} />);
+  if (r === ROLE.HR || r === ROLE.HOD) widgets.push(<LeaveApprovalsWidget key="leave" />);
+  if (r === ROLE.WARDEN || r === ROLE.SECURITY) widgets.push(<GateDeskWidget key="gate" me={me} />);
+  if (r === ROLE.WARDEN) widgets.push(<WardenHostelWidget key="hostel" me={me} />);
+  if (r === ROLE.WARDEN || r === ROLE.TEACHER) widgets.push(<StudentLeaveWidget key="stu_leave" />);
+  if (r === ROLE.DISCIPLINE_OFFICER) widgets.push(<SafeguardingWidget key="safeguarding" />);
+
+  const isSingle = widgets.length <= 1;
+
+  return (
+    <div className="space-y-5 max-md:space-y-4">
+      <RoleHero me={me} subtitle={SUBTITLE[r] ?? "Your work for today."} />
+      <div className={`grid grid-cols-1 items-start gap-5 max-md:gap-4 ${isSingle ? "w-full" : "lg:grid-cols-2"}`}>
+        {widgets}
+      </div>
+      <MyShortcuts me={me} />
     </div>
   );
+}
+
+/** Home: leadership gets the analytics board + approvals; every other role its own work queue. */
+export default function DashboardHome() {
+  const { me } = useMe();
+  if (!me) return null; // the shell shows the loading / error state
+  if (hasRole(me, R.LEADERSHIP)) return <LeadershipBoard me={me} />;
+  return <RoleDashboard me={me} />;
 }

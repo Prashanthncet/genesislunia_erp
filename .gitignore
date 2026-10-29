@@ -1,7 +1,82 @@
-conn.php
-note.txt
-test.php
-test2.php
-test3.php
-stitch_extracted/
-design.md
+# Dependencies
+node_modules/
+*/node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+*/dist/
+.next/
+*/.next/
+out/
+build/
+
+# SQLite Databases & Local Storage
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+backend/prisma/dev.db
+backend/prisma/dev.db-journal
+backend/test/e2e-test.db
+
+# Environment variables
+.env
+.env*.local
+!.env.example
+*/.env
+*/.env*.local
+!*/.env.example
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.tsbuildinfo
+*.swp
+*.bak
+*~
+
+# Temporary & Cache directories
+.freebuff/
+.turbo
+.cache
+
+
+# Local tooling output (browser automation logs, IDE assistant state, ad-hoc screenshots)
+.playwright-mcp/
+.qoder/
+.shots/
+
+# Deploy scratch: cloudflared binary, wrangler OAuth backup (holds a token!), OpenNext build
+.bin/
+frontend/.deploy-backup/
+frontend/.open-next/
+frontend/.wrangler-dry*/
+*.db-shm
+*.db-wal
+.claude/
+
+# Playwright browser profile — holds live cookies/session for deploy automation
+.pw/
+frontend/.pw/
+
+# Local wrangler/workerd caches
+frontend/.wrangler/
+frontend/.wrangler-live/
+frontend/.testworker/
+
+# Agent skills installed locally by `neon skills` (not part of the app)
+skills-lock.json

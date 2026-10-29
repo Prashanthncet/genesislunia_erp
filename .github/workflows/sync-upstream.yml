@@ -1,0 +1,34 @@
+name: Sync Upstream (Auto-Sync Fork)
+
+on:
+  schedule:
+    # Runs automatically every hour
+    - cron: '0 * * * *'
+  # Allows you to click "Run workflow" manually anytime in GitHub Actions
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Sync with upstream
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Fork
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Merge upstream changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/raoshishira/genesislumia_erp.git
+          git fetch upstream main
+          git checkout main
+          # Fast-forward if possible, otherwise merge cleanly
+          git merge upstream/main --ff-only || git merge upstream/main --no-edit -m "chore: auto-sync from upstream"
+          git push origin main

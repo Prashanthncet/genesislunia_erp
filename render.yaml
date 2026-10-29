@@ -1,0 +1,69 @@
+# Render blueprint — the NestJS API (Postgres).
+#
+# Create a Blueprint from this repo in the Render dashboard, or run:
+#   render blueprint launch
+# Values marked `sync: false` are secrets/URLs you paste in the dashboard once;
+# Render keeps them out of git. DATABASE_URL comes from Neon (or any Postgres).
+services:
+  - type: web
+    name: genesis-erp-api
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk: null
+    dockerBuildArgs:
+      - key: DB_PROVIDER
+        value: postgresql
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # The image runs `prisma migrate deploy` against prisma/postgres before boot.
+      - key: PRISMA_SCHEMA
+        value: postgresql
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 12h
+      # Comma-separated exact origins; production refuses to boot without it.
+      # The browser talks to the Worker, which proxies /api/* server-side, so this
+      # only needs the public frontend origin.
+      - key: CORS_ORIGINS
+        value: https://genesislumia-erp-demo.vercel.app
+      - key: FRONTEND_URL
+        value: https://genesislumia-erp-demo.vercel.app
+      # Render terminates TLS in front of the service.
+      - key: TRUST_PROXY
+        value: "1"
+      - key: TZ_SCHOOL
+        value: Asia/Kolkata
+      - key: LOGIN_RATE_LIMIT
+        value: "10"
+      # Uploaded documents (admission scans, etc.) go to Neon object storage —
+      # S3-compatible, and it branches with the project. Bucket and endpoint are
+      # not secrets; the key pair is, so it stays a dashboard value.
+      - key: STORAGE_DRIVER
+        value: s3
+      - key: S3_BUCKET
+        value: genesis-documents
+      - key: S3_ENDPOINT
+        value: https://br-steep-bonus-b4yvyujb.storage.c-6.us-east-2.aws.neon.tech
+      - key: S3_REGION
+        value: us-east-2
+      - key: S3_FORCE_PATH_STYLE
+        value: "1"
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      # Optional until real accounts exist: the app falls back to the mock gateway
+      # and logs notifications instead of sending them.
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false

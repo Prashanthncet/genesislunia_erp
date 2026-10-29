@@ -5,7 +5,8 @@ import {
 } from 'class-validator';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const INCIDENT_STATUSES = ['Open', 'Under Review', 'Closed'] as const;
+export const INCIDENT_STATUSES = ['Open', 'Under Review', 'Escalated', 'Closed'] as const;
+export const INCIDENT_SEVERITIES = ['Low', 'Medium', 'High', 'Critical'] as const;
 
 /* ── Discipline / safeguarding ──────────────────────────────────── */
 
@@ -26,12 +27,22 @@ export class CreateIncidentDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(1000)
   demerits?: number;
 
-  // Restricted field: staff with view access must never receive this.
+  @IsOptional() @IsIn(INCIDENT_SEVERITIES as unknown as string[])
+  severity?: string;
+
+  // Write-only for reporters: only safeguarding roles ever read it back.
   @IsOptional() @IsString() @MaxLength(2000)
   confidential_notes?: string;
 }
 
 export class UpdateIncidentDto {
+  @IsOptional() @IsIn(INCIDENT_SEVERITIES as unknown as string[])
+  severity?: string;
+
+  /** User id of the case owner (must hold a safeguarding role in this school). Empty string clears it. */
+  @IsOptional() @IsString() @MaxLength(64)
+  assigned_to?: string;
+
   @IsOptional() @IsString() @MaxLength(2000)
   description?: string;
 
@@ -48,6 +59,15 @@ export class UpdateIncidentDto {
 export class IncidentStatusDto {
   @IsIn(INCIDENT_STATUSES as unknown as string[])
   status!: string;
+
+  /** Required to re-open a Closed case; recorded in the audit trail. */
+  @IsOptional() @IsString() @MaxLength(500)
+  remarks?: string;
+}
+
+export class EscalateIncidentDto {
+  @IsOptional() @IsString() @MaxLength(500)
+  reason?: string;
 }
 
 /* ── Staff salary & payroll ─────────────────────────────────────── */

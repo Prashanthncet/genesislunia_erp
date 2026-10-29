@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Genesis Lumia ERP — Process Guide</title>
+<meta name="description" content="Every business process of the Genesis Lumia School ERP: what it does, who approves, which login to use.">
+<style>
+  :root{
+    --primary:#4f46e5; --primary-2:#7c3aed; --ink:#0f172a; --ink-2:#334155;
+    --muted:#64748b; --bg:#f8fafc; --card:#ffffff; --line:#e2e8f0;
+    --ok:#059669; --ok-bg:#ecfdf5; --warn:#d97706; --warn-bg:#fffbeb;
+    --bad:#e11d48; --bad-bg:#fff1f2; --info:#0284c7; --info-bg:#f0f9ff;
+    --radius:16px; --shadow:0 1px 2px rgba(15,23,42,.05), 0 8px 24px -12px rgba(15,23,42,.12);
+    --shadow-lg:0 2px 4px rgba(15,23,42,.06), 0 20px 44px -16px rgba(15,23,42,.22);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    font-family:Inter,"Segoe UI",system-ui,-apple-system,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.65; font-size:16px;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--primary); text-decoration:none;}
+  .wrap{max-width:1120px; margin:0 auto; padding:0 24px;}
+
+  /* ───────── top bar ───────── */
+  .topbar{
+    position:sticky; top:0; z-index:50;
+    background:rgba(255,255,255,.82); backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--line);
+  }
+  .topbar .wrap{display:flex; align-items:center; gap:18px; height:62px;}
+  .brand{display:flex; align-items:center; gap:10px; font-weight:800; color:var(--ink); font-size:16.5px;}
+  .brand .dot{width:26px; height:26px; border-radius:8px; background:linear-gradient(135deg,var(--primary),var(--primary-2));
+    display:grid; place-items:center; color:#fff; font-size:13px; animation:brandPulse 3s ease-in-out infinite;}
+  @keyframes brandPulse{0%,100%{box-shadow:0 0 0 0 rgba(79,70,229,.35)}50%{box-shadow:0 0 0 8px rgba(79,70,229,0)}}
+  .topnav{margin-left:auto; display:flex; gap:4px; align-items:center;}
+  .topnav a{color:var(--ink-2); font-size:14px; font-weight:600; padding:8px 12px; border-radius:10px; transition:.2s;}
+  .topnav a:hover{background:#eef2ff; color:var(--primary);}
+  .btn{
+    display:inline-flex; align-items:center; gap:8px; font-weight:700; font-size:14.5px;
+    padding:10px 18px; border-radius:12px; transition:transform .18s, box-shadow .18s; cursor:pointer; border:0;
+  }
+  .btn-primary{background:linear-gradient(135deg,var(--primary),var(--primary-2)); color:#fff; box-shadow:0 8px 20px -8px rgba(79,70,229,.55);}
+  .btn-primary:hover{transform:translateY(-2px); box-shadow:0 14px 28px -10px rgba(79,70,229,.6);}
+  .btn-ghost{background:#fff; color:var(--ink); border:1px solid var(--line);}
+  .btn-ghost:hover{border-color:var(--primary); color:var(--primary); transform:translateY(-2px);}
+  .btn-sm{padding:7px 13px; font-size:13px; border-radius:10px;}
+
+  /* ───────── hero ───────── */
+  .hero{
+    position:relative; overflow:hidden; color:#fff;
+    background:linear-gradient(120deg,#1e1b4b 0%, #312e81 45%, #4f46e5 100%);
+    padding:88px 0 96px;
+  }
+  .hero::before,.hero::after{
+    content:""; position:absolute; border-radius:50%; filter:blur(60px); opacity:.5; animation:float 14s ease-in-out infinite alternate;
+  }
+  .hero::before{width:420px; height:420px; background:#7c3aed; top:-140px; right:-80px;}
+  .hero::after{width:360px; height:360px; background:#0ea5e9; bottom:-160px; left:-60px; animation-delay:-7s;}
+  @keyframes float{from{transform:translate(0,0) scale(1)}to{transform:translate(-60px,50px) scale(1.15)}}
+  .hero .wrap{position:relative; z-index:1;}
+  .hero .kicker{
+    display:inline-flex; align-items:center; gap:8px; font-size:13px; font-weight:700; letter-spacing:.6px;
+    background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.25); padding:6px 14px; border-radius:999px;
+    text-transform:uppercase; margin-bottom:22px; animation:fadeDown .8s .1s both;
+  }
+  .hero .kicker .live-dot{width:8px; height:8px; border-radius:50%; background:#34d399; animation:blink 1.8s infinite;}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+  .hero h1{font-size:clamp(30px,4.6vw,50px); line-height:1.15; letter-spacing:-.5px; max-width:820px; animation:fadeDown .8s .2s both;}
+  .hero p.lead{margin:18px 0 30px; font-size:clamp(16px,2vw,19px); color:#c7d2fe; max-width:700px; animation:fadeDown .8s .32s both;}
+  .hero .cta{display:flex; gap:14px; flex-wrap:wrap; animation:fadeDown .8s .44s both;}
+  .hero .btn-light{background:#fff; color:var(--primary);}
+  .hero .btn-light:hover{transform:translateY(-2px); box-shadow:0 14px 30px -10px rgba(0,0,0,.35);}
+  .hero .btn-outline{background:transparent; color:#fff; border:1.5px solid rgba(255,255,255,.45);}
+  .hero .btn-outline:hover{background:rgba(255,255,255,.12); transform:translateY(-2px);}
+  @keyframes fadeDown{from{opacity:0; transform:translateY(-16px)}to{opacity:1; transform:none}}
+  .stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-top:46px; max-width:860px;}
+  .stat{
+    background:rgba(255,255,255,.09); border:1px solid rgba(255,255,255,.18); border-radius:14px; padding:16px 18px;
+    animation:fadeUp .7s both; backdrop-filter:blur(6px);
+  }
+  .stat:nth-child(1){animation-delay:.5s}.stat:nth-child(2){animation-delay:.62s}
+  .stat:nth-child(3){animation-delay:.74s}.stat:nth-child(4){animation-delay:.86s}
+  .stat b{display:block; font-size:26px; letter-spacing:-.5px;}
+  .stat span{font-size:12.5px; color:#c7d2fe;}
+  @keyframes fadeUp{from{opacity:0; transform:translateY(18px)}to{opacity:1; transform:none}}
+
+  /* ───────── sections ───────── */
+  section{padding:72px 0 20px;}
+  .sec-head{max-width:680px; margin-bottom:34px;}
+  .sec-head .eyebrow{color:var(--primary); font-weight:800; font-size:13px; letter-spacing:1.4px; text-transform:uppercase;}
+  .sec-head h2{font-size:clamp(24px,3.4vw,34px); letter-spacing:-.4px; margin:6px 0 10px;}
+  .sec-head p{color:var(--muted);}
+
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow);}
+
+  /* reveal on scroll */
+  .reveal{opacity:0; transform:translateY(26px); transition:opacity .7s ease, transform .7s cubic-bezier(.2,.7,.3,1);}
+  .reveal.in{opacity:1; transform:none;}
+
+  /* ───────── process card ───────── */
+  .process{padding:34px 34px 28px; margin-bottom:30px; position:relative; overflow:hidden;}
+  .process::before{content:""; position:absolute; inset:0 0 auto 0; height:4px;
+    background:linear-gradient(90deg,var(--primary),var(--primary-2),#0ea5e9); opacity:0; transition:opacity .3s;}
+  .process:hover::before{opacity:1;}
+  .p-head{display:flex; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:6px;}
+  .p-num{
+    flex:0 0 auto; width:46px; height:46px; border-radius:14px; display:grid; place-items:center;
+    font-size:19px; font-weight:800; color:#fff; background:linear-gradient(135deg,var(--primary),var(--primary-2));
+    box-shadow:0 8px 18px -8px rgba(79,70,229,.6);
+  }
+  .p-head h3{font-size:21px; letter-spacing:-.3px; flex:1 1 260px;}
+  .p-head h3 small{display:block; font-size:13px; color:var(--muted); font-weight:500; letter-spacing:0;}
+  .p-desc{color:var(--ink-2); margin:8px 0 20px; max-width:820px;}
+  .p-desc b{color:var(--ink);}
+
+  /* flow strip */
+  .flowstrip{display:flex; align-items:center; flex-wrap:wrap; gap:4px; margin:0 0 24px;}
+  .fnode{
+    font-size:12.5px; font-weight:700; padding:7px 13px; border-radius:999px; white-space:nowrap;
+    background:#f1f5f9; color:var(--ink-2); border:1.5px solid var(--line); position:relative;
+    transition:transform .25s, box-shadow .25s;
+  }
+  .fnode:hover{transform:translateY(-3px); box-shadow:var(--shadow);}
+  .fnode.start{background:var(--warn-bg); border-color:#fcd34d; color:#92400e;}
+  .fnode.ok{background:var(--ok-bg); border-color:#6ee7b7; color:#065f46;}
+  .fnode.end{background:linear-gradient(135deg,var(--primary),var(--primary-2)); border-color:transparent; color:#fff;}
+  .fnode.bad{background:var(--bad-bg); border-color:#fda4af; color:#9f1239;}
+  .fjoin{color:#94a3b8; font-weight:900; padding:0 4px; font-size:14px; animation:flowNudge 1.6s ease-in-out infinite;}
+  @keyframes flowNudge{0%,100%{transform:translateX(0); opacity:.55}50%{transform:translateX(3px); opacity:1}}
+
+  /* timeline steps */
+  .steps{position:relative; margin:0 0 22px; padding-left:34px;}
+  .steps::before{content:""; position:absolute; left:13px; top:8px; bottom:8px; width:2.5px;
+    background:linear-gradient(180deg,var(--primary),var(--primary-2)); border-radius:2px; opacity:.25;}
+  .step{position:relative; padding:10px 14px; margin-bottom:9px; background:#f8fafc;
+    border:1px solid var(--line); border-radius:12px; font-size:14.5px; color:var(--ink-2);
+    transition:transform .22s, box-shadow .22s, border-color .22s;}
+  .step:hover{transform:translateX(6px); border-color:#c7d2fe; box-shadow:var(--shadow); background:#fff;}
+  .step::before{
+    content:attr(data-n); position:absolute; left:-34px; top:50%; transform:translateY(-50%);
+    width:27px; height:27px; border-radius:50%; background:#fff; border:2.5px solid var(--primary);
+    color:var(--primary); font-weight:800; font-size:12.5px; display:grid; place-items:center; transition:.25s;
+  }
+  .step:hover::before{background:var(--primary); color:#fff; box-shadow:0 0 0 6px rgba(79,70,229,.15);}
+  .login{
+    display:inline-block; font-family:ui-monospace,Consolas,monospace; font-size:12.5px; font-weight:700;
+    background:#eef2ff; color:#3730a3; border:1px solid #c7d2fe; border-radius:8px; padding:1px 8px; white-space:nowrap;
+  }
+  .callout{border-radius:12px; padding:12px 16px; font-size:14px; margin-top:10px;}
+  .callout.rule{background:var(--bad-bg); border:1px solid #fecdd3; color:#881337;}
+  .callout.rule b{color:var(--bad);}
+  .callout.done{background:var(--ok-bg); border:1px solid #a7f3d0; color:#065f46; margin-top:10px; font-weight:600; font-size:13.5px;}
+  .p-actions{display:flex; gap:10px; flex-wrap:wrap; margin-top:18px;}
+
+  /* ───────── people grid ───────── */
+  .people{display:grid; grid-template-columns:repeat(auto-fill,minmax(215px,1fr)); gap:14px;}
+  .person{padding:18px 18px 16px; position:relative; overflow:hidden; transition:transform .25s, box-shadow .25s;}
+  .person:hover{transform:translateY(-5px); box-shadow:var(--shadow-lg);}
+  .person .avatar{width:38px; height:38px; border-radius:12px; display:grid; place-items:center; font-size:19px; margin-bottom:10px;
+    background:linear-gradient(135deg,#eef2ff,#e0e7ff);}
+  .person h4{font-size:15px; margin-bottom:2px;}
+  .person .role{font-size:11.5px; font-weight:800; letter-spacing:.8px; text-transform:uppercase; color:var(--primary); margin-bottom:7px;}
+  .person p{font-size:13px; color:var(--muted); min-height:56px;}
+  .person .mail{font-family:ui-monospace,Consolas,monospace; font-size:11.5px; color:#475569; background:#f1f5f9;
+    border-radius:7px; padding:2px 7px; display:inline-block; margin-top:8px;}
+
+  /* ───────── table ───────── */
+  .tablewrap{overflow-x:auto; border-radius:var(--radius); border:1px solid var(--line); box-shadow:var(--shadow); background:#fff;}
+  table{width:100%; border-collapse:collapse; font-size:14px; min-width:760px;}
+  th{background:#0f172a; color:#e2e8f0; text-align:left; padding:13px 16px; font-size:12.5px; letter-spacing:.6px; text-transform:uppercase; position:sticky; top:0;}
+  td{padding:12px 16px; border-top:1px solid var(--line); vertical-align:top;}
+  tbody tr{transition:background .2s, transform .2s;}
+  tbody tr:hover{background:#eef2ff;}
+  td b.y{color:var(--ok);} td b.n{color:var(--bad);}
+  .pill{display:inline-block; font-size:11px; font-weight:800; border-radius:999px; padding:2px 10px; background:var(--ok-bg); color:var(--ok); border:1px solid #a7f3d0;}
+
+  /* ───────── rules ───────── */
+  .rules{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px;}
+  .rulecard{padding:22px; text-align:left; transition:transform .25s, box-shadow .25s;}
+  .rulecard:hover{transform:translateY(-6px); box-shadow:var(--shadow-lg);}
+  .rulecard .ic{font-size:26px; margin-bottom:10px; display:block;}
+  .rulecard h4{font-size:15.5px; margin-bottom:6px;}
+  .rulecard p{font-size:13.5px; color:var(--muted);}
+
+  footer{margin-top:70px; background:#0f172a; color:#94a3b8; padding:34px 0 40px; font-size:13.5px;}
+  footer a{color:#a5b4fc;}
+  footer .wrap{display:flex; flex-direction:column; gap:8px;}
+
+  @media (max-width:640px){
+    .topnav a{display:none;}
+    .process{padding:24px 20px;}
+    .steps{padding-left:30px;}
+  }
+  @page{size:A4;margin:10mm}
+  @media print{.topbar,.hero::before,.hero::after{display:none} .reveal{opacity:1;transform:none}
+    body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .card,.person,.rulecard,table{break-inside:avoid}
+    a{color:inherit;text-decoration:none}}
+</style>
+</head>
+<body>
+
+<nav class="topbar">
+  <div class="wrap">
+    <span class="brand"><span class="dot">G</span> Genesis Lumia ERP · Process Guide</span>
+    <div class="topnav">
+      <a href="#processes">Processes</a>
+      <a href="#logins">Logins</a>
+      <a href="#approvals">Approvals</a>
+      <a href="#rules">Rules</a>
+      <a class="btn btn-primary btn-sm" href="https://genesislumia-erp-demo.vercel.app/" target="_blank" rel="noopener">Open Live App ↗</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="kicker"><span class="live-dot"></span> Live · verified 2026-10-25</span>
+    <h1>The whole school, in 10 simple processes.</h1>
+    <p class="lead">Every flow of the Genesis Lumia School ERP explained the easy way — what it does, who says YES,
+      who can say NO, and exactly which login to use to watch it happen live.</p>
+    <div class="cta">
+      <a class="btn btn-light" href="https://genesislumia-erp-demo.vercel.app/" target="_blank" rel="noopener">🚀 Open the Live App</a>
+      <a class="btn btn-outline" href="#processes">Explore the 10 processes ↓</a>
+    </div>
+    <div class="stats">
+      <div class="stat"><b data-count="13">0</b><span>Modules — all live</span></div>
+      <div class="stat"><b data-count="15">0</b><span>Demo logins to try</span></div>
+      <div class="stat"><b data-count="10">0</b><span>Guided processes</span></div>
+      <div class="stat"><b data-count="105">0</b><span>Tests passing (84 e2e + 21 unit)</span></div>
+    </div>
+  </div>
+</header>
+
+<section id="processes">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">Step-by-step walkthroughs</span>
+      <h2>The 10 processes — follow them yourself</h2>
+      <p>Each card tells you <b>what the process is for</b>, shows the flow at a glance, then lists numbered steps —
+      <b>log in as this person, do this</b> — in order. Switch logins and watch the file travel from start to finish.</p>
+    </div>
+
+    <!-- 1 ADMISSION -->
+    <div class="card process reveal">
+      <div class="p-head">
+        <span class="p-num">1</span>
+        <h3>🌟 Admission — a child joins the school<small>9 steps · 5 approvers · the flagship workflow</small></h3>
+        <a class="btn btn-primary btn-sm" href="https://genesislumia-erp-demo.vercel.app/admissions" target="_blank" rel="noopener">Open live ↗</a>
+      </div>
+      <p class="p-desc"><b>What it does:</b> takes a family from “we want admission” to “your child has a roll number and a house”.
+        Five school people say YES one after another; anyone's NO sends the file back or ends it.</p>
+      <div class="flowstrip">
+        <span class="fnode start">AO sends link</span><span class="fjoin">➜</span>
+        <span class="fnode">Parent submits</span><span class="fjoin">➜</span>
+        <span class="fnode ok">AO validates docs</span><span class="fjoin">➜</span>
+        <span class="fnode">Payment</span><span class="fjoin">➜</span>
+        <span class="fnode ok">Accounts approves fee</span><span class="fjoin">➜</span>
+        <span class="fnode ok">OS: Roll No + House</span><span class="fjoin">➜</span>
+        <span class="fnode ok">VP YES</span><span class="fjoin">➜</span>
+        <span class="fnode ok">Principal signs</span><span class="fjoin">➜</span>
+        <span class="fnode end">Student created 🎉</span>
+      </div>
+      <div class="steps">
+        <div class="step" data-n="1">Log in as <span class="login">ao@sainik01.edu · Demo@Ao1</span> → Admissions → send the form link to a parent.</div>
+        <div class="step" data-n="2">Log in as <span class="login">parent@sainik01.edu · Demo@Parent1</span> → open the link → fill the form, upload documents, submit.</div>
+        <div class="step" data-n="3">Back to <span class="login">ao@…</span> → check documents: good → Validate · bad → send back to parent.</div>
+        <div class="step" data-n="4">Fee in: parent pays online, or <span class="login">accounts@sainik01.edu · Demo@Accounts1</span> records it → Fee Approve.</div>
+        <div class="step" data-n="5">Log in as <span class="login">os@sainik01.edu · Demo@Os1</span> → Allocate → the child gets a Roll Number + House.</div>
+        <div class="step" data-n="6">Log in as <span class="login">vp@sainik01.edu · Demo@Vp1</span> → Approve step 7. (His send-back <b>erases the roll number!</b>)</div>
+        <div class="step" data-n="7">Log in as <span class="login">principal@sainik01.edu · Demo@Principal1</span> → type your name as signature → CONFIRM. Done — a real student now.</div>
+      </div>
+      <div class="callout rule"><b>Rule:</b> each step is a locked door — only the right role opens it, and every YES/NO is stored with a remark. The Principal's dashboard shows the whole queue in one screen.</div>
+      <div class="callout done">✅ Complete &amp; live: all 9 steps, payment, send-back loops, auto student-master creation.</div>
+    </div>
+
+    <!-- 2 ATTENDANCE -->
+    <div class="card process reveal">
+      <div class="p-head">
+        <span class="p-num">2</span>
+        <h3>✏️ Attendance — who came to class today<small>daily roll call · instant parent alert</small></h3>
+        <a class="btn btn-primary btn-sm" href="https://genesislumia-erp-demo.vercel.app/attendance" target="_blank" rel="noopener">Open live ↗</a>
+      </div>
+      <p class="p-desc"><b>What it does:</b> the teacher marks every child Present / Absent / Late, and the system instantly messages the parents of absent children.</p>
+      <div class="flowstrip">
+        <span class="fnode start">Teacher marks roll</span><span class="fjoin">➜</span>
+        <span class="fnode">Child marked Absent</span><span class="fjoin">➜</span>
+        <span class="fnode ok">AUTO SMS/Email to parent</span><span class="fjoin">➜</span>
+        <span class="fnode end">Below-75% list feeds report cards</span>
+      </div>
+      <div class="steps">
+        <div class="step" data-n="1">Log in as <span class="login">teacher@sainik01.edu · Demo@Teacher1</span> → Attendance → class 10A → mark the roll → Save.</div>
+        <div class="step" data-n="2">Log in as <span class="login">parent@sainik01.edu · Demo@Parent1</span> → Portal → Attendance → the absent mark is already there.</div>
+        <div class="step" data-n="3">Log in as <span class="login">principal@sainik01.edu · Demo@Principal1</span> → school-wide registers + the below-75% warning list.</div>
+      </div>
+      <div class="callout rule"><b>Rule:</b> only teachers, HODs and bosses mark attendance — Warden, Security and Parents can't even see this page. % = (Present+Late+OD) ÷ (Present+Late+OD+Absent); approved leave &amp; Sundays don't count.</div>
+      <div class="callout done">✅ Complete &amp; live: bulk marking, no-repeat auto-notifications, registers, analytics.</div>
+    </div>
+
+    <!-- 3 FEES -->
+    <div class="card process reveal">
+      <div class="p-head">
+        <span class="p-num">3</span>
+        <h3>💵 Fees — the school bills, the family pays<small>invoice → money → receipt</small></h3>
+        <a class="btn btn-primary btn-sm" href="https://genesislumia-erp-demo.vercel.app/fees" target="_blank" rel="noopener">Open live ↗</a>
+      </div>
+      <p class="p-desc"><b>What it does:</b> creates a fee bill for every student each term, collects money online or in cash, issues a numbered receipt, and lists who hasn't paid.</p>
+      <div class="flowstrip">
+        <span class="fnode start">Accounts: structure</span><span class="fjoin">➜</span>
+        <span class="fnode">Invoice INV-2026-0001</span><span class="fjoin">➜</span>
+        <span class="fnode">Parent pays / cash at office</span><span class="fjoin">➜</span>
+        <span class="fnode ok">Receipt RCPT + Paid ✅</span><span class="fjoin">➜</span>
+        <span class="fnode bad">Defaulters list</span>
+      </div>
+      <div class="steps">
+        <div class="step" data-n="1">Log in as <span class="login">accounts@sainik01.edu · Demo@Accounts1</span> → Fees → set the structure → Generate invoices.</div>
+        <div class="step" data-n="2">Log in as <span class="login">parent@sainik01.edu · Demo@Parent1</span> → Portal → Fees → Pay online (or accounts records cash + prints receipt).</div>
+        <div class="step" data-n="3">Back to <span class="login">accounts@…</span> → the invoice turns Paid → open the Defaulters list.</div>
+      </div>
+      <div class="callout rule"><b>Rule:</b> you can never pay more than the balance — the system refuses it. No “fee discount” screen exists; that was decided on purpose.</div>
+      <div class="callout done">✅ Complete &amp; live: sequential numbers, balance math, receipt PDFs, online collection.</div>
+    </div>
+
+    <!-- 4 GATE PASS -->
+    <div class="card process reveal">
+      <div class="p-head">
+        <span class="p-num">4</span>
+        <h3>🔐 Gate Pass — a child leaves campus<small>the strictest chain: 2 approvals + parent OTP + guard check</small></h3>
+        <a class="btn btn-primary btn-sm" href="https://genesislumia-erp-demo.vercel.app/gate" target="_blank" rel="noopener">Open live ↗</a>
+      </div>
+      <p class="p-desc"><b>What it does:</b> nobody walks out without four checks — the Warden approves, the Principal approves, the parent consents with an OTP, and the guard verifies it at the gate.</p>
+      <div class="flowstrip">
+        <span class="fnode start">Parent requests</span><span class="fjoin">➜</span>
+        <span class="fnode ok">Warden YES</span><span class="fjoin">➜</span>
+        <span class="fnode ok">Principal YES → OTP sent</span><span class="fjoin">➜</span>
+        <span class="fnode">Guard verifies OTP</span><span class="fjoin">➜</span>
+        <span class="fnode">Checked Out</span><span class="fjoin">➜</span>
+        <span class="fnode end">Returned (+late flag)</span>
+      </div>
+      <div class="steps">
+        <div class="step" data-n="1">Log in as <span class="login">parent@sainik01.edu · Demo@Parent1</span> → Portal → Gate Passes → request with a time.</div>
+        <div class="step" data-n="2">Log in as <span class="login">warden@sainik01.edu · Demo@Warden1</span> → Gate → approve (1st YES).</div>
+        <div class="step" data-n="3">Log in as <span class="login">principal@sainik01.edu · Demo@Principal1</span> → approve (2nd YES) → a 6-digit OTP goes to the parent.</div>
+        <div class="step" data-n="4">Log in as <span class="login">security@sainik01.edu · Demo@Security1</span> → Gate Desk → enter OTP → Checked Out. On return → Check In (late = flagged).</div>
+      </div>
+      <div class="callout rule"><b>Rule:</b> 5 wrong OTP tries lock the pass. No OTP = no exit — even with both approvals.</div>
+      <div class="callout done">✅ Complete &amp; live: full chain, hashed OTP, QR pass PDF, visitor log, parent notified every turn.</div>
+    </div>
+
+    <!-- 5 STAFF LEAVE -->
+    <div class="card process reveal">
+      <div class="p-head">
+        <span class="p-num">5</span>
+        <h3>🗓️ Staff Leave — a holiday… with a salary effect<small>apply → approve → auto-dock over-quota days</small></h3>
+        <a class="btn btn-primary btn-sm" href="https://genesislumia-erp-demo.vercel.app/leaves" target="_blank" rel="noopener">Open live ↗</a>
+      </div>
+      <p class="p-desc"><b>What it does:</b> staff apply for leave, a boss approves it, and days beyond the yearly quota are automatically cut from that month's salary.</p>
+      <div class="flowstrip">
+        <span class="fnode start">Staff applies</span><span class="fjoin">➜</span>
+        <span class="fnode ok">HOD / HR / Boss decides</span><span class="fjoin">➜</span>
+        <span class="fnode">Approved / Rejected</span><span class="fjoin">➜</span>
+        <span class="fnode end">Over-quota days dock payslip</span>
+      </div>
+      <div class="steps">
+        <div class="step" data-n="1">Log in as <span class="login">teacher@sainik01.edu · Demo@Teacher1</span> → Leaves → apply (Casual / Sick / Earned / Duty / Unpaid).</div>
+        <div class="step" data-n="2">Log in as <span class="login">hr@sainik01.edu · Demo@Hr1</span> (or hod) → Approve or Reject — rejection needs a reason.</div>
+        <div class="step" data-n="3">Log in as <span class="login">principal@sainik01.edu · Demo@Principal1</span> → Staff → “My payslips” shows the effect on pay.</div>
+      </div>
+      <div class="callout rule"><b>Rule:</b> nobody approves their own leave — try <span class="login">hod@…</span> on his own application and watch it refuse. Quotas: Casual 12 · Sick 8 · Earned 15 · Duty 10 · Unpaid = every day cuts salary.</div>
+      <div class="callout done">✅ Complete &amp; live: verified — 3 unpaid days docked ₹3,000 from a ₹30,000 salary.</div>
+    </div>
+
+    <!-- 6 STUDENT LEAVE -->
+    <div class="card process reveal">
+      <div class="p-head">
+        <span class="p-num">6</span>
+        <h3>🧒 Student Leave — a child stays home<small>parent asks → staff decides → attendance pre-filled</small></h3>
+        <a class="btn btn-primary btn-sm" href="https://genesislumia-erp-demo.vercel.app/leaves" target="_blank" rel="noopener">Open live ↗</a>
+      </div>
+      <p class="p-desc"><b>What it does:</b> the parent asks for leave for their child; once approved, the attendance sheet pre-fills the child as “Leave” so no teacher marks them absent by mistake.</p>
+      <div class="flowstrip">
+        <span class="fnode start">Parent requests</span><span class="fjoin">➜</span>
+        <span class="fnode ok">Warden / Teacher / HOD decides</span><span class="fjoin">➜</span>
+        <span class="fnode end">Attendance &amp; hostel roll-call pre-filled ✨</span>
+      </div>
+      <div class="steps">
+        <div class="step" data-n="1">Log in as <span class="login">parent@sainik01.edu · Demo@Parent1</span> → Portal → Leaves → request for the child.</div>
+        <div class="step" data-n="2">Log in as <span class="login">warden@sainik01.edu · Demo@Warden1</span> (or teacher/hod) → Approve or Reject — parent gets a message either way.</div>
+        <div class="step" data-n="3">Log in as <span class="login">teacher@sainik01.edu · Demo@Teacher1</span> → Attendance → the child already shows “Leave”.</div>
+      </div>
+      <div class="callout rule"><b>Rule:</b> only the person who filed the request can cancel it — and only while it's still Pending.</div>
+      <div class="callout done">✅ Complete &amp; live: portal request, overlap check, auto-fill into attendance &amp; roll-call.</div>
+    </div>
+
+    <!-- 7 EXAMS -->
+    <div class="card process reveal">
+      <div class="p-head">
+        <span class="p-num">7</span>
+        <h3>📇 Exams &amp; Report Card — marks in, result out<small>the publish gate · plus online CBT tests</small></h3>
+        <a class="btn btn-primary btn-sm" href="https://genesislumia-erp-demo.vercel.app/exams" target="_blank" rel="noopener">Open live ↗</a>
+      </div>
+      <p class="p-desc"><b>What it does:</b> the school announces exams, teachers enter marks, grades and ranks are computed — and only when a boss <b>PUBLISHES</b> can the family see the card.</p>
+      <div class="flowstrip">
+        <span class="fnode start">HOD: exam + bands</span><span class="fjoin">➜</span>
+        <span class="fnode">Teacher marks (Provisional)</span><span class="fjoin">➜</span>
+        <span class="fnode ok">HOD/Boss PUBLISHES</span><span class="fjoin">➜</span>
+        <span class="fnode end">Family portal sees it 🎉</span>
+      </div>
+      <div class="steps">
+        <div class="step" data-n="1">Log in as <span class="login">hod@sainik01.edu · Demo@Hod1</span> → Exams → create the exam + grade bands.</div>
+        <div class="step" data-n="2">Log in as <span class="login">teacher@sainik01.edu · Demo@Teacher1</span> → enter marks (card says “Provisional” — family sees nothing yet).</div>
+        <div class="step" data-n="3">Back to <span class="login">hod@…</span> (or principal) → Publish the report cards.</div>
+        <div class="step" data-n="4">Log in as <span class="login">parent@sainik01.edu · Demo@Parent1</span> → Portal → Results → the card appears.</div>
+        <div class="step" data-n="5">Bonus: log in as <span class="login">student@sainik01.edu · Demo@Student1</span> → Tests → attempt the online CBT (server timer, MCQs self-check, teacher grades essays).</div>
+      </div>
+      <div class="callout rule"><b>Rule:</b> Publish is the gate — before it no parent or student can see any mark. Half-finished results can never leak.</div>
+      <div class="callout done">✅ Complete &amp; live: grades, ranks, PDF cards, publish-freeze, CBT with grading queue.</div>
+    </div>
+
+    <!-- 8 PAYROLL -->
+    <div class="card process reveal">
+      <div class="p-head">
+        <span class="p-num">8</span>
+        <h3>💰 Payroll — salary month close<small>generate → finalize → paid → staff downloads own slip</small></h3>
+        <a class="btn btn-primary btn-sm" href="https://genesislumia-erp-demo.vercel.app/staff" target="_blank" rel="noopener">Open live ↗ (Payroll tab)</a>
+      </div>
+      <p class="p-desc"><b>What it does:</b> every month HR/accounts create everyone's payslip (tax, EPF, leave deductions already computed), approve the batch, mark it paid — then each staff member sees only their own slip.</p>
+      <div class="flowstrip">
+        <span class="fnode start">HR generates</span><span class="fjoin">➜</span>
+        <span class="fnode">Draft</span><span class="fjoin">➜</span>
+        <span class="fnode ok">Finalize = Generated</span><span class="fjoin">➜</span>
+        <span class="fnode ok">Mark Paid</span><span class="fjoin">➜</span>
+        <span class="fnode end">Staff PDF download</span>
+      </div>
+      <div class="steps">
+        <div class="step" data-n="1">Log in as <span class="login">hr@sainik01.edu · Demo@Hr1</span> (or accounts) → Staff → Payroll → Generate → Finalize → Mark Paid.</div>
+        <div class="step" data-n="2">Log in as <span class="login">teacher@sainik01.edu · Demo@Teacher1</span> → Staff → “My payslips” → download the PDF. He sees ONLY his own.</div>
+      </div>
+      <div class="callout rule"><b>Rule:</b> salary is invisible in the staff directory, and a slip can't be marked Paid before Finalize — no shortcuts.</div>
+      <div class="callout done">✅ Complete &amp; live: tax slabs, EPF, professional tax, leave-docking, payslip PDFs.</div>
+    </div>
+
+    <!-- 9 TIMETABLE -->
+    <div class="card process reveal">
+      <div class="p-head">
+        <span class="p-num">9</span>
+        <h3>🧭 Timetable &amp; the “teacher is sick” chain<small>auto-generated grid · auto-substitutes</small></h3>
+        <a class="btn btn-primary btn-sm" href="https://genesislumia-erp-demo.vercel.app/timetable" target="_blank" rel="noopener">Open live ↗</a>
+      </div>
+      <p class="p-desc"><b>What it does:</b> builds the whole school's weekly timetable automatically with zero clashes — and when a teacher is absent, instantly finds a substitute for every free period.</p>
+      <div class="flowstrip">
+        <span class="fnode start">HOD generates</span><span class="fjoin">➜</span>
+        <span class="fnode">Teacher marked Absent</span><span class="fjoin">➜</span>
+        <span class="fnode ok">AUTO substitutes</span><span class="fjoin">➜</span>
+        <span class="fnode end">Substitute emailed + class notice</span>
+      </div>
+      <div class="steps">
+        <div class="step" data-n="1">Log in as <span class="login">hod@sainik01.edu · Demo@Hod1</span> (or principal) → Timetable → Generate → the full grid appears, no double-bookings.</div>
+        <div class="step" data-n="2">Same login → mark a teacher Absent for today → covers appear for all their periods.</div>
+        <div class="step" data-n="3">Log in as the substitute (e.g. <span class="login">teacher@sainik01.edu · Demo@Teacher1</span>) → “My Day” shows the extra class.</div>
+      </div>
+      <div class="callout rule"><b>Rule:</b> the system checks the substitute's own classes, approved leave and exam duty before assigning — never double-booked. Warden &amp; Security can't see this page at all.</div>
+      <div class="callout done">✅ Complete &amp; live: constraint solver, bulk substitution, master/today PDFs, exam duty.</div>
+    </div>
+
+    <!-- 10 DISCIPLINE -->
+    <div class="card process reveal">
+      <div class="p-head">
+        <span class="p-num">10</span>
+        <h3>🛡️ Discipline — the secret safety files<small>anyone can report · only 3 logins can read</small></h3>
+        <a class="btn btn-primary btn-sm" href="https://genesislumia-erp-demo.vercel.app/discipline" target="_blank" rel="noopener">Open live ↗</a>
+      </div>
+      <p class="p-desc"><b>What it does:</b> any staff member can report a child-safety or behaviour concern; it becomes a confidential case only three people in the school can open — and every view is logged.</p>
+      <div class="flowstrip">
+        <span class="fnode start">Any staff reports</span><span class="fjoin">➜</span>
+        <span class="fnode">Open</span><span class="fjoin">➜</span>
+        <span class="fnode ok">Case team: Review → Close</span><span class="fjoin">➜</span>
+        <span class="fnode bad">High/Critical = auto-alert to principals</span>
+      </div>
+      <div class="steps">
+        <div class="step" data-n="1">Log in as <span class="login">teacher@sainik01.edu · Demo@Teacher1</span> → Discipline → report an incident. He can later see only his own report.</div>
+        <div class="step" data-n="2">Log in as <span class="login">discipline@sainik01.edu · Demo@Discipline1</span> → open the real case file → review → close.</div>
+        <div class="step" data-n="3">Log in as <span class="login">principal@sainik01.edu · Demo@Principal1</span> → re-open a closed case (reason required) or delete.</div>
+        <div class="step" data-n="4">🧪 Proof test: log in as <span class="login">schooladmin@sainik01.edu · Demo@Admin1</span> — otherwise all-powerful — and the case files are NOT there.</div>
+      </div>
+      <div class="callout rule"><b>Rule:</b> only super_admin, principal and the safeguarding lead read these files. Confidential notes never enter any parent message; every view is written to the audit log.</div>
+      <div class="callout done">✅ Complete &amp; live: cases, escalation, row-level confidentiality, full audit trail.</div>
+    </div>
+  </div>
+</section>
+
+<section id="logins">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">Who is who</span>
+      <h2>The 15 demo logins</h2>
+      <p>All emails end with <b>@sainik01.edu</b>. The <a href="https://genesislumia-erp-demo.vercel.app/login" target="_blank">live login page</a>
+      has one-click quick-fill buttons — no typing. Parents &amp; students land in the family portal; staff land on the staff dashboard.</p>
+    </div>
+    <div class="people">
+      <div class="card person reveal"><span class="avatar">👑</span><div class="role">super_admin</div><h4>Software owner</h4><p>Sees every school. Only one who can create other owners; final word on safety cases.</p><span class="mail">admin@sainik01.edu · Admin@123</span></div>
+      <div class="card person reveal"><span class="avatar">🏢</span><div class="role">branch_admin</div><h4>Office head</h4><p>Approves nearly everything inside one school — except the secret safety files.</p><span class="mail">schooladmin@sainik01.edu · Demo@Admin1</span></div>
+      <div class="card person reveal"><span class="avatar">🎓</span><div class="role">principal</div><h4>Head of school</h4><p>Final YES on admissions &amp; gate passes; signs with a typed name; closes safety cases.</p><span class="mail">principal@sainik01.edu · Demo@Principal1</span></div>
+      <div class="card person reveal"><span class="avatar">🧭</span><div class="role">vice_principal</div><h4>Deputy</h4><p>Admission step 7 — his send-back erases the roll number. No hostel access.</p><span class="mail">vp@sainik01.edu · Demo@Vp1</span></div>
+      <div class="card person reveal"><span class="avatar">📋</span><div class="role">office_superintendent</div><h4>Senior clerk</h4><p>Hands out Roll Numbers &amp; Houses; approves the admission form design.</p><span class="mail">os@sainik01.edu · Demo@Os1</span></div>
+      <div class="card person reveal"><span class="avatar">📨</span><div class="role">admission_officer</div><h4>Admission desk</h4><p>Sends parent links; checks documents; can send a family back to fix them.</p><span class="mail">ao@sainik01.edu · Demo@Ao1</span></div>
+      <div class="card person reveal"><span class="avatar">💵</span><div class="role">accounts</div><h4>Fee collector</h4><p>Invoices, receipts, fee approvals, payroll runs, defaulter lists.</p><span class="mail">accounts@sainik01.edu · Demo@Accounts1</span></div>
+      <div class="card person reveal"><span class="avatar">🗓️</span><div class="role">hr</div><h4>Staff manager</h4><p>Approves staff leave, manages staff records and user logins (never admins).</p><span class="mail">hr@sainik01.edu · Demo@Hr1</span></div>
+      <div class="card person reveal"><span class="avatar">📚</span><div class="role">hod</div><h4>Dept head teacher</h4><p>Timetable, exam setup, publishes report cards, approves own department's leave.</p><span class="mail">hod@sainik01.edu · Demo@Hod1</span></div>
+      <div class="card person reveal"><span class="avatar">✏️</span><div class="role">teacher</div><h4>Class teacher 10A</h4><p>Marks attendance, enters marks, decides student leave, runs online tests.</p><span class="mail">teacher@sainik01.edu · Demo@Teacher1</span></div>
+      <div class="card person reveal"><span class="avatar">🏠</span><div class="role">warden</div><h4>Hostel in-charge</h4><p>Rooms &amp; roll-call, 1st gate-pass YES, student leave. No academic pages.</p><span class="mail">warden@sainik01.edu · Demo@Warden1</span></div>
+      <div class="card person reveal"><span class="avatar">🚪</span><div class="role">security</div><h4>Gate guard</h4><p>Verifies the OTP at the gate. Smallest access in the system — gate + own payslip.</p><span class="mail">security@sainik01.edu · Demo@Security1</span></div>
+      <div class="card person reveal"><span class="avatar">🛡️</span><div class="role">discipline_officer</div><h4>Safeguarding lead</h4><p>Opens the secret case files; reviews, escalates and closes them.</p><span class="mail">discipline@sainik01.edu · Demo@Discipline1</span></div>
+      <div class="card person reveal"><span class="avatar">👨‍👩‍👧</span><div class="role">parent</div><h4>Family</h4><p>Sees only their linked children: pays fees, requests leave &amp; passes, fills admission forms.</p><span class="mail">parent@sainik01.edu · Demo@Parent1</span></div>
+      <div class="card person reveal"><span class="avatar">🧒</span><div class="role">student</div><h4>The child</h4><p>Sees only their own record; attends classes on screen and writes online tests.</p><span class="mail">student@sainik01.edu · Demo@Student1</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="approvals">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">One glance</span>
+      <h2>Who approves what — and what a NO does</h2>
+    </div>
+    <div class="tablewrap reveal">
+      <table>
+        <thead><tr><th>Thing</th><th>Travel path</th><th>Final YES</th><th>NO → what happens</th><th>Who acts (demo login)</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><a href="https://genesislumia-erp-demo.vercel.app/admissions" target="_blank">Admission template</a></td><td>AO drafts → sends</td><td><b class="y">OS</b> publishes</td><td><b class="n">OS rejects</b> → back to Draft</td><td>ao@… → os@…</td><td><span class="pill">Live</span></td></tr>
+          <tr><td><a href="https://genesislumia-erp-demo.vercel.app/admissions" target="_blank">Admission application</a></td><td>AO → Accounts → OS → VP → Principal</td><td><b class="y">Principal signs</b></td><td><b class="n">VP send-back</b> erases roll+house · Reject = dead</td><td>ao@… accounts@… os@… vp@… principal@…</td><td><span class="pill">Live</span></td></tr>
+          <tr><td><a href="https://genesislumia-erp-demo.vercel.app/fees" target="_blank">Fee payment</a></td><td>Parent/office pays</td><td><b class="y">Accounts receipt</b></td><td><b class="n">over-balance refused</b></td><td>parent@… or accounts@…</td><td><span class="pill">Live</span></td></tr>
+          <tr><td><a href="https://genesislumia-erp-demo.vercel.app/gate" target="_blank">Gate pass</a></td><td>Warden → Principal → gate</td><td><b class="y">both + OTP</b></td><td><b class="n">reject at either stage</b>; 5 wrong OTPs lock</td><td>parent@… warden@… principal@… security@…</td><td><span class="pill">Live</span></td></tr>
+          <tr><td><a href="https://genesislumia-erp-demo.vercel.app/leaves" target="_blank">Staff leave</a></td><td>Staff applies</td><td><b class="y">HOD / HR / Boss</b></td><td><b class="n">reject + reason</b>; never self</td><td>teacher@… applies; hod@…/hr@… approves</td><td><span class="pill">Live</span></td></tr>
+          <tr><td><a href="https://genesislumia-erp-demo.vercel.app/leaves" target="_blank">Student leave</a></td><td>Parent / staff files</td><td><b class="y">Warden / Teacher / HOD / Boss</b></td><td><b class="n">reject</b>; filer can Cancel</td><td>parent@… files; warden@…/teacher@… decides</td><td><span class="pill">Live</span></td></tr>
+          <tr><td><a href="https://genesislumia-erp-demo.vercel.app/exams" target="_blank">Report card</a></td><td>Teacher marks</td><td><b class="y">HOD/Boss publishes</b></td><td><b class="n">unpublished = family can't see</b></td><td>teacher@… marks; hod@… publishes; parent@… views</td><td><span class="pill">Live</span></td></tr>
+          <tr><td><a href="https://genesislumia-erp-demo.vercel.app/cbt" target="_blank">CBT test</a></td><td>Teacher drafts</td><td><b class="y">publishes</b></td><td><b class="n">no delete after attempts</b></td><td>teacher@… sets; student@… attempts</td><td><span class="pill">Live</span></td></tr>
+          <tr><td><a href="https://genesislumia-erp-demo.vercel.app/timetable" target="_blank">Timetable / cover</a></td><td>Teacher requests</td><td><b class="y">HOD/Boss assigns</b></td><td><b class="n">conflict = refused with reasons</b></td><td>teacher@… requests; hod@… assigns</td><td><span class="pill">Live</span></td></tr>
+          <tr><td><a href="https://genesislumia-erp-demo.vercel.app/staff" target="_blank">Payroll</a></td><td>HR/Accounts generate</td><td><b class="y">finalize → mark paid</b></td><td><b class="n">Draft can't be Paid</b></td><td>hr@… or accounts@…; teacher@… views own slip</td><td><span class="pill">Live</span></td></tr>
+          <tr><td><a href="https://genesislumia-erp-demo.vercel.app/discipline" target="_blank">Discipline case</a></td><td>Any staff reports</td><td><b class="y">case team closes; Principal reopens</b></td><td><b class="n">delete: super_admin/principal</b></td><td>any staff; discipline@…; principal@…</td><td><span class="pill">Live</span></td></tr>
+          <tr><td><a href="https://genesislumia-erp-demo.vercel.app/settings" target="_blank">User account</a></td><td>Admin/HR creates</td><td><b class="y">forced password change at birth</b></td><td><b class="n">only super_admin makes super_admin; no self-disable</b></td><td>admin@… / hr@… / schooladmin@…</td><td><span class="pill">Live</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="rules">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">The fine print, made simple</span>
+      <h2>The 4 rules that explain the whole system</h2>
+    </div>
+    <div class="rules">
+      <div class="card rulecard reveal"><span class="ic">🚪</span><h4>Right person, right door</h4><p>Screens and buttons appear only for roles that need them — and the server checks again on every action, so nothing can be faked.</p></div>
+      <div class="card rulecard reveal"><span class="ic">📝</span><h4>Every NO leaves a note</h4><p>Approvals and rejections store who did it, when, and why. The audit log can replay any file's whole life.</p></div>
+      <div class="card rulecard reveal"><span class="ic">🫧</span><h4>Families live in a bubble</h4><p>A parent sees only their children; a student only themselves. One school can never see another school's data.</p></div>
+      <div class="card rulecard reveal"><span class="ic">📲</span><h4>The system tells the family</h4><p>Absence, gate pass, fee receipt, admission step, leave result — a message reaches the parent automatically at every turn.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>🌐 Live app: <a href="https://genesislumia-erp-demo.vercel.app/" target="_blank">genesislumia-erp-demo.vercel.app</a> · <a href="https://genesislumia-erp-demo.vercel.app/login" target="_blank">Login with one-click demo roles</a></div>
+    <div>Deep-dive story with diagrams: <b style="color:#e2e8f0">docs/FLOW_AND_ROLES_GUIDE.md</b> · Source of truth: backend/src/auth/roles.ts, admissions/workflow.ts, prisma/seed.ts</div>
+    <div>Verified 2026-10-25 — all 17 linked pages returned HTTP 200.</div>
+  </div>
+</footer>
+
+<script>
+  const printing = matchMedia('print').matches || new URLSearchParams(location.search).has('print');
+  if (printing) {
+    document.querySelectorAll('.reveal').forEach(el => el.classList.add('in'));
+    document.querySelectorAll('[data-count]').forEach(el => el.textContent = el.dataset.count);
+  } else {
+  // scroll reveal with staggered steps inside each card
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (!e.isIntersecting) return;
+      e.target.classList.add('in');
+      e.target.querySelectorAll('.step, .fnode, .person').forEach((el, i) => {
+        el.style.transition = 'none';
+        el.style.opacity = '0';
+        el.style.transform = el.classList.contains('fnode') ? 'translateY(10px)' : 'translateX(-12px)';
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          el.style.transition = `opacity .5s ${i * 70}ms ease, transform .5s ${i * 70}ms cubic-bezier(.2,.7,.3,1), box-shadow .22s, border-color .22s`;
+          el.style.opacity = '1';
+          el.style.transform = 'none';
+        }));
+      });
+      io.unobserve(e.target);
+    });
+  }, { threshold: 0.12 });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+  // animated counters
+  const cio = new IntersectionObserver(entries => entries.forEach(e => {
+    if (!e.isIntersecting) return;
+    const el = e.target, target = +el.dataset.count, t0 = performance.now(), dur = 1200;
+    const tick = now => {
+      const p = Math.min((now - t0) / dur, 1);
+      el.textContent = Math.round(target * (1 - Math.pow(1 - p, 3)));
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    cio.unobserve(el);
+  }), { threshold: 0.6 });
+  document.querySelectorAll('[data-count]').forEach(el => cio.observe(el));
+  }
+</script>
+
+</body>
+</html>

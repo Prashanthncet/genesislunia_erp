@@ -1,242 +1,1382 @@
 @import "tailwindcss";
 
-/* Kill page-level horizontal scroll: several modules render wide data tables.
-   They scroll inside their own `.card` (overflow-x-auto), never the document. */
+/* ═══════════════════════════════════════════════════════════════════════════
+   GENESIS LUMIA ERP — DESIGN SYSTEM
+   ---------------------------------------------------------------------------
+   Tailwind v4 CSS-first tokens. Everything visual resolves from this block, so
+   one token change re-skins the whole product.
+
+   NAMING CONTRACT (do not break — the UI kit depends on it):
+     brand-*   navy ramp: 700 = primary (#142B4A), 600 = hover, 900 = deep,
+               500 = secondary blue (#315A85), 50 = pale blue selected surface
+     accent-*  blue ramp: 500 = accent (#3B82F6) for focus rings & selected
+               controls, 600 for link text (#3B82F6 is under 4.5:1 on white)
+     navy-*    deep surfaces (modal scrims, dark buttons)
+     ink / ink-2 / ink-3   primary text / secondary text / muted text
+     page / surface / surface-2 / line / line-strong   structural surfaces
+     ok / warn / danger / info  status: base = icon/solid, -ink = badge text,
+                                -soft = tint background, -line = tint border
+     chart-1..5   the only colours a chart series may use, in this order
+     shadow-{soft,card,lift,pop}   elevation ladder
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@theme {
+  /* ── Brand: navy ───────────────────────────────────────────────────────── */
+  --color-brand-50: #eaf2fb;
+  --color-brand-100: #d6e4f4;
+  --color-brand-200: #b4cbe6;
+  --color-brand-300: #87a8d0;
+  --color-brand-400: #5a82b0;
+  --color-brand-500: #315a85;
+  --color-brand-600: #1d3b60;
+  --color-brand-700: #142b4a;
+  --color-brand-800: #10233f;
+  --color-brand-900: #0b1f3a;
+  --color-brand-950: #071528;
+
+  /* ── Accent: blue ──────────────────────────────────────────────────────── */
+  --color-accent-50: #eff6ff;
+  --color-accent-100: #dbeafe;
+  --color-accent-200: #bfdbfe;
+  --color-accent-300: #93c5fd;
+  --color-accent-400: #60a5fa;
+  --color-accent-500: #3b82f6;
+  --color-accent-600: #2563eb;
+  --color-accent-700: #1d4ed8;
+  --color-accent-800: #1e40af;
+  --color-accent-900: #1e3a8a;
+
+  /* ── Navy: deep surfaces ───────────────────────────────────────────────── */
+  --color-navy-600: #1d3b60;
+  --color-navy-700: #142b4a;
+  --color-navy-800: #10233f;
+  --color-navy-900: #0b1f3a;
+  --color-navy-950: #071528;
+
+  /* ── Text ──────────────────────────────────────────────────────────────── */
+  --color-ink: #172b4d;
+  --color-ink-2: #475569;
+  --color-ink-3: #64748b;
+
+  /* ── Surfaces & lines ──────────────────────────────────────────────────── */
+  --color-page: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1f5f9;
+  --color-line: #e2e8f0;
+  --color-line-strong: #cbd5e1;
+
+  /* ── Semantic status ───────────────────────────────────────────────────── */
+  --color-ok: #15803d;
+  --color-ok-ink: #166534;
+  --color-ok-soft: #ecfdf3;
+  --color-ok-line: #bbf7d0;
+  --color-warn: #b45309;
+  --color-warn-ink: #92400e;
+  --color-warn-soft: #fef3c7;
+  --color-warn-line: #fde68a;
+  --color-danger: #b91c1c;
+  --color-danger-ink: #b91c1c;
+  --color-danger-soft: #fef2f2;
+  --color-danger-line: #fecaca;
+  --color-info: #1d4ed8;
+  --color-info-ink: #1d4ed8;
+  --color-info-soft: #eff6ff;
+  --color-info-line: #bfdbfe;
+
+  /* ── Chart series (fixed order, never random per chart) ───────────────── */
+  --color-chart-1: #142b4a;
+  --color-chart-2: #3b82f6;
+  --color-chart-3: #0d9488;
+  --color-chart-4: #38bdf8;
+  --color-chart-5: #d4a72c;
+  --color-chart-grid: #e2e8f0;
+  --color-gold-soft: #fbf4de;
+  --color-gold-ink: #7a5c0e;
+
+  /* ── Elevation ladder (Modern SaaS crisp layering) ─────────────────────── */
+  --shadow-soft: 0 1px 2px 0 rgba(15, 23, 42, 0.04), 0 1px 6px -1px rgba(15, 23, 42, 0.03);
+  --shadow-card: 0 1px 3px 0 rgba(15, 23, 42, 0.05), 0 4px 16px -4px rgba(15, 23, 42, 0.04);
+  --shadow-lift: 0 4px 6px -2px rgba(15, 23, 42, 0.04), 0 12px 28px -6px rgba(15, 23, 42, 0.08);
+  --shadow-pop: 0 10px 24px -6px rgba(15, 23, 42, 0.1), 0 20px 48px -12px rgba(15, 23, 42, 0.18);
+
+  /* ── Radii ─────────────────────────────────────────────────────────────── */
+  --radius-card: 0.875rem;
+  --radius-panel: 0.875rem;
+  --radius-control: 0.5rem;
+  --radius-pill: 999px;
+
+  /* ── Typography: Inter everywhere ─────────────────────────────────────── */
+  --font-sans: var(--font-inter), "Inter", "Segoe UI", sans-serif;
+  --font-display: var(--font-inter), "Inter", "Segoe UI", sans-serif;
+
+  /* ── Motion ────────────────────────────────────────────────────────────── */
+  --ease-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Back-compat aliases for the pre-rename easing tokens still referenced by a
+   few inline `style={{ animation }}` values. Remove once no call site uses them. */
+:root {
+  --ease-out-soft: var(--ease-soft);
+  --ease-in-out-smooth: var(--ease-smooth);
+
+  /* Spec-named aliases, so the theme can also be consumed by its documented
+     names. They resolve to the @theme tokens above — edit those, not these. */
+  --color-primary: var(--color-brand-700);
+  --color-primary-hover: var(--color-brand-600);
+  --color-primary-deep: var(--color-brand-900);
+  --color-secondary: var(--color-brand-500);
+  --color-accent: var(--color-accent-500);
+  --color-background: var(--color-page);
+  --color-surface-selected: var(--color-brand-50);
+  --color-border: var(--color-line);
+  --color-text: var(--color-ink);
+  --color-text-muted: var(--color-ink-3);
+  --color-success: var(--color-ok);
+  --color-warning: var(--color-warn);
+}
+
+/* ── Base ────────────────────────────────────────────────────────────────── */
+
 html,
 body {
   max-width: 100%;
+  /* `clip`, not `hidden`: `hidden` makes these a scroll container, which
+     silently breaks `position: sticky` on the sidebar and the top bar. */
   overflow-x: clip;
+  background-color: var(--color-page);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   Genesis Lumia ERP — design system
-   Semantic tokens only (no raw hex in components) + motion library
-   ═══════════════════════════════════════════════════════════════ */
+body {
+  font-size: 14px;
+  line-height: 1.5;
+}
 
-@theme {
-  /* Brand ramp — deep institutional navy */
-  --color-brand-50: #eef4fb;
-  --color-brand-100: #d9e7f6;
-  --color-brand-200: #b5cfeb;
-  --color-brand-300: #86addc;
-  --color-brand-400: #5387ca;
-  --color-brand-500: #2f66b3;
-  --color-brand-600: #1f4d92;
-  --color-brand-700: #173c74;
-  --color-brand-800: #122e57;
-  --color-brand-900: #0d2040;
-  --color-brand-950: #081428;
+::selection {
+  background: var(--color-accent-200);
+  color: var(--color-brand-900);
+}
 
-  /* Accent — saffron (school insignia) */
-  --color-accent-300: #ffd9a0;
-  --color-accent-400: #ffbf6b;
-  --color-accent-500: #f9a03f;
-  --color-accent-600: #dd7c1c;
-  --color-accent-700: #b45814;
+/* Visible, consistent keyboard focus on everything interactive. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent-500);
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
 
-  /* Teal support */
-  --color-teal-ink: #0d7d76;
+/* Numbers in data contexts must not jitter as they change. */
+.tnum,
+table td,
+table th {
+  font-variant-numeric: tabular-nums;
+}
 
-  /* Typography */
-  --font-display: "Avenir Next", "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-sans: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+/* ── Elevation helpers ───────────────────────────────────────────────────── */
 
-  /* Elevation */
-  --shadow-soft: 0 1px 2px rgb(13 32 64 / 0.04), 0 8px 24px -12px rgb(13 32 64 / 0.18);
-  --shadow-lift: 0 2px 4px rgb(13 32 64 / 0.06), 0 18px 40px -18px rgb(13 32 64 / 0.28);
-  --shadow-pop: 0 24px 70px -28px rgb(13 32 64 / 0.45);
+.shadow-soft { box-shadow: var(--shadow-soft); }
+.shadow-card { box-shadow: var(--shadow-card); }
+.shadow-lift { box-shadow: var(--shadow-lift); }
+.shadow-pop { box-shadow: var(--shadow-pop); }
 
-  /* Motion */
-  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --animate-fade-up: fade-up 0.5s var(--ease-out-soft) both;
-  --animate-fade-in: fade-in 0.4s ease-out both;
-  --animate-scale-in: scale-in 0.35s var(--ease-spring) both;
-  --animate-slide-right: slide-right 0.4s var(--ease-out-soft) both;
-  --animate-shimmer: shimmer 1.6s linear infinite;
-  --animate-float: float 7s ease-in-out infinite;
-  --animate-pulse-ring: pulse-ring 2.4s var(--ease-out-soft) infinite;
-  --animate-grow-x: grow-x 0.9s var(--ease-out-soft) both;
-  --animate-gradient-pan: gradient-pan 18s ease infinite;
+/* ── Surfaces ────────────────────────────────────────────────────────────── */
+
+.card {
+  border-radius: var(--radius-card);
+  border: 1px solid var(--color-line);
+  background-color: var(--color-surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.card-hover {
+  transition:
+    transform 0.22s var(--ease-soft),
+    box-shadow 0.22s var(--ease-soft),
+    border-color 0.22s var(--ease-soft);
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-line-strong);
+  box-shadow: var(--shadow-lift);
+}
+
+.panel {
+  border-radius: var(--radius-panel);
+  border: 1px solid var(--color-line);
+  background-color: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+/* Section header inside a card — quieter than the page header. */
+.card-head {
+  display: flex;
+  /* Wrap so a narrow card pushes its action button onto a second line rather
+     than squeezing the title and subtitle into a sliver. */
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-line);
+  padding: 1rem 1.25rem;
+}
+
+.divider {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--color-line) 12%,
+    var(--color-line) 88%,
+    transparent
+  );
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+
+.btn-primary,
+.btn-soft,
+.btn-ghost,
+.btn-danger,
+.btn-accent,
+.btn-dark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  border-radius: var(--radius-control);
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  white-space: nowrap;
+  transition:
+    background-color 0.16s var(--ease-smooth),
+    border-color 0.16s var(--ease-smooth),
+    color 0.16s var(--ease-smooth),
+    box-shadow 0.16s var(--ease-smooth),
+    transform 0.12s var(--ease-soft);
+  cursor: pointer;
+}
+.btn-primary:active,
+.btn-soft:active,
+.btn-ghost:active,
+.btn-danger:active,
+.btn-accent:active,
+.btn-dark:active {
+  transform: scale(0.975);
+}
+
+.btn-primary {
+  background-color: var(--color-brand-700);
+  border: 1px solid var(--color-brand-700);
+  color: #fff;
+}
+.btn-primary:hover {
+  background-color: var(--color-brand-600);
+  border-color: var(--color-brand-600);
+}
+
+/* Secondary action — the spec's secondary blue. */
+.btn-accent {
+  background-color: var(--color-brand-500);
+  border: 1px solid var(--color-brand-500);
+  color: #fff;
+}
+.btn-accent:hover {
+  background-color: var(--color-brand-600);
+  border-color: var(--color-brand-600);
+}
+
+.btn-dark {
+  background-color: var(--color-brand-900);
+  border: 1px solid var(--color-brand-900);
+  color: #fff;
+}
+.btn-dark:hover {
+  background-color: var(--color-brand-700);
+}
+
+.btn-soft {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
+  color: var(--color-ink);
+}
+.btn-soft:hover {
+  background-color: var(--color-brand-50);
+  border-color: var(--color-brand-200);
+  color: var(--color-brand-700);
+}
+
+.btn-ghost {
+  background-color: transparent;
+  border: 1px solid transparent;
+  color: var(--color-ink-2);
+}
+.btn-ghost:hover {
+  background-color: var(--color-brand-50);
+  color: var(--color-brand-700);
+}
+
+.btn-danger {
+  background-color: var(--color-danger-soft);
+  border: 1px solid var(--color-danger-line);
+  color: var(--color-danger);
+}
+.btn-danger:hover {
+  background-color: #fee2e2;
+}
+
+/* ── Form controls ───────────────────────────────────────────────────────── */
+
+.field {
+  width: 100%;
+  min-height: 2.5rem;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--color-line-strong);
+  background-color: var(--color-surface);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--color-ink);
+  outline: none;
+  transition:
+    border-color 0.16s var(--ease-smooth),
+    box-shadow 0.16s var(--ease-smooth);
+}
+.field::placeholder {
+  color: #94a3b8;
+}
+.field:hover {
+  border-color: #94a3b8;
+}
+/* Navy border + a subtle accent-blue ring, per the input spec. */
+.field:focus {
+  border-color: var(--color-brand-700);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+.field:disabled {
+  background-color: var(--color-surface-2);
+  color: var(--color-ink-3);
+  cursor: not-allowed;
+}
+.field[aria-invalid="true"] {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 3px rgba(185, 28, 28, 0.12);
+}
+
+select.field {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2364748b' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.6' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right 0.6rem center;
+  background-repeat: no-repeat;
+  background-size: 1.15em 1.15em;
+  padding-right: 2.25rem;
+}
+
+.label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-ink-2);
+  margin-bottom: 0.375rem;
+}
+
+/* ── Badges & chips ──────────────────────────────────────────────────────── */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  padding: 0.125rem 0.5625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.125rem;
+  white-space: nowrap;
+}
+/* Status badges use the spec's text/background pairs exactly. */
+.badge-slate { background: #f1f5f9; border-color: var(--color-line); color: var(--color-ink-2); }
+.badge-brand { background: var(--color-brand-50); border-color: var(--color-brand-100); color: var(--color-brand-700); }
+.badge-accent { background: var(--color-accent-50); border-color: var(--color-accent-100); color: var(--color-accent-700); }
+.badge-emerald { background: var(--color-ok-soft); border-color: var(--color-ok-line); color: var(--color-ok-ink); }
+.badge-amber { background: var(--color-warn-soft); border-color: var(--color-warn-line); color: var(--color-warn-ink); }
+.badge-rose { background: var(--color-danger-soft); border-color: var(--color-danger-line); color: var(--color-danger-ink); }
+.badge-sky { background: var(--color-info-soft); border-color: var(--color-info-line); color: var(--color-info-ink); }
+.badge-violet { background: var(--color-brand-50); border-color: var(--color-brand-100); color: var(--color-brand-500); }
+.badge-teal { background: #f0fdfa; border-color: #99f6e4; color: #0f766e; }
+
+/* ── Data tables ─────────────────────────────────────────────────────────── */
+/* `:where()` keeps these at low specificity so the card view (.as-cards) can
+   restyle the same cells — `table.data-table tbody td` used to beat it. */
+
+/* Wrapper owns horizontal scrolling so a wide table never scrolls the page. */
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+table.data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.84375rem;
+}
+
+table:where(.data-table) thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background-color: var(--color-surface-2);
+  border-bottom: 1px solid var(--color-line);
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+  white-space: nowrap;
+}
+
+table:where(.data-table) tbody td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-line);
+  color: var(--color-ink);
+  vertical-align: middle;
+}
+table:where(.data-table) tbody tr:last-child td {
+  border-bottom: none;
+}
+table:where(.data-table) tbody tr {
+  transition: background-color 0.14s var(--ease-smooth);
+}
+table:where(.data-table) tbody tr:hover {
+  background-color: var(--color-brand-50);
+}
+table:where(.data-table) td strong,
+table:where(.data-table) td .cell-strong {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+/* Right-align numeric columns (amounts, counts) at the header and the cell. */
+table:where(.data-table) thead th.th-end,
+table:where(.data-table) tbody td.td-end {
+  text-align: right;
+}
+
+/* ── Card view for tables (components/TableView.tsx) ─────────────────────────
+   Restyles an ordinary <table> into a grid of record cards. TableView writes
+   `data-label` (column header) and `data-role` (title / badge / meta / wide /
+   actions / hidden) on every cell. Unlayered on purpose: it must beat the
+   per-cell Tailwind utilities (px-6, text-right, sticky, font-mono, ...).
+
+   ┌──────────────────────────────┐
+   │ Title                (badge) │
+   │──────────────────────────────│
+   │ LABEL          LABEL         │
+   │ value          value         │
+   │ WIDE LABEL                   │
+   │ long value                   │
+   │──────────────────────────────│
+   │                     actions  │
+   └──────────────────────────────┘                                          */
+
+.as-cards .table-wrap,
+.as-cards [class*="overflow-x"] {
+  overflow: visible;
+}
+.as-cards table {
+  display: block;
+  width: 100%;
+  min-width: 0 !important;
+}
+.as-cards thead {
+  display: none;
+}
+.as-cards tbody,
+.as-cards tfoot {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr));
+  align-items: stretch;
+  gap: 1.25rem;
+  padding: 1.25rem;
+  background: var(--color-page);
+}
+
+.as-cards tr {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 1.25rem;
+  min-width: 0;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  padding: 1.25rem 1.25rem 1.125rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 4px 12px -2px rgba(15, 23, 42, 0.03);
+  transition: transform 0.2s var(--ease-soft), border-color 0.2s var(--ease-soft), box-shadow 0.2s var(--ease-soft);
+  animation: fade-up 0.3s var(--ease-soft) backwards;
+}
+.as-cards tr:nth-child(2) { animation-delay: 0.04s; }
+.as-cards tr:nth-child(3) { animation-delay: 0.08s; }
+.as-cards tr:nth-child(4) { animation-delay: 0.12s; }
+.as-cards tr:nth-child(5) { animation-delay: 0.16s; }
+.as-cards tr:nth-child(6) { animation-delay: 0.2s; }
+.as-cards tr:nth-child(7) { animation-delay: 0.24s; }
+.as-cards tr:nth-child(8) { animation-delay: 0.28s; }
+.as-cards tr:nth-child(9) { animation-delay: 0.32s; }
+.as-cards tr:nth-child(10) { animation-delay: 0.36s; }
+.as-cards tr:hover {
+  background: var(--color-surface);
+  border-color: var(--color-brand-300);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -6px rgba(15, 23, 42, 0.08), 0 2px 6px -1px rgba(15, 23, 42, 0.04);
+}
+
+/* Reset every cell, whatever utilities the table gave it. */
+.as-cards td {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  color: var(--color-ink);
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.as-cards td > * {
+  max-width: 100%;
+}
+/* Wrappers that right-align numbers in table view start-align on a card. */
+.as-cards td:is([data-role="meta"], [data-role="wide"]) > :is(div, span, p) {
+  justify-content: flex-start;
+  margin-left: 0;
+  margin-right: 0;
+  text-align: left;
+}
+.as-cards td[data-role="title"] > :is(div, span, p) {
+  justify-content: flex-start;
+  text-align: left;
+}
+/* Controls hidden until row hover in table view are always visible on a card. */
+.as-cards [class*="opacity-0"] {
+  opacity: 1;
+}
+/* Row actions: ensure labels stay inline with whitespace-nowrap and adequate room */
+.as-cards .row-action-label {
+  display: inline;
+  white-space: nowrap;
+}
+.as-cards td[data-role="actions"] button {
+  white-space: nowrap;
+  padding-inline: 0.75rem;
+  min-height: 2rem;
+  height: 2rem;
+}
+
+/* Field label above the value. */
+.as-cards td[data-role="meta"]::before,
+.as-cards td[data-role="wide"]::before {
+  content: attr(data-label);
+  display: block;
+  margin-bottom: 0.35rem;
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+}
+.as-cards td[data-role="wide"] {
+  grid-column: 1 / -1;
+}
+
+/* Title: the record's headline, full width, cleanly separated. */
+.as-cards td[data-role="title"] {
+  grid-column: 1 / -1;
+  order: -2;
+  padding-bottom: 0.875rem;
+  border-bottom: 1px solid var(--color-line);
+  font-size: 0.95rem;
+  font-weight: 600;
+  display: block;
+}
+.as-cards tr:has(td[data-role="badge"]) td[data-role="title"] {
+  padding-right: 7rem;
+}
+
+/* Status badge pinned top-right, level with the title. */
+.as-cards td[data-role="badge"] {
+  position: absolute;
+  top: 1.125rem;
+  right: 1.25rem;
+  max-width: 7rem;
+  text-align: right;
+  display: block;
+}
+
+/* Actions: footer bar, full width with clean border and pill/solid buttons */
+.as-cards td[data-role="actions"] {
+  grid-column: 1 / -1;
+  order: 99;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--color-line);
+}
+.as-cards td[data-role="actions"] > * {
+  justify-content: flex-end;
+}
+.as-cards td[data-role="hidden"] {
+  display: none;
+}
+
+/* Dense tables (more than 10 columns, e.g. the monthly register): fields
+   become a 7-across grid of small tiles instead of a long two-column list. */
+.as-cards table[data-dense] tr {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.375rem;
+}
+.as-cards table[data-dense] td[data-role="meta"] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.375rem 0.125rem;
+  border-radius: 0.375rem;
+  background: var(--color-surface-2);
+  font-size: 0.75rem;
+  text-align: center;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.as-cards table[data-dense] td[data-role="meta"]::before {
+  margin: 0;
+  font-size: 0.625rem;
+  letter-spacing: 0;
+}
+.as-cards table[data-dense] td[data-role="meta"] > * {
+  justify-content: center;
+}
+
+/* Empty states / notes span the whole grid instead of becoming a card. */
+.as-cards tr[data-full-row] {
+  grid-column: 1 / -1;
+  display: block;
+  border-style: dashed;
+  box-shadow: none;
+}
+.as-cards td[data-full] {
+  text-align: center;
+}
+
+/* ── Skeleton loading ────────────────────────────────────────────────────── */
+
+.skeleton {
+  border-radius: 0.5rem;
+  background: linear-gradient(
+    90deg,
+    var(--color-line) 0%,
+    #f1f5f9 40%,
+    var(--color-line) 80%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+/* ── Scrollbars ──────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #c9d2e0;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a9b5c9;
+  background-clip: content-box;
+}
+.scroll-slim::-webkit-scrollbar {
+  width: 6px;
+}
+
+/* ── Keyframes ───────────────────────────────────────────────────────────── */
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes fade-up {
-  from { opacity: 0; transform: translate3d(0, 14px, 0); }
-  to { opacity: 1; transform: translate3d(0, 0, 0); }
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
 }
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
+
 @keyframes scale-in {
-  from { opacity: 0; transform: scale(0.94); }
+  from { opacity: 0; transform: scale(0.97); }
   to { opacity: 1; transform: scale(1); }
 }
-@keyframes slide-right {
-  from { opacity: 0; transform: translate3d(-16px, 0, 0); }
-  to { opacity: 1; transform: translate3d(0, 0, 0); }
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
 }
+
+@keyframes fade-slide-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slide-up-sheet {
+  from { opacity: 0; transform: translateY(18px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
+
 @keyframes float {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-  33% { transform: translate3d(12px, -18px, 0) scale(1.04); }
-  66% { transform: translate3d(-10px, 10px, 0) scale(0.97); }
+  0%, 100% { transform: translateY(0) translateX(0); }
+  50% { transform: translateY(-14px) translateX(6px); }
 }
+
 @keyframes pulse-ring {
-  0% { box-shadow: 0 0 0 0 rgb(47 102 179 / 0.35); }
-  70% { box-shadow: 0 0 0 12px rgb(47 102 179 / 0); }
-  100% { box-shadow: 0 0 0 0 rgb(47 102 179 / 0); }
+  0% { box-shadow: 0 0 0 0 rgba(185, 28, 28, 0.5); }
+  70% { box-shadow: 0 0 0 7px rgba(185, 28, 28, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(185, 28, 28, 0); }
 }
-@keyframes grow-x {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
-}
+
 @keyframes gradient-pan {
   0%, 100% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
 }
 
-/* ── Base ──────────────────────────────────────────────────── */
-
-body {
-  @apply text-slate-900 antialiased;
-  font-family: var(--font-sans);
-  background-color: #eef2f8;
-  background-image:
-    radial-gradient(1200px 600px at 12% -10%, rgb(47 102 179 / 0.16), transparent 60%),
-    radial-gradient(900px 500px at 100% 0%, rgb(249 160 63 / 0.14), transparent 55%),
-    radial-gradient(800px 600px at 50% 120%, rgb(13 125 118 / 0.12), transparent 60%);
-  background-attachment: fixed;
-  min-height: 100dvh;
+@keyframes barGrow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
 }
 
-h1, h2, h3, h4, .font-display {
-  font-family: var(--font-display);
-  letter-spacing: -0.015em;
+@keyframes lineDraw {
+  from { stroke-dashoffset: 1200; }
+  to { stroke-dashoffset: 0; }
 }
 
-/* Tabular figures for data columns */
-.tnum {
-  font-variant-numeric: tabular-nums;
-  font-family: var(--font-mono);
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50% { opacity: 0.65; transform: scale(1.04); }
 }
 
-/* ── Component primitives ──────────────────────────────────── */
-
-@layer components {
-  .glass {
-    @apply border border-white/60 bg-white/80 backdrop-blur-xl;
-    box-shadow: var(--shadow-soft);
-  }
-  .card {
-    @apply rounded-2xl border border-slate-200/80 bg-white;
-    box-shadow: var(--shadow-soft);
-    transition: box-shadow 0.3s var(--ease-out-soft), transform 0.3s var(--ease-out-soft), border-color 0.3s;
-  }
-  .card-hover {
-    @apply hover:-translate-y-0.5 hover:border-brand-200;
-    box-shadow: var(--shadow-lift);
-  }
-  .btn,
-  .btn-primary,
-  .btn-accent,
-  .btn-soft,
-  .btn-danger {
-    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold select-none;
-    transition: transform 0.15s var(--ease-out-soft), box-shadow 0.2s, background-color 0.2s, color 0.2s, border-color 0.2s, opacity 0.2s;
-  }
-  .btn-primary:active:not(:disabled),
-  .btn-accent:active:not(:disabled),
-  .btn-soft:active:not(:disabled),
-  .btn-danger:active:not(:disabled) { transform: scale(0.97); }
-  .btn-primary { @apply bg-brand-600 text-white; box-shadow: 0 8px 20px -10px rgb(31 77 146 / 0.9); }
-  .btn-primary:hover:not(:disabled) { @apply bg-brand-700; }
-  .btn-accent { @apply bg-accent-500 text-brand-950; box-shadow: 0 8px 20px -10px rgb(221 124 28 / 0.9); }
-  .btn-accent:hover:not(:disabled) { @apply bg-accent-600 text-white; }
-  .btn-soft { @apply border border-slate-200 bg-white text-slate-700; }
-  .btn-soft:hover:not(:disabled) { @apply border-brand-200 bg-brand-50 text-brand-700; }
-  .btn-danger { @apply border border-rose-200 bg-white text-rose-600; }
-  .btn-danger:hover:not(:disabled) { @apply bg-rose-50; }
-  .btn:disabled,
-  .btn-primary:disabled,
-  .btn-accent:disabled,
-  .btn-soft:disabled,
-  .btn-danger:disabled { @apply cursor-not-allowed opacity-45; }
-
-  .field {
-    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900;
-    transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
-  }
-  .field::placeholder { @apply text-slate-400; }
-  .field:hover:not(:focus) { @apply border-slate-300; }
-  .field:focus {
-    @apply border-brand-400 bg-white outline-none;
-    box-shadow: 0 0 0 4px rgb(47 102 179 / 0.12);
-  }
-  .label { @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500; }
-
-  .badge {
-    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
-  }
-  .skeleton {
-    @apply rounded-lg bg-slate-200/70;
-    background-image: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.65), transparent);
-    background-size: 200% 100%;
-    animation: var(--animate-shimmer);
-  }
-  .nav-link {
-    @apply relative flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold;
-    transition: transform 0.2s var(--ease-out-soft), background-color 0.2s, color 0.2s, box-shadow 0.25s;
-  }
-  .nav-link:hover { transform: translateX(3px); }
-  .table-head { @apply bg-slate-50/90 text-left text-[11px] uppercase tracking-wider text-slate-500; }
-  .row-hover { transition: background-color 0.15s; }
-  .row-hover:hover { @apply bg-brand-50/50; }
+@keyframes floatBadge {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
 }
 
-/* ── Accessibility ─────────────────────────────────────────── */
-
-:focus-visible {
-  outline: 2px solid var(--color-brand-500);
-  outline-offset: 2px;
-  border-radius: 6px;
+@keyframes dashScroll {
+  from { stroke-dashoffset: 200; }
+  to { stroke-dashoffset: 0; }
 }
 
-::selection {
-  background: rgb(47 102 179 / 0.22);
+@keyframes dotPulse {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
 }
 
-/* Custom scrollbar */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
+@keyframes rippleWave {
+  0% { r: 2px; opacity: 0.8; }
+  100% { r: 16px; opacity: 0; }
 }
 
-/* Wide data tables must never push the page sideways on a phone. */
-.card table {
-  min-width: 40rem;
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
 }
-*::-webkit-scrollbar { width: 10px; height: 10px; }
-*::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 999px;
-  border: 3px solid transparent;
-  background-clip: content-box;
-}
-*::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; background-clip: content-box; }
 
-/* Reduced motion: honour the OS setting (skill rule: reduced-motion) */
+@keyframes loader-sweep {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+
+/* Travelling border beam (components/motion/AnimatedCards.tsx — BorderBeam).
+   The ::after square rides an offset-path around the card's border box; only
+   the border ring is unmasked, so it reads as a light running the edge. */
+@keyframes border-beam {
+  to { offset-distance: 100%; }
+}
+
+/* ── Animation utilities ─────────────────────────────────────────────────── */
+
+/* `backwards`, not `both`: once the entrance ends the wrapper must have NO
+   transform, or it captures every position:fixed popup inside the page. */
+.animate-page-enter { animation: fade-up 0.34s var(--ease-soft) backwards; }
+.animate-fade-in { animation: fade-in 0.26s var(--ease-soft) both; }
+.animate-scale-in { animation: scale-in 0.26s var(--ease-spring) both; }
+.animate-slide-up-sheet { animation: slide-up-sheet 0.3s var(--ease-soft) both; }
+.animate-float { animation: float 11s ease-in-out infinite; }
+.animate-gradient-pan { animation: gradient-pan 12s ease infinite; background-size: 200% 100%; }
+.animate-spin-slow { animation: spin-slow 1s linear infinite; }
+
+.animate-dash-flow { animation: dashScroll 16s linear infinite; }
+.animate-dash-flow-reverse { animation: dashScroll 22s linear infinite reverse; }
+.animate-dot-pulse {
+  animation: dotPulse 2.6s ease-in-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+.animate-ripple {
+  animation: rippleWave 2.8s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+  transform-origin: center;
+}
+.animate-bar-grow {
+  animation: barGrow 0.8s var(--ease-soft) forwards;
+  transform-origin: bottom;
+}
+.animate-glow-pulse { animation: glowPulse 3s ease-in-out infinite; }
+.animate-float-badge { animation: floatBadge 2.5s ease-in-out infinite; }
+
+/* Standardised staggered row entrance — apply to a <tr> and set the per-row
+   `animation-delay` inline (e.g. `${index * 50}ms`). */
+.row-enter { animation: fade-in 0.35s var(--ease-soft) backwards; }
+
+/* ── Record-card interactive layer (components/RecordCard.tsx) ──────────── */
+
+/* Ported from Lightswind InteractiveGradientCard / GlowingCards, recolored to
+   tokens. The card sets --rc-glow (tone) and the pointer handlers write
+   --rc-x/--rc-y; the glow overlay and gradient border ring fade in on hover.
+   All cosmetic — content is fully legible with FX off. */
+.record-card {
+  transition:
+    transform 0.25s var(--ease-soft),
+    box-shadow 0.25s var(--ease-soft),
+    border-color 0.2s;
+}
+.record-card.is-interactive:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--rc-glow) 30%, var(--color-line));
+  box-shadow:
+    0 18px 36px -18px color-mix(in srgb, var(--rc-glow) 45%, transparent),
+    0 4px 12px -6px rgba(15, 23, 42, 0.08);
+}
+
+.record-card-fx {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s var(--ease-soft);
+  background: radial-gradient(
+    220px circle at var(--rc-x, 50%) var(--rc-y, 50%),
+    color-mix(in srgb, var(--rc-glow) 9%, transparent),
+    transparent 65%
+  );
+}
+.record-card.is-interactive:hover .record-card-fx { opacity: 1; }
+
+/* 1px gradient ring via the dual-mask trick (same as .border-beam). */
+.record-card-border {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s var(--ease-soft);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--rc-glow) 60%, transparent),
+    transparent 42%,
+    transparent 58%,
+    color-mix(in srgb, var(--rc-glow) 38%, transparent)
+  );
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+}
+.record-card.is-interactive:hover .record-card-border { opacity: 1; }
+
+/* Status-pill dot halo — transform/opacity only. */
+.status-dot { position: relative; }
+.status-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  animation: dot-halo 2.4s var(--ease-smooth) infinite;
+}
+@keyframes dot-halo {
+  0% { transform: scale(1); opacity: 0.45; }
+  70%, 100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* Meter fill entrance — scaleX from 0, `backwards` so it starts collapsed. */
+.meter-fill {
+  transform-origin: left;
+  animation: meter-in 0.9s var(--ease-soft) backwards;
+}
+@keyframes meter-in {
+  from { transform: scaleX(0); }
+}
+
+
+/* Travelling border beam (ported from border-beam, MIT). The vars are set on
+   the element by <BorderBeam>; defaults resolve to the accent→brand ramp.
+   The dual mask clips paint to the transparent border ring. */
+.border-beam {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: calc(var(--bb-border-width, 1.5) * 1px) solid transparent;
+  mask: linear-gradient(transparent, transparent), linear-gradient(white, white);
+  mask-clip: padding-box, border-box;
+  mask-composite: intersect;
+  -webkit-mask-composite: source-in;
+}
+.border-beam::after {
+  content: "";
+  position: absolute;
+  aspect-ratio: 1;
+  width: calc(var(--bb-size, 200) * 1px);
+  offset-path: rect(0 auto auto 0 round calc(var(--bb-size, 200) * 1px));
+  offset-anchor: calc(var(--bb-anchor, 90) * 1%) 50%;
+  background: linear-gradient(to left, var(--bb-color-from, var(--color-accent-500)), var(--bb-color-to, var(--color-brand-700)), transparent);
+  animation: border-beam calc(var(--bb-duration, 15) * 1s) infinite linear;
+  animation-delay: var(--bb-delay, 0s);
+}
+
+/* ── Legacy compatibility (kept so existing markup keeps its behaviour) ──── */
+
+.table-row-hover {
+  transition: background-color 0.14s var(--ease-smooth);
+}
+.table-row-hover:hover {
+  background-color: var(--color-brand-50);
+}
+
+.btn-interactive {
+  transition: transform 0.14s var(--ease-soft), background-color 0.16s var(--ease-smooth);
+}
+.btn-interactive:active {
+  transform: scale(0.975);
+}
+
+.lightswind-card {
+  border-radius: var(--radius-panel);
+  border: 1px solid var(--color-line);
+  background-color: var(--color-surface);
+  box-shadow: var(--shadow-card);
+  transition: transform 0.24s var(--ease-soft), box-shadow 0.24s var(--ease-soft), border-color 0.24s var(--ease-soft);
+}
+.lightswind-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-line-strong);
+  box-shadow: var(--shadow-lift);
+}
+
+/* ── Spectrum accent (progress / workload bars) ──────────────────────────── */
+
+/* Solid fills from the theme — the old multi-hue gradients fought the navy brand. */
+.spectrum-1 { background-color: var(--color-brand-700); }
+.spectrum-2 { background-color: var(--color-accent-500); }
+.spectrum-3 { background-color: var(--color-ok); }
+.spectrum-4 { background-color: var(--color-chart-5); }
+
+/* ── Reduced motion ──────────────────────────────────────────────────────── */
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms !important;
+    animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+  /* The hover lift is a transform, not a transition — disable it outright. */
+  .record-card.is-interactive:hover { transform: none; }
+}
+
+/* Users can also force reduced motion from Settings — this is the switch. */
+html[data-motion="reduced"] *,
+html[data-motion="reduced"] *::before,
+html[data-motion="reduced"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+html[data-motion="reduced"] .record-card.is-interactive:hover { transform: none; }
+
+/* ── Print (fee receipts, admission letters) ─────────────────────────────── */
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOBILE LAYER — phones (<768px) and the drawer/bottom-nav shell (<1024px).
+   Everything below lives inside max-width media queries, so desktop (≥1024px)
+   renders exactly as before. Material 3 / Flutter-style mobile conventions:
+   48px touch targets, 16px inputs (no iOS focus-zoom), bottom navigation,
+   bottom sheets, safe-area insets.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Height of the mobile bottom navigation bar (without the home-indicator inset). */
+  --m-nav-h: 64px;
+  --m-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --m-safe-top: env(safe-area-inset-top, 0px);
+}
+
+@media (max-width: 1023.98px) {
+  /* Landscape iPhones: keep content out from under the notch (viewport-fit=cover). */
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  /* Sticky header must not hide anchors / focused fields. */
+  html { scroll-padding-top: calc(56px + var(--m-safe-top)); }
+
+  /* No grey flash on tap; feedback comes from our own :active states. */
+  a, button, [role="button"], [role="tab"], label, summary { -webkit-tap-highlight-color: transparent; }
+
+  /* Hover lifts make no sense on touch and leave cards "stuck" lifted after a tap. */
+  .card-hover:hover { transform: none; box-shadow: var(--shadow-soft); }
+
+  /* Pinned save bars sit above the bottom navigation instead of under it. */
+  .m-above-nav { bottom: calc(var(--m-nav-h) + var(--m-safe-bottom)) !important; }
+
+  /* Horizontal scrollers (tabs, chip rows) — swipeable, no visible scrollbar. */
+  .m-scroll-x {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .m-scroll-x::-webkit-scrollbar { display: none; }
+}
+
+@media (max-width: 767.98px) {
+  /* Touch targets: Material's 48dp minimum (44px is the iOS floor). */
+  .btn-primary,
+  .btn-soft,
+  .btn-ghost,
+  .btn-danger,
+  .btn-accent,
+  .btn-dark {
+    min-height: 2.75rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+    font-size: 0.875rem;
+  }
+  /* 16px stops iOS Safari zooming the whole page when a field gets focus. */
+  /* Compact, readable form controls (14px, 42px tall). iOS Safari zooms the page when a
+     focused field is under 16px, so iPhone/iPad alone keep 16px — see the @supports block. */
+  .field {
+    min-height: 2.625rem;
+    font-size: 0.875rem;
+  }
+  textarea.field { min-height: 5.5rem; }
+  /* Icon-prefixed search inputs: .field padding otherwise wins over pl-9/pl-10 and the icon sits on the text. */
+  .field.pl-9 { padding-left: 2.25rem; }
+  .field.pl-10 { padding-left: 2.5rem; }
+  .field.pr-11 { padding-right: 2.75rem; }
+
+  /* Tighter card chrome: phones need the width for content, not padding. */
+  .card-head { padding: 0.875rem 1rem; }
+
+  /* Data tables that stay tabular scroll inside their card with momentum. */
+  .table-wrap { -webkit-overflow-scrolling: touch; }
+
+  /* ── Record cards (TableView card mode) on phones ──────────────────────────
+     Desktop lays cards out at minmax(21rem, 1fr) — 336px, wider than a 360px phone
+     has, which clipped every card. Phones get a list-row card instead:
+
+     ┌─────────────────────────────────┐
+     │ Title                  (Status) │  headline + status on one line
+     │─────────────────────────────────│
+     │ Label                     value │  label/value rows, hairline dividers
+     │ Label                     value │
+     │ Long label                      │  long text: label above, value below
+     │ the whole value, wrapping…      │
+     │─────────────────────────────────│
+     │ [   Action   ] [   Action    ]  │  equal-width actions
+     └─────────────────────────────────┘                                      */
+  .as-cards tbody,
+  .as-cards tfoot {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+  .as-cards table:not([data-dense]) tr:not([data-full-row]) {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0.875rem 1rem 0.75rem;
+    border-radius: 1rem;
+  }
+  .as-cards tr:hover {
+    transform: none;
+    border-color: var(--color-line);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 4px 12px -2px rgba(15, 23, 42, 0.03);
+  }
+  .as-cards td {
+    font-size: 0.875rem;
+  }
+
+  /* Headline */
+  .as-cards td[data-role="title"] {
+    padding-bottom: 0.75rem;
+    border-bottom: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+  .as-cards td[data-role="title"],
+  .as-cards td[data-role="title"] * {
+    text-align: left;
+  }
+  .as-cards tr:has(td[data-role="badge"]) td[data-role="title"] {
+    padding-right: 6.5rem;
+  }
+  .as-cards td[data-role="badge"] {
+    top: 0.875rem;
+    right: 1rem;
+    max-width: 6rem;
+  }
+  .as-cards td[data-role="badge"] .badge {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Field rows: muted label left, value right, hairline between rows. */
+  .as-cards table:not([data-dense]) td:is([data-role="meta"], [data-role="wide"]) {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    column-gap: 1rem;
+    row-gap: 0.25rem;
+    min-height: 2.75rem;
+    padding: 0.5rem 0;
+    border-top: 1px solid var(--color-line);
+    text-align: right;
+    font-weight: 500;
+  }
+  .as-cards table:not([data-dense]) td:is([data-role="meta"], [data-role="wide"])::before {
+    flex: 0 1 auto;
+    max-width: 48%;
+    margin: 0;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    text-align: left;
+    color: var(--color-ink-3);
+  }
+  .as-cards table:not([data-dense]) td[data-role="meta"] > * {
+    margin-left: auto;
+    min-width: 0;
+    max-width: 100%;
+    text-align: right;
+    justify-content: flex-end;
+  }
+  /* Long text and controls take the full width under their label. */
+  .as-cards table:not([data-dense]) td[data-role="wide"],
+  .as-cards table:not([data-dense]) td[data-role="meta"]:has(select, input, textarea, [role="radiogroup"]) {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    text-align: left;
+  }
+  .as-cards table:not([data-dense]) td[data-role="wide"] > *,
+  .as-cards table:not([data-dense]) td[data-role="meta"]:has(select, input, textarea, [role="radiogroup"]) > * {
+    margin-left: 0;
+    text-align: left;
+    justify-content: flex-start;
+  }
+  .as-cards table:not([data-dense]) td[data-role="wide"]::before,
+  .as-cards table:not([data-dense]) td[data-role="meta"]:has(select, input, textarea, [role="radiogroup"])::before {
+    max-width: none;
+  }
+  .as-cards td > [role="radiogroup"] {
+    width: 100%;
+  }
+
+  /* Actions: footer row, equal-width buttons. */
+  .as-cards table:not([data-dense]) td[data-role="actions"] {
+    margin-top: 0;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--color-line);
+    align-items: center;
+  }
+  .as-cards td[data-role="actions"] button,
+  .as-cards td[data-role="actions"] a {
+    min-height: 2.5rem;
+    height: auto;
+  }
+  .as-cards td[data-role="actions"] > * {
+    flex: 1 1 auto;
+  }
+
+  /* Fields a page marks as secondary (TableView `mobileHide`) stay on desktop cards and tables. */
+  .as-cards td[data-mhide] {
+    display: none !important;
+  }
+  /* Dense matrices (monthly register): 7 tiles across is ~38px each on a phone. */
+  .as-cards table[data-dense] tr {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  /* Add / edit / view screens open as full-screen pages on phones: slide in like a pushed
+     page instead of popping up as a sheet. */
+  .m-page {
+    animation: m-page-in 0.26s var(--ease-soft) both;
+  }
+
+  /* ── Purpose-built record cards (RecordCard) footer on phones ───────────────
+     Actions sat right-aligned and wrapped raggedly (Profile · Edit / Mark left · 🗑).
+     Phones get an even 2-column grid of same-height buttons; a lone or odd last
+     action spans the row. Ghost buttons get an outline so the set reads as one group. */
+  .record-card-footer,
+  .record-card-footer > div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+  /* A wrapper of buttons and any caption (e.g. the invoice number) each take a full row. */
+  .record-card-footer > div,
+  .record-card-footer > :not(button):not(a):not(div) {
+    grid-column: 1 / -1;
+  }
+  .record-card-footer > :not(button):not(a):not(div) {
+    justify-self: start;
+    font-size: 0.75rem;
+  }
+  .record-card-footer > :is(button, a):only-child,
+  .record-card-footer > :is(button, a):last-child:nth-child(odd),
+  .record-card-footer > div > :only-child,
+  .record-card-footer > div > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+  .record-card-footer :is(button, a):is(.btn-primary, .btn-soft, .btn-ghost, .btn-danger, .btn-accent, .btn-dark) {
+    width: 100%;
+    justify-content: center;
+    min-height: 2.75rem;
+  }
+  .record-card-footer .btn-ghost {
+    border: 1px solid var(--color-line);
+    background: var(--color-surface);
+  }
+
+  /* ── Table mode on phones ───────────────────────────────────────────────────
+     Pages wrap <TableView> in an overflow-x scroller, so the "N records · Table |
+     Cards" toolbar scrolled sideways with the table. The table scrolls on its own;
+     the toolbar stays put. */
+  .table-wrap:has(> .table-view),
+  [class*="overflow-x"]:has(> .table-view) {
+    overflow-x: visible;
+  }
+  .table-view {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .table-view > div:last-child:not(.as-cards):not(.hidden) {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Narrow first/last cell padding so more columns fit before scrolling. */
+  table:where(.data-table) thead th,
+  table:where(.data-table) tbody td {
+    padding: 0.75rem 0.75rem;
+  }
+
+  /* Toasts would cover the sticky Save bar (attendance, roll call) for 4.5s right
+     after Save. On those pages they drop in under the app bar instead. */
+  body:has(.m-above-nav) .m-toasts {
+    top: calc(56px + var(--m-safe-top) + 0.5rem);
+    bottom: auto !important;
+  }
+
+  /* Pressed feedback for list rows / cards that act as buttons. */
+  .record-card.is-interactive:active { transform: scale(0.99); }
+}
+
+@keyframes m-page-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-page { animation: none; }
+}
+
+/* iOS Safari only (-webkit-touch-callout is WebKit-on-iOS): 16px inputs stop the zoom-on-focus. */
+@supports (-webkit-touch-callout: none) {
+  @media (max-width: 767.98px) {
+    .field,
+    input:not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
+}
+
+/* ── Download tray (components/DownloadTray) ─────────────────────────────── */
+.dl-card {
+  animation: dl-in 0.28s var(--ease-soft) both;
+}
+.dl-shine {
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.7) 50%, transparent 70%);
+  background-size: 220% 100%;
+  animation: dl-shine 1.3s linear infinite;
+}
+.dl-indeterminate {
+  animation: dl-indeterminate 1.15s var(--ease-soft) infinite;
+}
+@keyframes dl-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dl-shine {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}
+@keyframes dl-indeterminate {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(330%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dl-card, .dl-shine, .dl-indeterminate { animation: none; }
 }

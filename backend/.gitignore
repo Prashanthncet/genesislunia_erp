@@ -2,8 +2,11 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
-prisma/dev.db
-prisma/dev.db-journal
+prisma/dev.db*
+prisma/*.db.bak
 .env
 test/e2e-test.db
 *.log
+# Local document storage (STORAGE_DRIVER=local)
+# Anchored: a bare "storage/" also matched src/storage (the module source).
+/storage/

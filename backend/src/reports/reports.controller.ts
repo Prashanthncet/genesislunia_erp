@@ -1,208 +1,161 @@
-import { Controller, Get, Param, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, ForbiddenException, Get, Param, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
-import { AuthGuard } from '../auth/auth.guard';
+import { AuthGuard, Roles, RolesGuard } from '../auth/auth.guard';
+import { R, ROLE } from '../auth/roles';
+import { audit, AuthUser } from '../common/access';
 import { PrismaService } from '../prisma/prisma.service';
+import { ReportCacheService } from './report-cache.service';
+import { CONTENT_TYPES, ExportFormat, FilterQuery, parseFilters, renderTable } from './report-utils';
+import { ReportsService } from './reports.service';
 
-type ReqWithUser = { user: { sub: string; role: string; branch_id: string } };
+type Req_ = { user: AuthUser };
+type Q = FilterQuery & { fresh?: string; format?: string };
 
-const csvEscape = (v: unknown): string => {
-  const s = v === null || v === undefined ? '' : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+/** Who may export which report. Student PII is narrower than the aggregate reports. */
+const EXPORT_ROLES: Record<string, string[]> = {
+  students: [...R.LEADERSHIP, ROLE.OFFICE_SUPERINTENDENT],
+  fees: R.FEES_READ,
+  'fee-summary': R.FEES_READ,
+  defaulters: R.FEES_READ,
+  attendance: R.REPORTS,
+  'attendance-summary': R.REPORTS,
+  'attendance-trend': R.REPORTS,
+  performance: R.REPORTS,
+  exams: R.REPORTS,
+  payroll: R.PAYROLL,
 };
+const ANY_EXPORT = [...new Set(Object.values(EXPORT_ROLES).flat())];
+/** Per-class attendance % is also what teachers see on the attendance page. */
+const ATTENDANCE_READ = [...new Set([...R.REPORTS, ...R.ATTENDANCE_MARK])];
+const SUMMARY_READ = [...new Set([...R.REPORTS, ...R.PAYROLL])];
 
+/**
+ * Reports & dashboards. Every aggregate is branch-scoped, takes the shared filter bar
+ * (class_id, section, from, to), and is served through the in-process TTL cache:
+ * `X-Cache: HIT|MISS` + `X-Cache-Generated-At` headers, `?fresh=1` to recompute.
+ * Fee numbers are only ever returned to R.FEES_READ, payroll only to R.PAYROLL.
+ */
 @Controller('reports')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RolesGuard)
 export class ReportsController {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private reports: ReportsService, private cache: ReportCacheService) {}
 
-  /** Attendance % per class over an optional date range. */
+  private async cached<T>(req: Req_, res: Response, name: string, q: Q, scope: Record<string, unknown>, compute: (f: Awaited<ReturnType<typeof parseFilters>>) => Promise<T>): Promise<T> {
+    const f = await parseFilters(this.prisma, req.user.branch_id, q);
+    const key = this.cache.key(req.user.branch_id, name, { ...f.key, ...scope });
+    const fresh = q.fresh === '1' || q.fresh === 'true';
+    const out = await this.cache.wrap(key, fresh, () => compute(f));
+    res.setHeader('X-Cache', out.hit ? 'HIT' : 'MISS');
+    res.setHeader('X-Cache-Generated-At', out.at);
+    return out.value;
+  }
+
+  private canFees = (u: AuthUser) => (R.FEES_READ as string[]).includes(u.role);
+  private canPayroll = (u: AuthUser) => (R.PAYROLL as string[]).includes(u.role);
+
+  /** Per-class attendance % (legacy array shape). */
   @Get('attendance')
-  async attendance(@Req() req: ReqWithUser, @Query('from') from?: string, @Query('to') to?: string) {
-    const where: Record<string, unknown> = { branchId: req.user.branch_id };
-    if (from || to) {
-      where.date = { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) };
-    }
-    const records = await this.prisma.attendanceRecord.findMany({
-      where,
-      select: { classId: true, status: true },
-    });
-    const byClass = new Map<string, { present: number; total: number }>();
-    for (const r of records) {
-      const bucket = byClass.get(r.classId) ?? { present: 0, total: 0 };
-      bucket.total += 1;
-      if (r.status === 'Present') bucket.present += 1;
-      byClass.set(r.classId, bucket);
-    }
-    const classes = await this.prisma.class.findMany({ where: { branchId: req.user.branch_id } });
-    return classes.map((c) => {
-      const bucket = byClass.get(c.id);
-      const pct = bucket && bucket.total > 0 ? Math.round((bucket.present / bucket.total) * 1000) / 10 : null;
-      return { class_id: c.id, class_name: c.name, section: c.section, attendance_pct: pct, total_records: bucket?.total ?? 0 };
-    });
+  @Roles(...ATTENDANCE_READ)
+  attendance(@Req() req: Req_, @Query() q: Q, @Res({ passthrough: true }) res: Response) {
+    return this.cached(req, res, 'attendance', q, {}, (f) => this.reports.attendanceByClass(req.user.branch_id, f));
   }
 
-  /** Fee collection: invoiced vs collected, per term and overall. */
+  @Get('attendance-trend')
+  @Roles(...R.REPORTS)
+  attendanceTrend(@Req() req: Req_, @Query() q: Q, @Res({ passthrough: true }) res: Response) {
+    return this.cached(req, res, 'attendance-trend', q, {}, (f) => this.reports.attendanceTrend(req.user.branch_id, f));
+  }
+
+  @Get('trends')
+  @Roles(...R.REPORTS)
+  trends(@Req() req: Req_, @Query() q: Q, @Res({ passthrough: true }) res: Response) {
+    const fees = this.canFees(req.user);
+    return this.cached(req, res, 'trends', q, { fees }, (f) => this.reports.trends(req.user.branch_id, f, fees));
+  }
+
   @Get('fees')
-  async fees(@Req() req: ReqWithUser) {
-    const invoices = await this.prisma.feeInvoice.findMany({
-      where: { branchId: req.user.branch_id },
-      include: { payments: { select: { amountPaid: true } } },
-    });
-    let invoiced = 0;
-    let collected = 0;
-    const byStatus: Record<string, number> = {};
-    for (const inv of invoices) {
-      invoiced += inv.totalAmount;
-      const paid = inv.payments.reduce((s, p) => s + p.amountPaid, 0);
-      collected += paid;
-      byStatus[inv.status] = (byStatus[inv.status] ?? 0) + 1;
-    }
-    return {
-      invoiced,
-      collected,
-      collection_pct: invoiced > 0 ? Math.round((collected / invoiced) * 1000) / 10 : null,
-      outstanding: Math.max(0, invoiced - collected),
-      invoice_count: invoices.length,
-      by_status: byStatus,
-    };
+  @Roles(...R.FEES_READ)
+  fees(@Req() req: Req_, @Query() q: Q, @Res({ passthrough: true }) res: Response) {
+    return this.cached(req, res, 'fees', q, {}, (f) => this.reports.fees(req.user.branch_id, f));
   }
 
-  /** Academic performance: average score % per exam. */
+  @Get('defaulters')
+  @Roles(...R.FEES_READ)
+  defaulters(@Req() req: Req_, @Query() q: Q, @Res({ passthrough: true }) res: Response) {
+    return this.cached(req, res, 'defaulters', q, {}, (f) => this.reports.defaulters(req.user.branch_id, f));
+  }
+
+  /** Grade-engine performance by class and subject. */
+  @Get('performance')
+  @Roles(...R.REPORTS)
+  performance(@Req() req: Req_, @Query() q: Q, @Res({ passthrough: true }) res: Response) {
+    return this.cached(req, res, 'performance', q, {}, (f) => this.reports.performance(req.user.branch_id, f));
+  }
+
+  /** Average raw score % per exam (legacy array shape). */
   @Get('academics')
-  async academics(@Req() req: ReqWithUser) {
-    const exams = await this.prisma.exam.findMany({
-      where: { branchId: req.user.branch_id },
-      include: { examMarks: { select: { score: true, maxScore: true } } },
-    });
-    return exams.map((exam) => {
-      const marks = exam.examMarks;
-      const avg = marks.length > 0 ? marks.reduce((s, m) => s + (m.score / m.maxScore) * 100, 0) / marks.length : null;
-      return {
-        exam_id: exam.id,
-        exam_name: exam.name,
-        exam_date: exam.date,
-        marks_count: marks.length,
-        avg_score_pct: avg !== null ? Math.round(avg * 10) / 10 : null,
-      };
-    });
+  @Roles(...R.REPORTS)
+  academics(@Req() req: Req_, @Query() q: Q, @Res({ passthrough: true }) res: Response) {
+    return this.cached(req, res, 'academics', q, {}, (f) => this.reports.examAverages(req.user.branch_id, f));
   }
 
-  /** Admin dashboard: one call with headline numbers from every module. */
+  @Get('exam-scores')
+  @Roles(...R.REPORTS)
+  examScores(@Req() req: Req_, @Query() q: Q, @Res({ passthrough: true }) res: Response) {
+    return this.cached(req, res, 'exam-scores', q, {}, (f) => this.reports.examScores(req.user.branch_id, f));
+  }
+
+  /** Headline counts; `fees` is null unless the caller may read fees. */
   @Get('dashboard')
-  async dashboard(@Req() req: ReqWithUser) {
-    const branchId = req.user.branch_id;
-    const [students, staff, classes, incidents, pendingLeaves, pendingGatePasses, pendingAdmissions] =
-      await this.prisma.$transaction([
-        this.prisma.student.count({ where: { branchId, status: 'Active' } }),
-        this.prisma.staff.count({ where: { branchId, isActive: true } }),
-        this.prisma.class.count({ where: { branchId } }),
-        this.prisma.incident.count({ where: { branchId, status: { not: 'Closed' } } }),
-        this.prisma.staffLeave.count({ where: { branchId, status: 'Pending' } }),
-        this.prisma.gatePass.count({ where: { branchId, status: 'Pending' } }),
-        this.prisma.admission.count({ where: { branchId, status: { notIn: ['Admission Complete', 'Rejected'] } } }),
-      ]);
-
-    const invoices = await this.prisma.feeInvoice.findMany({
-      where: { branchId },
-      include: { payments: { select: { amountPaid: true } } },
-    });
-    const collected = invoices.reduce((s, inv) => s + inv.payments.reduce((p, pay) => p + pay.amountPaid, 0), 0);
-    const invoiced = invoices.reduce((s, inv) => s + inv.totalAmount, 0);
-
-    return {
-      students_active: students,
-      staff_active: staff,
-      classes: classes,
-      incidents_open: incidents,
-      staff_leaves_pending: pendingLeaves,
-      gate_passes_pending: pendingGatePasses,
-      admissions_in_progress: pendingAdmissions,
-      fees: {
-        invoiced,
-        collected,
-        collection_pct: invoiced > 0 ? Math.round((collected / invoiced) * 1000) / 10 : null,
-      },
-    };
+  @Roles(...R.REPORTS)
+  dashboard(@Req() req: Req_, @Query() q: Q, @Res({ passthrough: true }) res: Response) {
+    const fees = this.canFees(req.user);
+    return this.cached(req, res, 'dashboard', q, { fees }, (f) => this.reports.dashboard(req.user.branch_id, f, fees));
   }
 
-  /** CSV export: type = students | fees | attendance. */
-  @Get('export/:type')
-  async exportCsv(
-    @Req() req: ReqWithUser,
-    @Param('type') type: string,
-    @Res() res: Response,
-  ) {
-    const branchId = req.user.branch_id;
-    let rows: string[][];
-
-    if (type === 'students') {
-      const students = await this.prisma.student.findMany({
-        where: { branchId },
-        include: { class: { select: { name: true, section: true } } },
-        orderBy: { fullName: 'asc' },
-      });
-      rows = [
-        ['admission_no', 'full_name', 'class', 'roll_no', 'gender', 'mobile', 'status'],
-        ...students.map((s) => [s.admissionNo, s.fullName, s.class ? `${s.class.name} ${s.class.section ?? ''}`.trim() : '', s.rollNo ?? '', s.gender ?? '', s.mobileNumber ?? '', s.status]),
-      ];
-    } else if (type === 'fees') {
-      const invoices = await this.prisma.feeInvoice.findMany({
-        where: { branchId },
-        include: {
-          student: { select: { fullName: true, admissionNo: true } },
-          payments: { select: { amountPaid: true } },
-        },
-        orderBy: { dueDate: 'desc' },
-      });
-      rows = [
-        ['invoice_no', 'student', 'admission_no', 'term', 'total', 'paid', 'balance', 'status'],
-        ...invoices.map((inv) => {
-          const paid = inv.payments.reduce((s, p) => s + p.amountPaid, 0);
-          return [inv.invoiceNo ?? '', inv.student.fullName, inv.student.admissionNo, inv.term, String(inv.totalAmount), String(paid), String(Math.max(0, inv.totalAmount - paid)), inv.status];
-        }),
-      ];
-    } else if (type === 'attendance') {
-      const records = await this.prisma.attendanceRecord.findMany({
-        where: { branchId },
-        include: {
-          student: { select: { fullName: true, admissionNo: true } },
-          class: { select: { name: true, section: true } },
-        },
-        orderBy: [{ date: 'desc' }, { studentId: 'asc' }],
-        take: 5000,
-      });
-      rows = [
-        ['date', 'class', 'student', 'admission_no', 'status'],
-        ...records.map((r) => [r.date, r.class ? `${r.class.name} ${r.class.section ?? ''}`.trim() : '', r.student.fullName, r.student.admissionNo, r.status]),
-      ];
-    } else {
-      return res.status(400).json({ message: 'type must be students | fees | attendance' });
-    }
-
-    const csv = rows.map((r) => r.map(csvEscape).join(',')).join('\n');
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="genesis-erp-${type}.csv"`);
-    return res.send(csv);
-  }
-
-  /** Occupancy + payroll totals used by the dashboard charts. */
+  /** Hostel occupancy for report readers; payroll totals only for R.PAYROLL. */
   @Get('summary')
-  async summary(@Req() req: ReqWithUser) {
-    const branchId = req.user.branch_id;
-    const rooms = await this.prisma.room.findMany({
-      where: { hostel: { branchId } },
-      include: { _count: { select: { allocations: true } } },
+  @Roles(...SUMMARY_READ)
+  summary(@Req() req: Req_, @Query() q: Q, @Res({ passthrough: true }) res: Response) {
+    const payroll = this.canPayroll(req.user);
+    return this.cached(req, res, 'summary', q, { payroll }, async (f) => {
+      const hostel = await this.reports.hostel(req.user.branch_id);
+      if (!payroll) return { hostel };
+      const p = await this.reports.payroll(req.user.branch_id, f);
+      return { hostel, payroll_total_net: p.payroll_total_net, payslip_count: p.payslip_count };
     });
-    const capacity = rooms.reduce((s, r) => s + r.capacity, 0);
-    const allocated = rooms.reduce((s, r) => s + r._count.allocations, 0);
+  }
 
-    const payslips = await this.prisma.payslip.findMany({ where: { branchId } });
-    const salaryCost = payslips.reduce((s, p) => s + p.netSalary, 0);
+  @Get('payroll')
+  @Roles(...R.PAYROLL)
+  payroll(@Req() req: Req_, @Query() q: Q, @Res({ passthrough: true }) res: Response) {
+    return this.cached(req, res, 'payroll', q, {}, (f) => this.reports.payroll(req.user.branch_id, f));
+  }
 
-    return {
-      hostel: { capacity, allocated, occupancy_pct: capacity > 0 ? Math.round((allocated / capacity) * 1000) / 10 : null },
-      payroll_total_net: Math.round(salaryCost * 100) / 100,
-      payslip_count: payslips.length,
-    };
+  /**
+   * GET /reports/export/:report?format=csv|xlsx|pdf&class_id&section&from&to
+   * Always computed fresh (exports are point-in-time documents) and audited.
+   */
+  @Get('export/:report')
+  @Roles(...ANY_EXPORT)
+  async export(@Req() req: Req_, @Param('report') report: string, @Query() q: Q, @Res() res: Response) {
+    const allowed = EXPORT_ROLES[report];
+    if (!allowed) throw new BadRequestException(`report must be one of ${Object.keys(EXPORT_ROLES).join(' | ')}`);
+    if (!allowed.includes(req.user.role)) throw new ForbiddenException('Forbidden: Insufficient privileges');
+    const format = (q.format ?? 'csv').toLowerCase() as ExportFormat;
+    if (!['csv', 'xlsx', 'pdf'].includes(format)) throw new BadRequestException('format must be csv | xlsx | pdf');
+
+    const f = await parseFilters(this.prisma, req.user.branch_id, q);
+    const table = await this.reports.table(report, req.user.branch_id, f);
+    const branch = await this.prisma.branch.findUnique({ where: { id: req.user.branch_id }, select: { name: true } });
+    const filterLine = `Filters: ${Object.entries(f.key).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join(', ') || 'none'} · ${table.rows.length} rows`;
+    const buf = await renderTable(table, format, branch?.name ?? 'School', filterLine);
+
+    await audit(this.prisma, req.user, 'EXPORT', 'report', report, JSON.stringify({ format, ...f.key, rows: table.rows.length }));
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', CONTENT_TYPES[format]);
+    res.setHeader('Content-Disposition', `attachment; filename="genesis-erp-${report}-${stamp}.${format}"`);
+    res.setHeader('Content-Length', String(buf.length));
+    return res.send(buf);
   }
 }
