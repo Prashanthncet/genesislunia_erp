@@ -6,6 +6,7 @@ import { hasRole, type Me } from "@/lib/auth";
 import { Badge, Button, Card, CardHead, EmptyState, Field, Icon, Input, Select, Tabs, useToast } from "@/components/ui";
 import { confirmAction } from "@/components/confirm";
 import { ReasonModal } from "./ReasonModal";
+import { QrScannerModal } from "@/components/QrScannerModal";
 import {
   GATE_PRINCIPAL_STEP, GATE_PRINT, GATE_REQUEST, GATE_TYPES, GATE_WARDEN_STEP, classLabel, errMsg, fmtStamp, fmtTime, statusBadge,
   type GatePass, type StudentOption,
@@ -31,6 +32,7 @@ export function GatePassPanel({
   const [statusFilter, setStatusFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const [rejecting, setRejecting] = useState<GatePass | null>(null);
+  const [showScanner, setShowScanner] = useState(false);
   const [form, setForm] = useState({ student_id: "", type: "Local Outing", reason: "", out_time: "", expected_in_time: "" });
 
   const load = useCallback(async () => {
@@ -146,6 +148,9 @@ export function GatePassPanel({
           )}
         />
         <div className="flex flex-wrap items-center gap-2.5 border-b border-line bg-surface-2/50 px-4 py-3">
+          <Button type="button" size="sm" variant="soft" onClick={() => setShowScanner(true)}>
+            <Icon name="qr" className="h-4 w-4" /> Scan Pass QR
+          </Button>
           <div className="relative min-w-[200px] flex-1">
             <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
             <Input
@@ -257,6 +262,22 @@ export function GatePassPanel({
         busy={busy}
         onClose={() => setRejecting(null)}
         onConfirm={reject}
+      />
+      <QrScannerModal
+        open={showScanner}
+        onClose={() => setShowScanner(false)}
+        title="Scan Gate Pass / Student ID QR"
+        subtitle="Scan a student's printed gate pass QR code or ID card QR code to verify and filter immediately."
+        onScan={(raw) => {
+          const gpMatch = raw.match(/GP-[A-Z0-9-]+/i);
+          const admMatch = raw.match(/ADM-[A-Z0-9-]+/i);
+          const idMatch = raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+          const matchedPass = idMatch ? rows.find((r) => r.id.toLowerCase() === idMatch[0].toLowerCase() || r.student.id.toLowerCase() === idMatch[0].toLowerCase()) : null;
+          const query = matchedPass?.passCode || matchedPass?.student.admissionNo || gpMatch?.[0] || admMatch?.[0] || raw.trim();
+          setFilter("all");
+          setSearchQuery(query);
+          toast.push(`Scanned QR: ${query}`);
+        }}
       />
     </div>
   );

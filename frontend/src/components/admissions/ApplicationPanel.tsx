@@ -307,6 +307,9 @@ export function ApplicationPanel({
             <Button size="sm" variant="ghost" onClick={handleDownloadQr}>
               <Icon name="download" className="h-3.5 w-3.5" /> QR PNG
             </Button>
+            <Button size="sm" variant="soft" onClick={() => download(`/api/admissions/${id}/summary.pdf`, `admission-summary-${d.loginId ?? id.slice(0, 8)}.pdf`)}>
+              <Icon name="download" className="h-3.5 w-3.5" /> Summary PDF
+            </Button>
           </div>
         </div>
 

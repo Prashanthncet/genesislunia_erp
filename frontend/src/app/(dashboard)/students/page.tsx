@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { hasRole, R, useMe } from "@/lib/auth";
 import { sanitizePhone, sanitizePersonName, validatePhone, validateEmail, validatePersonName } from "@/lib/validation";
+import { makeQrDataUrl } from "@/lib/qr";
 import { Button, EmptyState, Field, Icon, IconButton, Input, MailLink, Modal, PageHeader, PhoneLink, Reveal, Select, SkeletonRows, StatCard, Textarea, useToast, Portal } from "@/components/ui";
 import { confirmAction, confirmWithReason } from "@/components/confirm";
 
@@ -68,6 +69,11 @@ export default function StudentsPage() {
   const [bulkClassId, setBulkClassId] = useState("");
   const [bulkCsvText, setBulkCsvText] = useState("");
   const [bulkUploading, setBulkUploading] = useState(false);
+  const [showIdCardsModal, setShowIdCardsModal] = useState(false);
+  const [idCardClassId, setIdCardClassId] = useState("");
+  const [idCardStyle, setIdCardStyle] = useState<"classic" | "modern" | "compact" | "crest">("classic");
+  const [idCardStudents, setIdCardStudents] = useState<Student[]>([]);
+  const [idCardLoading, setIdCardLoading] = useState(false);
   const toast = useToast();
   const { me, loading: meLoading } = useMe();
   const canRead = hasRole(me, R.STUDENT_READ);
@@ -434,6 +440,25 @@ export default function StudentsPage() {
                 <Button variant="soft" onClick={openBulkUpload}>
                   <Icon name="upload" className="h-4 w-4" /> Bulk Upload Students
                 </Button>
+                <Button
+                  variant="soft"
+                  onClick={() => {
+                    const targetCls = classFilter || classes[0]?.id || "";
+                    setIdCardClassId(targetCls);
+                    setShowIdCardsModal(true);
+                    if (targetCls) {
+                      setIdCardLoading(true);
+                      apiFetch<Paged>(`/api/students?class_id=${encodeURIComponent(targetCls)}&page_size=60`)
+                        .then((r) => setIdCardStudents(r.data ?? []))
+                        .catch(() => setIdCardStudents([]))
+                        .finally(() => setIdCardLoading(false));
+                    } else {
+                      setIdCardStudents(result?.data ?? []);
+                    }
+                  }}
+                >
+                  <Icon name="idCard" className="h-4 w-4" /> Class ID Cards
+                </Button>
                 <Button variant="primary" onClick={openCreate} className="shadow-lg shadow-brand-700/20 hover:shadow-xl hover:shadow-brand-700/30 transition-all duration-300">
                   <Icon name="plus" className="h-4 w-4" /> Add Student
                 </Button>
@@ -628,6 +653,169 @@ export default function StudentsPage() {
           </div>
         </div>
       </Reveal>
+
+      {/* Bulk Upload Students Modal */}
+      <Modal
+        open={showIdCardsModal}
+        onClose={() => setShowIdCardsModal(false)}
+        title="Bulk Class ID Cards Preview & Print Sheet"
+        subtitle="Preview and print/save an entire class's student ID cards with scannable QR codes."
+        size="lg"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowIdCardsModal(false)}>Close</Button>
+            <Button
+              variant="primary"
+              disabled={idCardStudents.length === 0}
+              onClick={() => {
+                const win = window.open("", "_blank", "width=960,height=800");
+                if (!win) {
+                  toast.push("Pop-up blocked — allow pop-ups to print class ID cards", "error");
+                  return;
+                }
+                const clsLabel = classes.find((c) => c.id === idCardClassId);
+                const clsTitle = clsLabel ? `${clsLabel.name} ${clsLabel.section ?? ""}`.trim() : "Selected Students";
+                const cardsHtml = idCardStudents
+                  .map((s) => {
+                    const qr = makeQrDataUrl(`STUDENT:${s.admissionNo}|${s.fullName}|${s.class ? classText(s.class) : clsTitle}`, 140);
+                    const headerBg =
+                      idCardStyle === "modern"
+                        ? "linear-gradient(135deg,#0f172a,#1d4ed8)"
+                        : idCardStyle === "crest"
+                        ? "linear-gradient(135deg,#4c1d95,#7c3aed)"
+                        : idCardStyle === "compact"
+                        ? "#0f766e"
+                        : "#1e3a8a";
+                    return `<div class="id-card">
+                      <div class="id-head" style="background:${headerBg}">
+                        <div class="school">GENESIS PUBLIC SCHOOL</div>
+                        <div class="sub">STUDENT IDENTITY CARD · ${idCardStyle.toUpperCase()}</div>
+                      </div>
+                      <div class="id-body">
+                        <div class="info">
+                          <div class="name">${s.fullName}</div>
+                          <div class="adm">${s.admissionNo}</div>
+                          <div class="meta"><b>Class:</b> ${s.class ? classText(s.class) : clsTitle} · <b>Roll:</b> ${s.rollNo ?? "—"}</div>
+                          <div class="meta"><b>House:</b> ${s.house ?? "—"} · <b>Gender:</b> ${s.gender}</div>
+                          <div class="meta"><b>Parent:</b> ${s.fatherName ?? s.motherName ?? "—"}</div>
+                          <div class="meta"><b>Contact:</b> ${s.mobileNumber ?? "—"}</div>
+                        </div>
+                        <img class="qr" src="${qr}" alt="QR" />
+                      </div>
+                    </div>`;
+                  })
+                  .join("");
+                win.document.write(`<!doctype html><html><head><title>Class ID Cards — ${clsTitle}</title>
+                  <style>
+                    body { font-family: system-ui, -apple-system, sans-serif; margin: 20px; color: #0f172a; }
+                    .bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; padding-bottom:10px; border-bottom:1px solid #e2e8f0; }
+                    .grid { display:grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+                    .id-card { border: 1.5px solid #cbd5e1; border-radius: 12px; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
+                    .id-head { color: #fff; padding: 10px 14px; }
+                    .school { font-weight: 800; font-size: 13px; letter-spacing: 0.06em; }
+                    .sub { font-size: 10px; opacity: 0.85; margin-top: 2px; }
+                    .id-body { display:flex; justify-content:space-between; align-items:center; gap: 12px; padding: 12px 14px; background:#fff; }
+                    .name { font-weight: 800; font-size: 15px; color: #0f172a; }
+                    .adm { font-family: monospace; font-size: 11.5px; color: #475569; margin-bottom: 6px; }
+                    .meta { font-size: 11.5px; color: #334155; line-height: 1.45; }
+                    .qr { width: 76px; height: 76px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 3px; }
+                    @media print { .no-print { display: none !important; } body { margin: 0; } }
+                  </style>
+                </head><body>
+                  <div class="bar no-print">
+                    <div><b>Class ID Cards Sheet — ${clsTitle}</b> (${idCardStudents.length} cards)</div>
+                    <button onclick="window.print()" style="background:#1d4ed8;color:#fff;border:0;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer;">Print / Save as PDF</button>
+                  </div>
+                  <div class="grid">${cardsHtml}</div>
+                </body></html>`);
+                win.document.close();
+              }}
+            >
+              <Icon name="download" className="h-4 w-4" /> Print Class ID Cards Sheet ({idCardStudents.length})
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Select Class">
+              <Select
+                aria-label="Class for ID cards"
+                value={idCardClassId}
+                onChange={(e) => {
+                  const nextCls = e.target.value;
+                  setIdCardClassId(nextCls);
+                  setIdCardLoading(true);
+                  const url = nextCls
+                    ? `/api/students?class_id=${encodeURIComponent(nextCls)}&page_size=60`
+                    : `/api/students?page_size=40`;
+                  apiFetch<Paged>(url)
+                    .then((r) => setIdCardStudents(r.data ?? []))
+                    .catch(() => setIdCardStudents([]))
+                    .finally(() => setIdCardLoading(false));
+                }}
+              >
+                <option value="">All Classes (first 40)</option>
+                {classes.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name} {c.section ?? ""}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="ID Card Template Style">
+              <Select
+                aria-label="ID card template style"
+                value={idCardStyle}
+                onChange={(e) => setIdCardStyle(e.target.value as "classic" | "modern" | "compact" | "crest")}
+              >
+                <option value="classic">Classic Institutional</option>
+                <option value="modern">Modern Gradient</option>
+                <option value="compact">Compact Badge</option>
+                <option value="crest">Royal Crest</option>
+              </Select>
+            </Field>
+          </div>
+          {idCardLoading ? (
+            <p className="py-8 text-center text-xs text-ink-3">Loading class ID cards…</p>
+          ) : idCardStudents.length === 0 ? (
+            <EmptyState icon="students" title="No students in this class" hint="Select another class to generate ID cards." />
+          ) : (
+            <div className="grid max-h-96 gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
+              {idCardStudents.map((s) => {
+                const qr = makeQrDataUrl(`STUDENT:${s.admissionNo}|${s.fullName}`, 120);
+                return (
+                  <div key={s.id} className="overflow-hidden rounded-xl border border-line bg-surface shadow-2xs">
+                    <div
+                      className={`px-3.5 py-2 text-white ${
+                        idCardStyle === "modern"
+                          ? "bg-gradient-to-r from-slate-900 to-brand-700"
+                          : idCardStyle === "crest"
+                          ? "bg-gradient-to-r from-purple-900 to-violet-700"
+                          : idCardStyle === "compact"
+                          ? "bg-teal-700"
+                          : "bg-brand-800"
+                      }`}
+                    >
+                      <p className="text-[10px] font-extrabold uppercase tracking-wider">Student Identity Card · {idCardStyle}</p>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 p-3">
+                      <div className="min-w-0 text-xs">
+                        <p className="truncate font-bold text-ink">{s.fullName}</p>
+                        <p className="font-mono text-[11px] text-ink-3">{s.admissionNo}</p>
+                        <p className="mt-1 text-[11px] text-ink-2">
+                          {s.class ? classText(s.class) : "—"} · Roll {s.rollNo ?? "—"}
+                        </p>
+                        {s.house && <p className="text-[11px] text-ink-3">{s.house} House</p>}
+                      </div>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={qr} alt={`QR ${s.admissionNo}`} className="h-16 w-16 shrink-0 rounded-lg border border-line bg-white p-1" />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {/* Bulk Upload Students Modal */}
       <Modal

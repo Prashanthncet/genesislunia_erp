@@ -58,6 +58,10 @@ export default function FeesPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [invPage, setInvPage] = useState(1);
+  const [invPageSize, setInvPageSize] = useState(25);
+  const [defPage, setDefPage] = useState(1);
+  const defPageSize = 25;
 
   const [genClass, setGenClass] = useState("");
   const [genTerm, setGenTerm] = useState("Term 1");
@@ -228,6 +232,13 @@ export default function FeesPage() {
   const totalOutstanding = invoices.reduce((s, i) => s + i.balance, 0);
   const overdueCount = invoices.filter((i) => i.overdue).length;
   const collectionRate = totalBilled > 0 ? Math.round((totalCollected / totalBilled) * 100) : 0;
+  const totalInvPages = Math.max(1, Math.ceil(filteredInvoices.length / invPageSize));
+  const safeInvPage = Math.min(invPage, totalInvPages);
+  const pagedInvoices = filteredInvoices.slice((safeInvPage - 1) * invPageSize, safeInvPage * invPageSize);
+  const defList = defaulters?.students ?? [];
+  const totalDefPages = Math.max(1, Math.ceil(defList.length / defPageSize));
+  const safeDefPage = Math.min(defPage, totalDefPages);
+  const pagedDefaulters = defList.slice((safeDefPage - 1) * defPageSize, safeDefPage * defPageSize);
 
   if (!meLoading && me && !canRead) {
     return (
@@ -240,7 +251,7 @@ export default function FeesPage() {
   /** Card view: the balance is the answer, the meter shows how far along the invoice is. */
   const invoiceCards = (
     <CardGrid min="19rem" empty={<CardEmpty title="No invoices found" hint={canWrite ? "Generate invoices for a class from the panel on the right." : undefined} icon="receipt" />}>
-      {filteredInvoices.map((inv, index) => {
+      {pagedInvoices.map((inv, index) => {
         const paidPct = inv.totalAmount > 0 ? Math.round((inv.paid_amount / inv.totalAmount) * 100) : 0;
         const settled = inv.balance <= 0;
         const className = [inv.student.class?.name, inv.student.class?.section].filter(Boolean).join(" ");
@@ -317,7 +328,7 @@ export default function FeesPage() {
 
   const defaulterCards = (
     <CardGrid min="19rem" empty={<CardEmpty title="No defaulters" hint="Every past-due invoice is settled." icon="check" />}>
-      {(defaulters?.students ?? []).map((d, index) => {
+      {pagedDefaulters.map((d, index) => {
         const className = d.student.class ? `${d.student.class.name} ${d.student.class.section ?? ""}`.trim() : "—";
         const severe = d.days_overdue > 60;
         return (
@@ -409,10 +420,10 @@ export default function FeesPage() {
               <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl bg-white border border-line shadow-sm max-md:gap-3 max-md:p-3">
                 <div className="relative flex-1 min-w-[200px] max-md:min-w-0 max-md:basis-full">
                   <Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-3" />
-                  <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} aria-label="Search invoices" placeholder="Search by name, admission no or invoice no..." className="w-full rounded-lg border border-line-strong bg-surface-2 pl-10 pr-4 py-2.5 text-sm focus:border-brand-700 focus:ring-2 focus:ring-accent-500/20 max-md:min-h-11" />
+                  <input value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setInvPage(1); }} aria-label="Search invoices" placeholder="Search by name, admission no or invoice no..." className="w-full rounded-lg border border-line-strong bg-surface-2 pl-10 pr-4 py-2.5 text-sm focus:border-brand-700 focus:ring-2 focus:ring-accent-500/20 max-md:min-h-11" />
                 </div>
                 <MobileFilters active={filterStatus ? 1 : 0} label="Status">
-                <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} aria-label="Filter by status" className="appearance-none rounded-lg border border-line-strong bg-surface-2 px-4 py-2.5 pr-10 text-sm text-ink-2 focus:border-brand-700 max-md:min-h-11 max-md:w-full">
+                <select value={filterStatus} onChange={(e) => { setFilterStatus(e.target.value); setInvPage(1); }} aria-label="Filter by status" className="appearance-none rounded-lg border border-line-strong bg-surface-2 px-4 py-2.5 pr-10 text-sm text-ink-2 focus:border-brand-700 max-md:min-h-11 max-md:w-full">
                   <option value="">All Status</option>
                   <option value="Overdue">Overdue</option>
                   <option value="Paid">Paid</option>
@@ -432,6 +443,44 @@ export default function FeesPage() {
               <div className={`grid grid-cols-1 gap-6 max-md:gap-4 ${canWrite ? "lg:grid-cols-3" : ""}`}>
                 <div className={`${canWrite ? "lg:col-span-2" : ""} rounded-xl border border-line bg-white shadow-soft overflow-hidden`}>
                   <div className="overflow-x-auto">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-surface-2/40 px-4 py-2.5 text-xs">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[
+                        { id: "", label: `All (${invoices.length})` },
+                        { id: "Overdue", label: `Overdue (${overdueCount})` },
+                        { id: "Unpaid", label: `Unpaid (${invoices.filter((i) => i.status === "Unpaid").length})` },
+                        { id: "Partially Paid", label: `Partial (${invoices.filter((i) => i.status.startsWith("Partial")).length})` },
+                        { id: "Paid", label: `Paid (${invoices.filter((i) => i.status === "Paid").length})` },
+                      ].map((pill) => (
+                        <button
+                          key={pill.id}
+                          type="button"
+                          onClick={() => { setFilterStatus(pill.id); setInvPage(1); }}
+                          className={`rounded-full px-3 py-1 font-semibold transition-all ${
+                            filterStatus === pill.id
+                              ? "bg-brand-700 text-white shadow-sm"
+                              : "bg-surface text-ink-2 ring-1 ring-line hover:bg-surface-2"
+                          }`}
+                        >
+                          {pill.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2 text-ink-3">
+                      <span>Rows per page:</span>
+                      <select
+                        aria-label="Invoices per page"
+                        value={invPageSize}
+                        onChange={(e) => { setInvPageSize(Number(e.target.value)); setInvPage(1); }}
+                        className="rounded-lg border border-line bg-surface px-2 py-1 text-xs font-semibold text-ink"
+                      >
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value={500}>All</option>
+                      </select>
+                    </div>
+                  </div>
                     <TableView id="fees-invoices" cards={invoiceCards}>
                     <table className="w-full text-sm text-left border-collapse">
                       <thead className="bg-surface-2/70 border-b border-line">
@@ -447,7 +496,7 @@ export default function FeesPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-line">
-                        {filteredInvoices.map((inv) => (
+                        {pagedInvoices.map((inv) => (
                           <tr key={inv.id} className="hover:bg-surface-2/70 transition-colors">
                             <td className="px-5 py-3.5 whitespace-nowrap">
                               <Link href={`/students/${inv.student.id}`} className="font-semibold text-ink hover:text-brand-700 hover:underline">{inv.student.fullName}</Link>
@@ -496,6 +545,36 @@ export default function FeesPage() {
                         ))}
                         {filteredInvoices.length === 0 && (
                           <tr><td colSpan={8} className="px-4 py-12 text-center text-ink-3">{loading ? "Loading invoices..." : "No invoices found"}</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                    </TableView>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface-2/50 px-5 py-3 text-xs text-ink-2">
+                    <span>
+                      {filteredInvoices.length > 0 ? (
+                        <>
+                          Showing <b className="text-ink">{(safeInvPage - 1) * invPageSize + 1}–{Math.min(safeInvPage * invPageSize, filteredInvoices.length)}</b> of <b className="text-ink">{filteredInvoices.length}</b> invoices
+                        </>
+                      ) : (
+                        "0 invoices"
+                      )}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="soft" disabled={safeInvPage <= 1} onClick={() => setInvPage(Math.max(1, safeInvPage - 1))}>
+                        <Icon name="chevronLeft" className="h-3.5 w-3.5" /> Prev
+                      </Button>
+                      <span className="tnum rounded-lg border border-line bg-surface px-2.5 py-1 font-semibold text-ink">
+                        Page {safeInvPage} / {totalInvPages}
+                      </span>
+                      <Button size="sm" variant="soft" disabled={safeInvPage >= totalInvPages} onClick={() => setInvPage(Math.min(totalInvPages, safeInvPage + 1))}>
+                        Next <Icon name="chevronRight" className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="hidden">
+                    <TableView id="fees-invoices-unused">
+                    <table><tbody>{false && (<tr><td></td></tr>
                         )}
                       </tbody>
                     </table>
@@ -602,7 +681,7 @@ export default function FeesPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
-                    {(defaulters?.students ?? []).map((d) => (
+                    {pagedDefaulters.map((d) => (
                       <tr key={d.student.id}>
                         <td className="px-5 py-3"><Link href={`/students/${d.student.id}`} className="font-semibold text-ink hover:text-brand-700 hover:underline">{d.student.fullName}</Link><span className="block text-xs font-mono text-ink-3">{d.student.admissionNo}</span></td>
                         <td className="px-4 py-3 text-xs text-ink-2">{d.student.class ? `${d.student.class.name} ${d.student.class.section ?? ""}` : "—"}</td>
@@ -613,6 +692,20 @@ export default function FeesPage() {
                       </tr>
                     ))}
                     {(defaulters?.students.length ?? 0) === 0 && <tr><td colSpan={6} className="px-4 py-12 text-center text-ink-3">No defaulters — every past-due invoice is settled.</td></tr>}
+                    {defList.length > defPageSize && (
+                      <tr>
+                        <td colSpan={6} className="border-t border-line bg-surface-2/50 px-5 py-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-2">
+                            <span>Showing <b>{(safeDefPage - 1) * defPageSize + 1}–{Math.min(safeDefPage * defPageSize, defList.length)}</b> of <b>{defList.length}</b> defaulters</span>
+                            <div className="flex items-center gap-2">
+                              <Button size="sm" variant="soft" disabled={safeDefPage <= 1} onClick={() => setDefPage(Math.max(1, safeDefPage - 1))}>Prev</Button>
+                              <span className="font-semibold text-ink">Page {safeDefPage} / {totalDefPages}</span>
+                              <Button size="sm" variant="soft" disabled={safeDefPage >= totalDefPages} onClick={() => setDefPage(Math.min(totalDefPages, safeDefPage + 1))}>Next</Button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </TableView>

@@ -414,4 +414,65 @@ export class AdmissionsService {
     if (!app) throw new NotFoundException('Application not found');
     return app;
   }
+
+  async summaryPdf(app: Admission & { class?: { name: string; section: string | null } | null }) {
+    const [branch, fields, docs] = await Promise.all([
+      this.prisma.branch.findUnique({ where: { id: app.branchId }, select: { name: true, location: true } }),
+      this.publishedTemplate(app.branchId, app.academicYear ?? academicYearOf()),
+      this.prisma.admissionDocument.findMany({
+        where: { admissionId: app.id, branchId: app.branchId },
+        orderBy: { createdAt: 'asc' },
+        select: { docType: true, fileName: true, sizeBytes: true, createdAt: true },
+      }),
+    ]);
+    const dyn = parseDynamic(app.dynamicData);
+    const cls = app.class ? `${app.class.name}${app.class.section ? ` - ${app.class.section}` : ''}` : null;
+    const qaRows: [string, string | null | undefined][] =
+      fields.length > 0
+        ? fields.map((f, i) => [`${i + 1}. ${f.label}${f.isRequired ? ' *' : ''}`, String(dyn[fieldKey(f.label)] || '—')])
+        : Object.entries(dyn).map(([k, v]) => [k, String(v || '—')]);
+    return buildPdf({
+      school: branch?.name ?? 'School',
+      schoolLine: branch?.location ?? undefined,
+      title: 'Admission Application Summary',
+      reference: `App ID: ${app.id.slice(0, 8).toUpperCase()} · Year: ${app.academicYear ?? academicYearOf()} · Status: ${app.status}`,
+      blocks: [
+        { kind: 'heading', text: 'Applicant & Workflow Summary' },
+        {
+          kind: 'fields',
+          rows: [
+            ['Applicant Name', app.studentName ?? '—'],
+            ['Date of Birth', app.dob ? String(app.dob).slice(0, 10) : '—'],
+            ['Parent / Guardian', app.parentName ?? '—'],
+            ['Parent Contact', app.parentContact ?? '—'],
+            ['Parent Email', app.parentEmail ?? '—'],
+            ['Parent Login ID', app.loginId ?? '—'],
+            ['Class Applied / Assigned', cls ?? '—'],
+            ['Roll Number', app.rollNo ?? 'Pending'],
+            ['House Allotment', app.house ?? 'Pending'],
+            ['Payment Status', `${app.paymentStatus}${app.feeAmount != null ? ` (INR ${app.feeAmount})` : ''}`],
+            ['Fee Receipt No.', app.receiptNo ?? '—'],
+          ],
+        },
+        ...(qaRows.length > 0
+          ? [
+              { kind: 'heading' as const, text: 'Form Responses' },
+              {
+                kind: 'fields' as const,
+                rows: qaRows,
+              },
+            ]
+          : []),
+        ...(docs.length > 0
+          ? [
+              { kind: 'heading' as const, text: `Uploaded Documents (${docs.length})` },
+              {
+                kind: 'fields' as const,
+                rows: docs.map((d) => [d.docType, `${d.fileName} (${Math.round(d.sizeBytes / 1024)} KB)`] as [string, string | null]),
+              },
+            ]
+          : []),
+      ],
+    });
+  }
 }

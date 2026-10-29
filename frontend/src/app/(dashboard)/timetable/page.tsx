@@ -81,6 +81,8 @@ export default function TimetablePage() {
   const [slotSubject, setSlotSubject] = useState("Mathematics");
   const [slotRoomId, setSlotRoomId] = useState("");
   const [slotSaving, setSlotSaving] = useState(false);
+  const [showQuickSlotModal, setShowQuickSlotModal] = useState(false);
+  const [quickTeacherId, setQuickTeacherId] = useState("");
 
   const [periodsPerDay, setPeriodsPerDay] = useState(6);
   const [workingDays, setWorkingDays] = useState<string[]>(["Mon", "Tue", "Wed", "Thu", "Fri"]);
@@ -605,6 +607,19 @@ export default function TimetablePage() {
                   <Button size="sm" variant="soft" onClick={downloadClassPdf} loading={downloading} disabled={!selectedClass}>
                     <Icon name="download" className="h-4 w-4" /> Download PDF
                   </Button>
+                  {isAdmin && (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={() => {
+                        setSlotClassId(selectedClass);
+                        setQuickTeacherId(teachers[0]?.id ?? "");
+                        setShowQuickSlotModal(true);
+                      }}
+                    >
+                      <Icon name="edit" className="h-4 w-4" /> Quick Assign / Swap Slot
+                    </Button>
+                  )}
                 </div>
               </div>
               {masterView === "week" ? (
@@ -632,7 +647,21 @@ export default function TimetablePage() {
                   </thead>
                   <tbody className="divide-y divide-line">
                     {master.map((m, idx) => (
-                      <tr key={idx} className="hover:bg-surface-2 transition-colors" style={{ animation: `fade-in 0.3s ease-out ${idx * 30}ms both`, animationName: "fade-in" }}>
+                      <tr
+                        key={idx}
+                        onClick={() => {
+                          if (!isAdmin) return;
+                          setSlotClassId(selectedClass);
+                          setSlotDay(m.day_of_week);
+                          setSlotPeriod(m.period_number);
+                          setSlotSubject(m.subject);
+                          const matchedTeacher = teachers.find((t) => t.name === m.teacher_name);
+                          setQuickTeacherId(matchedTeacher?.id ?? teachers[0]?.id ?? "");
+                          setShowQuickSlotModal(true);
+                        }}
+                        className={`hover:bg-surface-2 transition-colors ${isAdmin ? "cursor-pointer" : ""}`}
+                        style={{ animation: `fade-in 0.3s ease-out ${idx * 30}ms both`, animationName: "fade-in" }}
+                      >
                         <td className="px-4 py-3 font-semibold text-ink">{m.day_of_week}</td>
                         <td className="px-4 py-3 text-ink-2 font-mono">{m.period_number}</td>
                         <td className="px-4 py-3">{m.subject}</td>
@@ -981,6 +1010,121 @@ export default function TimetablePage() {
               <Button type="button" size="sm" variant="soft" loading={slotSaving} onClick={assignTeacherPeriodSlot}>
                 <Icon name="plus" className="h-3.5 w-3.5" /> Assign Period Slot
               </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={showQuickSlotModal}
+        onClose={() => setShowQuickSlotModal(false)}
+        title={`Quick Assign / Swap Timetable Slot — ${selectedClassLabel || "Class"}`}
+        subtitle="Select a day, period, subject, and teacher to assign or swap directly in the Master Grid."
+        size="md"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowQuickSlotModal(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              loading={slotSaving}
+              disabled={!quickTeacherId || !slotSubject.trim() || !(slotClassId || selectedClass)}
+              onClick={async () => {
+                const targetClass = slotClassId || selectedClass;
+                if (!targetClass || !quickTeacherId) return;
+                setSlotSaving(true);
+                try {
+                  await apiFetch("/api/timetable/slot", {
+                    method: "PUT",
+                    body: JSON.stringify({
+                      class_id: targetClass,
+                      day_of_week: slotDay,
+                      period_number: Number(slotPeriod),
+                      subject_name: slotSubject.trim(),
+                      teacher_id: quickTeacherId,
+                      ...(slotRoomId ? { room_id: slotRoomId } : {}),
+                    }),
+                  });
+                  await loadTabData();
+                  setShowQuickSlotModal(false);
+                  setMessage(`Updated ${slotDay} Period ${slotPeriod} → ${slotSubject.trim()}`);
+                } catch (e) {
+                  setMessage(e instanceof Error ? e.message : "Failed to update slot");
+                } finally {
+                  setSlotSaving(false);
+                }
+              }}
+            >
+              <Icon name="check" className="h-4 w-4" /> Save Timetable Slot
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Field label="Day of Week">
+              <select aria-label="Quick slot day" value={slotDay} onChange={(e) => setSlotDay(e.target.value)} className="field">
+                {DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </Field>
+            <Field label="Period">
+              <select aria-label="Quick slot period" value={String(slotPeriod)} onChange={(e) => setSlotPeriod(Number(e.target.value))} className="field">
+                {(periods.filter((p) => !p.isBreak).length > 0
+                  ? periods.filter((p) => !p.isBreak).map((p) => p.periodNumber)
+                  : [1, 2, 3, 4, 5, 6, 7, 8]
+                ).map((n) => (
+                  <option key={n} value={n}>Period {n}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Room (Optional)">
+              <select aria-label="Quick slot room" value={slotRoomId} onChange={(e) => setSlotRoomId(e.target.value)} className="field">
+                <option value="">Default room</option>
+                {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+            </Field>
+          </div>
+          <Field label="Subject" required>
+            <select aria-label="Quick slot subject" value={slotSubject} onChange={(e) => setSlotSubject(e.target.value)} className="field">
+              {schoolSubjects.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </Field>
+          <Field label="Assign Teacher (with Live Load Indicator)" required>
+            <div className="max-h-52 space-y-1.5 overflow-y-auto rounded-xl border border-line bg-surface-2/40 p-2">
+              {teachers.map((t) => {
+                const currentSlotMatch = master.find((m) => m.day_of_week === slotDay && m.period_number === slotPeriod && m.teacher_name === t.name);
+                const dayCount = master.filter((m) => m.day_of_week === slotDay && m.teacher_name === t.name).length;
+                const active = quickTeacherId === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setQuickTeacherId(t.id)}
+                    className={`flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-all ${
+                      active ? "border-brand-600 bg-brand-50 font-semibold text-brand-900 ring-1 ring-brand-500" : "border-line bg-surface hover:bg-surface-2"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-ink">{t.name}</p>
+                      <p className="truncate text-[11px] text-ink-3">{t.subjects || "General"}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {currentSlotMatch ? (
+                        <Badge tone="violet">Current slot</Badge>
+                      ) : (
+                        <Badge tone={dayCount >= t.maxPeriodsPerDay ? "rose" : "emerald"}>
+                          {dayCount}/{t.maxPeriodsPerDay} periods on {slotDay}
+                        </Badge>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+        </div>
+      </Modal>
+      <Modal open={false} onClose={() => undefined} title="">
+        <div><div><div>
             </div>
           </div>
         </div>
