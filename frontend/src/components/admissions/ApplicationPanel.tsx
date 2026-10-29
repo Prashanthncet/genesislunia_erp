@@ -5,7 +5,7 @@ import { apiDownload, apiFetch } from "@/lib/api";
 import { R, hasRole, useMe } from "@/lib/auth";
 import { Badge, Button, Field, Icon, Input, Modal, ProgressBar, Select, Skeleton, Tabs, Textarea } from "@/components/ui";
 import { confirmAction } from "@/components/confirm";
-import { Application, DocLink, PIPELINE, STATUS_TONE, docHref, fmtDate, fmtDateTime, inr, post, readUpload, stageOf } from "./shared";
+import { Application, DocLink, PIPELINE, STATUS_TONE, docHref, resolveFormLink, fmtDate, fmtDateTime, inr, post, readUpload, stageOf } from "./shared";
 
 type Detail = Application & {
   dynamic_data: Record<string, string>;
@@ -215,7 +215,7 @@ export function ApplicationPanel({
           {d.house && <Badge tone="teal">{d.house} house</Badge>}
           <Badge tone={d.paymentStatus === "Verified" ? "emerald" : d.paymentStatus === "Paid" ? "teal" : "amber"}>Fee {d.paymentStatus}</Badge>
           {d.form_link && (s === "Links Sent" || s === "Re-submit") && (
-            <a href={d.form_link} target="_blank" rel="noreferrer" className="btn-soft !px-2.5 !py-1 text-xs">Parent form <Icon name="arrowUpRight" className="h-3.5 w-3.5" /></a>
+            <a href={resolveFormLink(d.form_link)} target="_blank" rel="noreferrer" className="btn-soft !px-2.5 !py-1 text-xs">Parent form <Icon name="arrowUpRight" className="h-3.5 w-3.5" /></a>
           )}
         </div>
         <ProgressBar value={((stageOf(s) + 1) / PIPELINE.length) * 100} tone={s === "Rejected" ? "rose" : s === "Admission Complete" ? "emerald" : "brand"}

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Badge, Button, Field, Icon, IconButton, Input } from "@/components/ui";
-import { currentAcademicYear, fmtDate, post } from "./shared";
+import { currentAcademicYear, fmtDate, post, resolveFormLink } from "./shared";
 
 type Row = { parent_name: string; parent_email: string; parent_contact: string };
 type Generated = { id: string; parent_name: string; login_id: string; password: string; form_link: string; link_expires_at: string };
@@ -122,10 +122,10 @@ export function CreateForms({ notify, onCreated }: { notify: (msg: string, tone?
                     <td className="px-3 py-2"><Badge tone="amber">{fmtDate(g.link_expires_at)}</Badge></td>
                     <td className="px-3 py-2">
                       <span className="flex items-center gap-1">
-                        <a href={g.form_link} target="_blank" rel="noreferrer" className="btn-soft !px-2.5 !py-1 text-xs">
+                        <a href={resolveFormLink(g.form_link)} target="_blank" rel="noreferrer" className="btn-soft !px-2.5 !py-1 text-xs">
                           Open <Icon name="arrowUpRight" className="h-3.5 w-3.5" />
                         </a>
-                        <IconButton name="clipboard" label={`Copy link for ${g.parent_name}`} variant="ghost" onClick={() => copy(g.form_link)} />
+                        <IconButton name="clipboard" label={`Copy link for ${g.parent_name}`} variant="ghost" onClick={() => copy(resolveFormLink(g.form_link))} />
                       </span>
                     </td>
                   </tr>
