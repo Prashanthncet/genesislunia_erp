@@ -6,11 +6,12 @@ import { AuthGuard, Roles, RolesGuard } from '../auth/auth.guard';
 import { R, ROLE } from '../auth/roles';
 import { assertCanSeeStudent, assertInBranch, audit, currentStaffId, portalStudentIds, ReqWithUser } from '../common/access';
 import { buildPdf, sendPdf } from '../common/pdf';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { nextDocNo, withDocNoRetry } from './doc-no';
 import { invoiceMoney, today } from './fee-summary';
 import {
-  CreateFeeStructureDto, CreateInvoiceDto, CreatePaymentDto, GenerateInvoicesDto, UpdateFeeStructureDto,
+  CreateFeeStructureDto, CreateInvoiceDto, CreatePaymentDto, GenerateInvoicesDto, SendPendingRemindersDto, UpdateFeeStructureDto,
 } from './dto/fees.dto';
 
 /** Fee staff + the parent/student portal (portal callers are narrowed to their own child). */
@@ -24,7 +25,7 @@ const STUDENT_SELECT = {
 @Controller('fees')
 @UseGuards(AuthGuard, RolesGuard)
 export class FeesController {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private notifications: NotificationsService) {}
 
   private async schoolName(branchId: string) {
     const b = await this.prisma.branch.findUnique({ where: { id: branchId }, select: { name: true, location: true } });
@@ -259,6 +260,97 @@ export class FeesController {
     }
     await audit(this.prisma, req.user, 'CREATE', 'fee_invoice', body.class_id, `generated ${created.length} for ${body.term}`);
     return { generated: created.length, invoice_ids: created };
+  }
+
+  /**
+   * Send fee/instalment reminders strictly to parents with PENDING (unpaid or partially-paid) invoices.
+   * Paid invoices are explicitly excluded so settled parents are never spammed.
+   */
+  @Post('reminders/pending')
+  @Roles(...R.FEES_WRITE)
+  async sendPendingReminders(@Req() req: ReqWithUser, @Body() body: SendPendingRemindersDto) {
+    const branchId = req.user.branch_id;
+    if (body.class_id) await assertInBranch(this.prisma, 'class', body.class_id, branchId);
+    if (body.student_id) await assertInBranch(this.prisma, 'student', body.student_id, branchId);
+    if (body.invoice_id) await assertInBranch(this.prisma, 'feeInvoice', body.invoice_id, branchId);
+
+    const rows = await this.prisma.feeInvoice.findMany({
+      where: {
+        branchId,
+        ...(body.invoice_id ? { id: body.invoice_id } : {}),
+        ...(body.student_id ? { studentId: body.student_id } : {}),
+        ...(body.term ? { term: body.term } : {}),
+        ...(body.class_id ? { student: { classId: body.class_id } } : {}),
+      },
+      include: {
+        student: {
+          select: {
+            id: true, fullName: true, admissionNo: true, fatherName: true, motherName: true, mobileNumber: true, email: true,
+
+            class: { select: { name: true, section: true } },
+          },
+        },
+        payments: { select: { amountPaid: true } },
+      },
+      orderBy: [{ dueDate: 'asc' }],
+    });
+
+    let paidExcluded = 0;
+    let sent = 0;
+    let mocked = 0;
+    let failed = 0;
+    let skippedNoContact = 0;
+    const channel = body.channel ?? 'sms';
+    const nowStr = today();
+
+    const pendingRows = rows.filter((inv) => {
+      const m = invoiceMoney(inv, nowStr);
+      if (inv.status === 'Paid' || m.balance <= 0) {
+        paidExcluded++;
+        return false;
+      }
+      return true;
+    });
+
+    const { school } = await this.schoolName(branchId);
+    for (const inv of pendingRows) {
+      const m = invoiceMoney(inv, nowStr);
+      const recipient = channel === 'email'
+        ? (inv.student.email ?? '').trim()
+        : (inv.student.mobileNumber ?? '').trim();
+      if (!recipient) {
+        skippedNoContact++;
+        continue;
+      }
+      const parentLabel = inv.student.fatherName || inv.student.motherName || 'Parent';
+      const msg = `Dear ${parentLabel}, fee instalment for ${inv.student.fullName} (${inv.term}, Invoice ${inv.invoiceNo ?? inv.id}) has a pending balance of Rs. ${m.balance.toFixed(2)} (Due: ${inv.dueDate}). Kindly clear the pending dues at the earliest. - ${school}`;
+      const log = await this.notifications.notify({
+        branch_id: branchId,
+        channel,
+        recipient,
+        subject: `Pending Fee Instalment Reminder — ${inv.student.fullName} (${inv.term})`,
+        body: msg,
+        ref_type: 'fee_invoice_reminder',
+        ref_id: inv.id,
+      });
+      if (log.status === 'sent') sent++;
+      else if (log.status === 'mocked') mocked++;
+      else failed++;
+    }
+
+    await audit(
+      this.prisma, req.user, 'CREATE', 'fee_invoice_reminder', body.invoice_id ?? body.class_id ?? 'all',
+      `pending=${pendingRows.length} paid_excluded=${paidExcluded} sent=${sent + mocked}`,
+    );
+    return {
+      pending_invoices: pendingRows.length,
+      paid_excluded: paidExcluded,
+      dispatched: sent + mocked,
+      sent,
+      mocked,
+      failed,
+      skipped_no_contact: skippedNoContact,
+    };
   }
 
   // ─── Payments ───────────────────────────────────────────────

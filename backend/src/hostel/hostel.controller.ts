@@ -716,11 +716,12 @@ export class HostelController {
         visitorPhone: body.visitor_phone ?? null,
         whomToMeet: body.whom_to_meet.trim(),
         purpose: body.purpose ?? null,
+        visitorPhoto: body.visitor_photo || null,
         inTime: new Date().toISOString(),
         passNo: `V-${Date.now().toString().slice(-6)}`,
       },
     });
-    return { id: v.id, pass_no: v.passNo };
+    return { id: v.id, pass_no: v.passNo, visitor_photo: v.visitorPhoto };
   }
 
   @Put('visitors/:id/checkout')

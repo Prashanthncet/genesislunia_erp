@@ -1,16 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiDownload, apiFetch } from "@/lib/api";
 import { R, hasRole, useMe } from "@/lib/auth";
 import { Badge, Button, Field, Icon, Input, Modal, ProgressBar, Select, Skeleton, Tabs, Textarea } from "@/components/ui";
 import { confirmAction } from "@/components/confirm";
+import { downloadQrPng, makeQrDataUrl } from "@/lib/qr";
 import { Application, DocLink, PIPELINE, STATUS_TONE, docHref, fmtDate, fmtDateTime, inr, post, readUpload, stageOf } from "./shared";
 
 type Detail = Application & {
   dynamic_data: Record<string, string>;
-  template: { id: string; key: string; label: string }[];
+  template: { id: string; key: string; label: string; field_type?: string; is_required?: boolean }[];
   form_link: string | null;
+  qr_data_url?: string | null;
 };
 type Doc = { id: string; docType: string; fileName: string; sizeBytes: number; studentId: string | null; createdAt: string };
 type Step = { id: string; fromStatus: string | null; toStatus: string; action: string; actorRole: string | null; remarks: string | null; createdAt: string };
@@ -20,8 +22,8 @@ type ClassRow = { id: string; name: string; section: string | null };
 type Dialog = null | "resubmit" | "offline" | "verify" | "vp-back" | "sign" | "p-back" | "reject";
 
 /**
- * Application drawer: form data, documents, step timeline, notification history, and the
- * ONE action the viewer's role may take at the current status. The backend re-checks all of it.
+ * Application drawer: Google Forms-style response view, client-side + server-side QR code card,
+ * documents with filters, step timeline with filters, notification history with filters, and role actions.
  */
 export function ApplicationPanel({
   id, onClose, onChanged, notify,
@@ -41,9 +43,21 @@ export function ApplicationPanel({
   const [busy, setBusy] = useState(false);
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [classId, setClassId] = useState("");
+  const [houseChoice, setHouseChoice] = useState("");
+  const [forwardTo, setForwardTo] = useState("VP (Vice Principal)");
   const [text, setText] = useState("");
   const [ref, setRef] = useState({ reference_no: "", payment_mode: "Cash", receipt_no: "" });
   const [receiptFile, setReceiptFile] = useState<{ file_name: string; data_url: string } | null>(null);
+  const [showQr, setShowQr] = useState(false);
+
+  // Filter states across tabs
+  const [formSearch, setFormSearch] = useState("");
+  const [formFillFilter, setFormFillFilter] = useState<"all" | "filled" | "empty">("all");
+  const [docTypeFilter, setDocTypeFilter] = useState<string>("all");
+  const [docSearch, setDocSearch] = useState("");
+  const [tlRoleFilter, setTlRoleFilter] = useState<string>("all");
+  const [msgChannelFilter, setMsgChannelFilter] = useState<string>("all");
+  const [msgStatusFilter, setMsgStatusFilter] = useState<string>("all");
 
   const load = useCallback(async () => {
     try {
@@ -56,6 +70,7 @@ export function ApplicationPanel({
       setDocs(dl);
       setTl(t);
       setClassId(detail.classId ?? "");
+      setHouseChoice(detail.house ?? "");
     } catch (e) {
       notify(e instanceof Error ? e.message : "Failed to load application", "error");
     }
@@ -108,7 +123,6 @@ export function ApplicationPanel({
 
   const view = async (doc: Doc) => {
     try {
-      // Short-lived signed URL (data_url only for documents not yet moved into storage).
       const r = await apiFetch<DocLink>(`/api/admissions/documents/${doc.id}/download`);
       const url = docHref(r);
       if (!url) throw new Error("Document content is unavailable");
@@ -121,6 +135,58 @@ export function ApplicationPanel({
 
   const download = (path: string, name: string) =>
     apiDownload(path, name).catch((e) => notify(e instanceof Error ? e.message : "Download failed", "error"));
+
+  const qrTargetUrl = useMemo(() => {
+    if (!d) return "";
+    if (d.form_link) return d.form_link;
+    const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+    return `${origin}/portal/admission?app=${encodeURIComponent(d.id)}`;
+  }, [d]);
+
+  const qrImageUrl = useMemo(() => {
+    if (!d) return "";
+    return d.qr_data_url || makeQrDataUrl(qrTargetUrl);
+  }, [d, qrTargetUrl]);
+
+  const handleDownloadQr = () => {
+    if (!d) return;
+    downloadQrPng(qrTargetUrl, `admission-qr-${d.loginId ?? d.id.slice(0, 8)}.png`, qrImageUrl);
+    notify("QR code PNG downloaded");
+  };
+
+  const filteredTemplate = useMemo(() => {
+    if (!d) return [];
+    const q = formSearch.trim().toLowerCase();
+    return d.template.filter((f) => {
+      const ans = (d.dynamic_data[f.key] ?? "").trim();
+      if (formFillFilter === "filled" && !ans) return false;
+      if (formFillFilter === "empty" && ans) return false;
+      if (q && !f.label.toLowerCase().includes(q) && !ans.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [d, formSearch, formFillFilter]);
+
+  const filteredDocs = useMemo(() => {
+    const q = docSearch.trim().toLowerCase();
+    return docs.filter((doc) => {
+      if (docTypeFilter !== "all" && doc.docType !== docTypeFilter) return false;
+      if (q && !doc.fileName.toLowerCase().includes(q) && !doc.docType.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [docs, docTypeFilter, docSearch]);
+
+  const filteredSteps = useMemo(() => {
+    if (tlRoleFilter === "all") return tl.steps;
+    return tl.steps.filter((st) => (st.actorRole ?? "system") === tlRoleFilter);
+  }, [tl.steps, tlRoleFilter]);
+
+  const filteredMessages = useMemo(() => {
+    return tl.notifications.filter((n) => {
+      if (msgChannelFilter !== "all" && n.channel !== msgChannelFilter) return false;
+      if (msgStatusFilter !== "all" && n.status !== msgStatusFilter) return false;
+      return true;
+    });
+  }, [tl.notifications, msgChannelFilter, msgStatusFilter]);
 
   if (!d) {
     return (
@@ -156,11 +222,24 @@ export function ApplicationPanel({
       )}
       {s === "Fee Approved" && can(R.ADMISSION_OS) && (
         <span className="flex flex-wrap items-center gap-2 max-md:w-full max-md:[&>*]:flex-1">
+          <Badge tone="violet">Roll No: Automatic</Badge>
           <Select aria-label="Class for roll number" value={classId} onChange={(e) => setClassId(e.target.value)} className="w-auto max-md:min-w-[9rem]">
             <option value="">{d.class ? `${d.class.name}${d.class.section ? `-${d.class.section}` : ""} (applied)` : "Class…"}</option>
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name}{c.section ? `-${c.section}` : ""}</option>)}
           </Select>
-          <Button variant="primary" loading={busy} onClick={() => act("allocate", classId ? { class_id: classId } : {}, "Roll number and house assigned")}>
+          <Select aria-label="House allotment" value={houseChoice} onChange={(e) => setHouseChoice(e.target.value)} className="w-auto max-md:min-w-[9rem]">
+            <option value="">House: Auto (Balanced)</option>
+            {["Shivaji", "Tagore", "Ashoka", "Raman", "Red", "Blue", "Green", "Yellow"].map((h) => (
+              <option key={h} value={h}>House: {h} (Manual)</option>
+            ))}
+          </Select>
+          <Select aria-label="Forward stage (Clerk -> AO -> VP)" value={forwardTo} onChange={(e) => setForwardTo(e.target.value)} className="w-auto max-md:min-w-[10rem]">
+            <option value="Clerk (OS) -> AO -> VP">Stage: Clerk → AO → VP</option>
+            <option value="AO (Admission Officer)">Forward to: AO (Admission Officer)</option>
+            <option value="VP (Vice Principal)">Forward to: VP (Vice Principal)</option>
+            <option value="Clerk (OS)">Forward to: Clerk (OS)</option>
+          </Select>
+          <Button variant="primary" loading={busy} onClick={() => act("allocate", { ...(classId ? { class_id: classId } : {}), ...(houseChoice ? { house: houseChoice } : {}), ...(forwardTo ? { forward_to: forwardTo } : {}) }, "Roll number (automatic) and house assigned")}>
             <Icon name="key" className="h-4 w-4" /> Assign roll &amp; house
           </Button>
         </span>
@@ -209,51 +288,130 @@ export function ApplicationPanel({
       subtitle={`${d.academicYear ?? ""} · Parent ${d.parentName ?? "—"} · Login ${d.loginId ?? "—"}`}
       footer={actions}>
       <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={STATUS_TONE[s] ?? "sky"}>{s}</Badge>
-          {d.rollNo && <Badge tone="violet">Roll {d.rollNo}</Badge>}
-          {d.house && <Badge tone="teal">{d.house} house</Badge>}
-          <Badge tone={d.paymentStatus === "Verified" ? "emerald" : d.paymentStatus === "Paid" ? "teal" : "amber"}>Fee {d.paymentStatus}</Badge>
-          {d.form_link && (s === "Links Sent" || s === "Re-submit") && (
-            <a href={d.form_link} target="_blank" rel="noreferrer" className="btn-soft !px-2.5 !py-1 text-xs">Parent form <Icon name="arrowUpRight" className="h-3.5 w-3.5" /></a>
-          )}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={STATUS_TONE[s] ?? "sky"}>{s}</Badge>
+            {d.rollNo && <Badge tone="violet">Roll {d.rollNo}</Badge>}
+            {d.house && <Badge tone="teal">{d.house} house</Badge>}
+            <Badge tone={d.paymentStatus === "Verified" ? "emerald" : d.paymentStatus === "Paid" ? "teal" : "amber"}>Fee {d.paymentStatus}</Badge>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {d.form_link && (
+              <a href={d.form_link} target="_blank" rel="noreferrer" className="btn-soft !px-2.5 !py-1 text-xs">
+                Parent form <Icon name="arrowUpRight" className="h-3.5 w-3.5" />
+              </a>
+            )}
+            <Button size="sm" variant="soft" onClick={() => setShowQr((v) => !v)}>
+              <Icon name="qr" className="h-3.5 w-3.5" /> {showQr ? "Hide QR" : "QR Code"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={handleDownloadQr}>
+              <Icon name="download" className="h-3.5 w-3.5" /> QR PNG
+            </Button>
+          </div>
         </div>
+
+        {showQr && (
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-brand-200 bg-brand-50/40 p-4">
+            <div className="flex items-center gap-4">
+              {qrImageUrl && (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img src={qrImageUrl} alt="Application QR Code" className="h-24 w-24 rounded-xl border border-line bg-white p-1.5 shadow-2xs" />
+              )}
+              <div className="space-y-1">
+                <p className="text-[13.5px] font-bold text-ink">Admission Form QR Code</p>
+                <p className="text-xs text-ink-2">
+                  Parent Login ID: <code className="font-mono font-bold">{d.loginId ?? "—"}</code> · Valid until: <b>{fmtDate(d.linkExpiresAt)}</b>
+                </p>
+                <p className="text-[11.5px] text-brand-700 break-all">{qrTargetUrl}</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" variant="soft" onClick={() => void navigator.clipboard?.writeText(qrTargetUrl).then(() => notify("Link copied"))}>
+                <Icon name="copy" className="h-3.5 w-3.5" /> Copy Link
+              </Button>
+              <Button size="sm" variant="primary" onClick={handleDownloadQr}>
+                <Icon name="download" className="h-3.5 w-3.5" /> Download QR
+              </Button>
+            </div>
+          </div>
+        )}
+
         <ProgressBar value={((stageOf(s) + 1) / PIPELINE.length) * 100} tone={s === "Rejected" ? "rose" : s === "Admission Complete" ? "emerald" : "brand"}
           label={`Step ${stageOf(s) + 1} of ${PIPELINE.length}`} />
         {d.remarks && <p className="rounded-lg bg-surface-2 px-3 py-2 text-[13px] text-ink-2"><b>Latest remarks:</b> {d.remarks}</p>}
 
         <Tabs value={tab} onChange={setTab} tabs={[
-          { id: "form" as const, label: "Form" },
-          { id: "docs" as const, label: "Documents", count: docs.length },
-          { id: "timeline" as const, label: "Timeline", count: tl.steps.length },
-          { id: "messages" as const, label: "Notifications", count: tl.notifications.length },
+          { id: "form" as const, label: "Form Responses", icon: "admissions", count: d.template.length },
+          { id: "docs" as const, label: "Documents", icon: "file", count: docs.length },
+          { id: "timeline" as const, label: "Timeline", icon: "activity", count: tl.steps.length },
+          { id: "messages" as const, label: "Notifications", icon: "bell", count: tl.notifications.length },
         ]} />
 
         {tab === "form" && (
-          <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 max-md:grid-cols-1">
-            {d.template.map((f) => (
-              <div key={f.id}>
-                <dt className="text-[11.5px] uppercase tracking-wide text-ink-3">{f.label}</dt>
-                <dd className="text-[13.5px] font-semibold text-ink max-md:[overflow-wrap:anywhere]">{d.dynamic_data[f.key] || "—"}</dd>
+          <div className="space-y-4">
+            {d.template.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface-2/50 p-2.5">
+                <div className="relative min-w-[12rem] flex-1">
+                  <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-3" />
+                  <Input
+                    value={formSearch}
+                    onChange={(e) => setFormSearch(e.target.value)}
+                    placeholder="Search question or response…"
+                    className="pl-8 !py-1.5 text-xs"
+                  />
+                </div>
+                <Select
+                  aria-label="Filter form responses"
+                  value={formFillFilter}
+                  onChange={(e) => setFormFillFilter(e.target.value as "all" | "filled" | "empty")}
+                  className="w-40 !py-1.5 text-xs"
+                >
+                  <option value="all">All fields ({d.template.length})</option>
+                  <option value="filled">Answered only</option>
+                  <option value="empty">Empty only</option>
+                </Select>
               </div>
-            ))}
-            {[
-              ["Class applied", d.class ? `${d.class.name}${d.class.section ? `-${d.class.section}` : ""}` : "—"],
-              ["Parent email", d.parentEmail ?? "—"],
-              ["Parent phone", d.parentContact ?? "—"],
-              ["Link valid until", fmtDate(d.linkExpiresAt)],
-              ["Submitted", fmtDateTime(d.submittedAt)],
-              ["Fee", `${inr(d.feeAmount)}${d.paymentRef ? ` · ref ${d.paymentRef}` : ""}`],
-              ["Receipt", d.receiptNo ?? "—"],
-              ["Principal signature", d.signatureName ? `${d.signatureName} · ${fmtDateTime(d.signedAt)}` : "—"],
-            ].map(([k, v]) => (
-              <div key={k}>
-                <dt className="text-[11.5px] uppercase tracking-wide text-ink-3">{k}</dt>
-                <dd className="text-[13.5px] font-semibold text-ink max-md:[overflow-wrap:anywhere]">{v}</dd>
-              </div>
-            ))}
+            )}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {filteredTemplate.map((f, idx) => {
+                const val = d.dynamic_data[f.key];
+                return (
+                  <div key={f.id} className="rounded-xl border border-line border-l-4 border-l-brand-600 bg-surface p-3.5 shadow-2xs">
+                    <p className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">
+                      {idx + 1}. {f.label}
+                    </p>
+                    <p className="mt-1 text-[14px] font-bold text-ink max-md:[overflow-wrap:anywhere]">
+                      {val || <span className="font-normal italic text-ink-3">Not answered</span>}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="rounded-xl border border-line bg-surface-2/40 p-4">
+              <p className="mb-2.5 text-xs font-bold uppercase tracking-wider text-ink-3">Application &amp; Office Summary</p>
+              <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 max-md:grid-cols-1">
+                {[
+                  ["Class applied", d.class ? `${d.class.name}${d.class.section ? `-${d.class.section}` : ""}` : "—"],
+                  ["Parent email", d.parentEmail ?? "—"],
+                  ["Parent phone", d.parentContact ?? "—"],
+                  ["Link valid until", fmtDate(d.linkExpiresAt)],
+                  ["Submitted", fmtDateTime(d.submittedAt)],
+                  ["Fee", `${inr(d.feeAmount)}${d.paymentRef ? ` · ref ${d.paymentRef}` : ""}`],
+                  ["Receipt", d.receiptNo ?? "—"],
+                  ["Principal signature", d.signatureName ? `${d.signatureName} · ${fmtDateTime(d.signedAt)}` : "—"],
+                ].map(([k, v]) => (
+                  <div key={k}>
+                    <dt className="text-[11.5px] uppercase tracking-wide text-ink-3">{k}</dt>
+                    <dd className="text-[13.5px] font-semibold text-ink max-md:[overflow-wrap:anywhere]">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+
             {s === "Admission Complete" && (
-              <div className="sm:col-span-2 flex flex-wrap gap-2 border-t border-line pt-3">
+              <div className="flex flex-wrap gap-2 border-t border-line pt-3">
                 <span className="text-[12px] text-ink-3">Hand-off data:</span>
                 {(["tc", "id-card", "fee"] as const).map((k) => (
                   <Button key={k} size="sm" variant="ghost" onClick={async () => {
@@ -270,16 +428,36 @@ export function ApplicationPanel({
                 ))}
               </div>
             )}
-          </dl>
+          </div>
         )}
 
         {tab === "docs" && (
-          <div className="space-y-2">
-            {docs.length === 0 && <p className="text-[13px] text-ink-3">No documents uploaded.</p>}
-            {docs.map((doc) => (
-              <div key={doc.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-3 py-2">
+          <div className="space-y-3">
+            {docs.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface-2/50 p-2.5">
+                <div className="relative min-w-[12rem] flex-1">
+                  <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-3" />
+                  <Input
+                    value={docSearch}
+                    onChange={(e) => setDocSearch(e.target.value)}
+                    placeholder="Filter by file name…"
+                    className="pl-8 !py-1.5 text-xs"
+                  />
+                </div>
+                <Select aria-label="Filter document type" value={docTypeFilter} onChange={(e) => setDocTypeFilter(e.target.value)} className="w-48 !py-1.5 text-xs">
+                  <option value="all">All document types ({docs.length})</option>
+                  {Array.from(new Set(docs.map((x) => x.docType))).map((dt) => (
+                    <option key={dt} value={dt}>{dt.replace(/_/g, " ")}</option>
+                  ))}
+                </Select>
+              </div>
+            )}
+
+            {filteredDocs.length === 0 && <p className="text-[13px] text-ink-3">No documents match.</p>}
+            {filteredDocs.map((doc) => (
+              <div key={doc.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line px-3.5 py-2.5">
                 <span className="flex items-center gap-2 text-[13px] max-md:min-w-0 max-md:flex-wrap">
-                  <Icon name="file" className="h-4 w-4 text-ink-3 max-md:shrink-0" />
+                  <Icon name="file" className="h-4 w-4 text-brand-700 max-md:shrink-0" />
                   <b className="capitalize">{doc.docType.replace(/_/g, " ")}</b>
                   <span className="text-ink-3 max-md:break-all">{doc.fileName} · {Math.ceil(doc.sizeBytes / 1024)} KB</span>
                   {doc.studentId && <Badge tone="emerald">Archived to student</Badge>}
@@ -299,8 +477,7 @@ export function ApplicationPanel({
                 {preview.mime === "application/pdf"
                   ? (preview.url.startsWith("data:")
                     ? <iframe title={preview.name} src={preview.url} className="h-[28rem] w-full rounded" />
-                    : /* X-Frame-Options blocks framing a signed URL; open the PDF in a tab instead */
-                      <p className="py-6 text-center text-[13px] text-ink-3">PDF document — use <b>Open</b> to view it (link valid for a few minutes).</p>)
+                    : <p className="py-6 text-center text-[13px] text-ink-3">PDF document — use <b>Open</b> to view it (link valid for a few minutes).</p>)
                   : /* eslint-disable-next-line @next/next/no-img-element */
                     <img src={preview.url} alt={preview.name} className="mx-auto max-h-[28rem] rounded" />}
               </div>
@@ -309,34 +486,62 @@ export function ApplicationPanel({
         )}
 
         {tab === "timeline" && (
-          <ol className="space-y-2.5">
-            {tl.steps.map((st) => (
-              <li key={st.id} className="flex gap-3 text-[13px]">
-                <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand-500" aria-hidden />
-                <div className="max-md:min-w-0 max-md:[overflow-wrap:anywhere]">
-                  <p><b>{st.toStatus}</b> <span className="text-ink-3">· {st.action.replace(/_/g, " ")} by {st.actorRole ?? "—"} · {fmtDateTime(st.createdAt)}</span></p>
-                  {st.remarks && <p className="text-ink-2">“{st.remarks}”</p>}
-                </div>
-              </li>
-            ))}
-          </ol>
+          <div className="space-y-3">
+            {tl.steps.length > 1 && (
+              <div className="flex justify-end">
+                <Select aria-label="Filter timeline by actor role" value={tlRoleFilter} onChange={(e) => setTlRoleFilter(e.target.value)} className="w-48 !py-1.5 text-xs">
+                  <option value="all">All roles ({tl.steps.length})</option>
+                  {Array.from(new Set(tl.steps.map((s) => s.actorRole ?? "system"))).map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </Select>
+              </div>
+            )}
+            <ol className="space-y-2.5">
+              {filteredSteps.map((st) => (
+                <li key={st.id} className="flex gap-3 text-[13px]">
+                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand-500" aria-hidden />
+                  <div className="max-md:min-w-0 max-md:[overflow-wrap:anywhere]">
+                    <p><b>{st.toStatus}</b> <span className="text-ink-3">· {st.action.replace(/_/g, " ")} by {st.actorRole ?? "—"} · {fmtDateTime(st.createdAt)}</span></p>
+                    {st.remarks && <p className="text-ink-2">“{st.remarks}”</p>}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
         )}
 
         {tab === "messages" && (
-          <ul className="space-y-2">
-            {tl.notifications.length === 0 && <p className="text-[13px] text-ink-3">No messages sent yet.</p>}
-            {tl.notifications.map((n) => (
-              <li key={n.id} className="rounded-lg border border-line px-3 py-2 text-[12.5px] max-md:[overflow-wrap:anywhere]">
-                <p className="flex flex-wrap items-center gap-2">
-                  <Badge tone="sky">{n.channel}</Badge>
-                  <b>{n.subject ?? "—"}</b>
-                  <span className="text-ink-3 max-md:min-w-0">→ {n.recipient} · {fmtDateTime(n.createdAt)}</span>
-                  <Badge tone={n.status === "failed" ? "rose" : n.status === "sent" ? "emerald" : "slate"}>{n.status}</Badge>
-                </p>
-                <p className="mt-1 text-ink-2">{n.body}</p>
-              </li>
-            ))}
-          </ul>
+          <div className="space-y-3">
+            {tl.notifications.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface-2/50 p-2.5">
+                <Select aria-label="Filter channel" value={msgChannelFilter} onChange={(e) => setMsgChannelFilter(e.target.value)} className="w-40 !py-1.5 text-xs">
+                  <option value="all">All channels</option>
+                  <option value="email">Email</option>
+                  <option value="sms">SMS</option>
+                </Select>
+                <Select aria-label="Filter delivery status" value={msgStatusFilter} onChange={(e) => setMsgStatusFilter(e.target.value)} className="w-40 !py-1.5 text-xs">
+                  <option value="all">All statuses</option>
+                  <option value="sent">Sent</option>
+                  <option value="failed">Failed</option>
+                </Select>
+              </div>
+            )}
+            <ul className="space-y-2">
+              {filteredMessages.length === 0 && <p className="text-[13px] text-ink-3">No messages match.</p>}
+              {filteredMessages.map((n) => (
+                <li key={n.id} className="rounded-lg border border-line px-3 py-2 text-[12.5px] max-md:[overflow-wrap:anywhere]">
+                  <p className="flex flex-wrap items-center gap-2">
+                    <Badge tone="sky">{n.channel}</Badge>
+                    <b>{n.subject ?? "—"}</b>
+                    <span className="text-ink-3 max-md:min-w-0">→ {n.recipient} · {fmtDateTime(n.createdAt)}</span>
+                    <Badge tone={n.status === "failed" ? "rose" : n.status === "sent" ? "emerald" : "slate"}>{n.status}</Badge>
+                  </p>
+                  <p className="mt-1 text-ink-2">{n.body}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
 
@@ -403,13 +608,12 @@ export function ApplicationPanel({
               Sign &amp; confirm admission
             </Button>
           </>}>
-          <div className="space-y-3 text-[13px]">
-            <p className="text-ink-2">
-              Signing confirms the admission of <b>{d.studentName}</b> (roll {d.rollNo}, {d.house} house). The student master record is created,
-              documents are archived and the parent is linked — this cannot be undone.
+          <div className="space-y-3">
+            <p className="text-[12.5px] text-ink-3">
+              Confirming creates the student master record, moves the admission documents into the student file, links the parent portal login, and unlocks the admission letter.
             </p>
-            <Field label="Type your full name as signature" required>
-              <Input value={text} maxLength={120} onChange={(e) => setText(e.target.value)} className="font-display text-[15px]" />
+            <Field label="Principal signature (full name)" required>
+              <Input value={text} maxLength={120} onChange={(e) => setText(e.target.value)} />
             </Field>
           </div>
         </Modal>

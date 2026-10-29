@@ -20,7 +20,7 @@ import { buildPdf, PdfBlock, sendPdf } from '../common/pdf';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthGuard, Roles, RolesGuard } from '../auth/auth.guard';
 import { R, ROLE, isPortalRole } from '../auth/roles';
-import { AuthUser, ReqWithUser, assertInBranch, audit, currentStaffId, portalStudentIds } from '../common/access';
+import { AuthUser, ReqWithUser, assertInBranch, audit, currentStaffId, portalStudentIds, teacherClassIds } from '../common/access';
 import { SubstitutionService } from './substitution.service';
 import { DAY_ORDER, WEEK_DAYS, classLabel, dayOfWeek, periodOut, sortPeriods, todayISO, weekDates } from './timetable.util';
 import {
@@ -42,7 +42,11 @@ export class TimetableController {
   /** Staff: class must be in their school. Portal: class must be their child's / their own. */
   private async assertCanSeeClass(user: AuthUser, classId: string) {
     await assertInBranch(this.prisma, 'class', classId, user.branch_id);
-    if (!isPortalRole(user.role)) return;
+    if (!isPortalRole(user.role)) {
+      const tIds = await teacherClassIds(this.prisma, user);
+      if (tIds && !tIds.includes(classId)) throw new ForbiddenException('You can only view timetables for classes assigned to you');
+      return;
+    }
     const allowed = await this.portalClassIds(user);
     if (!allowed.includes(classId)) throw new ForbiddenException('You can only view your own class timetable');
   }
@@ -65,7 +69,7 @@ export class TimetableController {
   @Get('classes')
   @Roles(...CLASS_READ)
   async classes(@Req() req: ReqWithUser) {
-    const portal = isPortalRole(req.user.role) ? await this.portalClassIds(req.user) : null;
+    const portal = isPortalRole(req.user.role) ? await this.portalClassIds(req.user) : await teacherClassIds(this.prisma, req.user);
     return this.prisma.class.findMany({
       where: { branchId: req.user.branch_id, ...(portal ? { id: { in: portal } } : {}) },
       orderBy: [{ name: 'asc' }, { section: 'asc' }],
@@ -135,7 +139,7 @@ export class TimetableController {
   }
 
   @Put('teachers/:id')
-  @Roles(...R.ADMINS)
+  @Roles(...R.TIMETABLE_ADMIN)
   async updateTeacher(@Req() req: ReqWithUser, @Param('id') id: string, @Body() body: UpdateTeacherDto) {
     const res = await this.prisma.staff.updateMany({
       where: { id, branchId: req.user.branch_id, role: 'Teacher' },

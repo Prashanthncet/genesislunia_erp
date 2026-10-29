@@ -656,9 +656,9 @@ export default function ClassesPage() {
             >
               <option value="">Not assigned</option>
               {editing?.classTeacher && !staff.some((t) => t.id === editing.classTeacher!.id) && (
-                <option value={editing.classTeacher.id}>{editing.classTeacher.name}</option>
+                <option value={editing.classTeacher.id}>{plainName(editing.classTeacher.name)}</option>
               )}
-              {staff.map((t) => <option key={t.id} value={t.id}>{t.name}{t.role ? ` — ${t.role}` : ""}</option>)}
+              {staff.map((t) => <option key={t.id} value={t.id}>{plainName(t.name)}{t.role ? ` — ${t.role}` : ""}</option>)}
             </Select>
           </Field>
 

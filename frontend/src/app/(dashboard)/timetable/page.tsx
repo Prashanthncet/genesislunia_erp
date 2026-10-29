@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiDownload, apiFetch } from "@/lib/api";
 import { confirmAction } from "@/components/confirm";
-import { Badge, Button, Icon, PageHeader, Reveal, StatCard, Tabs, useToast } from "@/components/ui";
+import { Badge, Button, Field, Icon, Input, Modal, PageHeader, Reveal, StatCard, Tabs, useToast } from "@/components/ui";
 import { DayView } from "@/components/timetable/DayView";
 
 import { TableView } from "@/components/TableView";
@@ -68,6 +68,19 @@ export default function TimetablePage() {
   const [subs, setSubs] = useState<Substitution[]>([]);
   const [masterView, setMasterView] = useState<"week" | "day">("week");
   const [downloading, setDownloading] = useState(false);
+  const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
+  const [subjectDraft, setSubjectDraft] = useState<string[]>([]);
+  const [customSubject, setCustomSubject] = useState("");
+  const [schoolSubjects, setSchoolSubjects] = useState<string[]>([
+    "Mathematics", "English", "Science", "Physics", "Chemistry", "Biology", "Hindi", "Sanskrit", "Social Studies", "History", "Geography", "Computer Science", "Physical Drill",
+  ]);
+  const [maxPeriodsDraft, setMaxPeriodsDraft] = useState(6);
+  const [slotClassId, setSlotClassId] = useState("");
+  const [slotDay, setSlotDay] = useState("Mon");
+  const [slotPeriod, setSlotPeriod] = useState(1);
+  const [slotSubject, setSlotSubject] = useState("Mathematics");
+  const [slotRoomId, setSlotRoomId] = useState("");
+  const [slotSaving, setSlotSaving] = useState(false);
 
   const [periodsPerDay, setPeriodsPerDay] = useState(6);
   const [workingDays, setWorkingDays] = useState<string[]>(["Mon", "Tue", "Wed", "Thu", "Fri"]);
@@ -101,6 +114,15 @@ export default function TimetablePage() {
       setPeriods(p ?? []);
       setClasses(c ?? []);
       if (c?.length) setSelectedClass(c[0].id);
+      if (!portal) {
+        apiFetch<{ name: string }[]>("/api/academics/subjects")
+          .then((subs) => {
+            if (Array.isArray(subs) && subs.length > 0) {
+              setSchoolSubjects((prev) => Array.from(new Set([...subs.map((s) => s.name), ...prev])));
+            }
+          })
+          .catch(() => undefined);
+      }
     } catch {
       setMessage("Failed to load timetable data");
     } finally {
@@ -136,6 +158,77 @@ export default function TimetablePage() {
 
   // A preview belongs to one class — drop it when the admin switches class.
   useEffect(() => setPreview(null), [selectedClass]);
+
+  const openAssignSubjects = (t: Teacher) => {
+    const current = (t.subjects ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    setEditingTeacher(t);
+    setSubjectDraft(current);
+    setCustomSubject("");
+    setMaxPeriodsDraft(t.maxPeriodsPerDay ?? 6);
+    setSlotClassId(selectedClass || classes[0]?.id || "");
+    setSlotDay("Mon");
+    setSlotPeriod(1);
+    setSlotSubject(current[0] || schoolSubjects[0] || "Mathematics");
+    setSlotRoomId("");
+  };
+
+  const toggleDraftSubject = (subj: string) => {
+    setSubjectDraft((prev) => (prev.includes(subj) ? prev.filter((x) => x !== subj) : [...prev, subj]));
+  };
+
+  const addCustomSubject = () => {
+    const trimmed = customSubject.trim();
+    if (!trimmed) return;
+    if (!subjectDraft.includes(trimmed)) setSubjectDraft((prev) => [...prev, trimmed]);
+    if (!schoolSubjects.includes(trimmed)) setSchoolSubjects((prev) => [...prev, trimmed]);
+    setCustomSubject("");
+  };
+
+  const saveTeacherSubjects = async () => {
+    if (!editingTeacher) return;
+    setSaving(true);
+    try {
+      const nextSubjects = subjectDraft.join(", ");
+      await apiFetch(`/api/timetable/teachers/${editingTeacher.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ subjects: nextSubjects, max_periods_per_day: maxPeriodsDraft }),
+      });
+      setTeachers((prev) => prev.map((t) => (t.id === editingTeacher.id ? { ...t, subjects: nextSubjects || null, maxPeriodsPerDay: maxPeriodsDraft } : t)));
+      setMessage(`Updated subjects & periods for ${editingTeacher.name}`);
+      setEditingTeacher(null);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Failed to update subjects");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const assignTeacherPeriodSlot = async () => {
+    if (!editingTeacher || !slotClassId || !slotSubject.trim()) return;
+    setSlotSaving(true);
+    try {
+      await apiFetch("/api/timetable/slot", {
+        method: "PUT",
+        body: JSON.stringify({
+          class_id: slotClassId,
+          day_of_week: slotDay,
+          period_number: Number(slotPeriod),
+          subject_name: slotSubject.trim(),
+          teacher_id: editingTeacher.id,
+          ...(slotRoomId ? { room_id: slotRoomId } : {}),
+        }),
+      });
+      if (!subjectDraft.includes(slotSubject.trim())) {
+        setSubjectDraft((prev) => [...prev, slotSubject.trim()]);
+      }
+      await loadTabData();
+      setMessage(`Assigned ${editingTeacher.name} to ${slotSubject.trim()} (${slotDay} · Period ${slotPeriod})`);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Failed to assign timetable period");
+    } finally {
+      setSlotSaving(false);
+    }
+  };
 
   const markAbsent = async (teacherId: string) => {
     const name = teachers.find((t) => t.id === teacherId)?.name ?? "this teacher";
@@ -289,6 +382,9 @@ export default function TimetablePage() {
               <Meter value={t.maxPeriodsPerDay} max={8} tone={loadTone} label="Max periods / day" caption={`${t.maxPeriodsPerDay} / 8`} />
             </CardBody>
             {isAdmin && <CardFooter>
+              <Button size="sm" variant="ghost" onClick={() => openAssignSubjects(t)} aria-label={`Assign subjects to ${t.name}`}>
+                <Icon name="book" className="h-3.5 w-3.5" /> Assign Subjects
+              </Button>
               <Button size="sm" variant="soft" onClick={() => markAbsent(t.id)} aria-label={`Mark ${t.name} absent`}>
                 <Icon name="clock" className="h-3.5 w-3.5" /> Mark Absent
               </Button>
@@ -700,9 +796,14 @@ export default function TimetablePage() {
                           </Badge>
                         </td>
                         <td className="px-5 py-3.5 whitespace-nowrap text-right">
-                          <Button variant="soft" disabled={!isAdmin} onClick={() => markAbsent(t.id)} className="!px-3 !py-1.5">
-                            <Icon name="clock" className="h-3.5 w-3.5" /> Mark Absent
-                          </Button>
+                          <div className="inline-flex items-center justify-end gap-2">
+                            <Button variant="ghost" disabled={!isAdmin} onClick={() => openAssignSubjects(t)} className="!px-3 !py-1.5">
+                              <Icon name="book" className="h-3.5 w-3.5" /> Assign Subjects
+                            </Button>
+                            <Button variant="soft" disabled={!isAdmin} onClick={() => markAbsent(t.id)} className="!px-3 !py-1.5">
+                              <Icon name="clock" className="h-3.5 w-3.5" /> Mark Absent
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -730,6 +831,160 @@ export default function TimetablePage() {
           )}
         </Reveal>
       </div>
+
+      <Modal
+        open={editingTeacher !== null}
+        onClose={() => setEditingTeacher(null)}
+        title={editingTeacher ? `Assign subjects — ${editingTeacher.name}` : "Assign subjects"}
+        subtitle="Select subjects taught by this teacher or add a new subject."
+        footer={
+          <>
+            <Button onClick={() => setEditingTeacher(null)} disabled={saving}>Cancel</Button>
+            <Button variant="primary" onClick={saveTeacherSubjects} loading={saving}>
+              <Icon name="check" className="h-4 w-4" /> Save subjects
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <p className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-ink-3">Available subjects</p>
+            <div className="flex flex-wrap gap-2">
+              {schoolSubjects.map((subj) => {
+                const active = subjectDraft.includes(subj);
+                return (
+                  <button
+                    key={subj}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => toggleDraftSubject(subj)}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition ${
+                      active
+                        ? "bg-brand-700 text-white shadow-sm ring-1 ring-brand-700"
+                        : "bg-surface-2 text-ink-2 ring-1 ring-line hover:bg-surface-3"
+                    }`}
+                  >
+                    <Icon name={active ? "check" : "plus"} className="h-3.5 w-3.5" />
+                    {subj}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <Field label="Add custom subject" hint="Type a subject name and press Add to include it.">
+            <div className="flex items-center gap-2">
+              <Input
+                value={customSubject}
+                onChange={(e) => setCustomSubject(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addCustomSubject();
+                  }
+                }}
+                placeholder="e.g. NDA Mathematics"
+                aria-label="Custom subject"
+              />
+              <Button type="button" variant="soft" onClick={addCustomSubject} disabled={!customSubject.trim()}>
+                <Icon name="plus" className="h-4 w-4" /> Add
+              </Button>
+            </div>
+          </Field>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-line bg-surface-2/60 p-3">
+              <p className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">Assigned ({subjectDraft.length})</p>
+              <p className="mt-1 text-[13px] font-medium text-ink">
+                {subjectDraft.length > 0 ? subjectDraft.join(", ") : "No subjects selected"}
+              </p>
+            </div>
+            <Field label="Max Periods / Day">
+              <Input
+                type="number"
+                min={1}
+                max={10}
+                value={String(maxPeriodsDraft)}
+                onChange={(e) => setMaxPeriodsDraft(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+                aria-label="Max periods per day"
+              />
+            </Field>
+          </div>
+
+          <div className="rounded-xl border border-line bg-surface-2/40 p-3.5 space-y-3">
+            <p className="text-[12px] font-semibold uppercase tracking-wide text-ink-2">Assign Teacher Subject &amp; Period Slot</p>
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              <Field label="Class">
+                <select
+                  aria-label="Slot class"
+                  value={slotClassId}
+                  onChange={(e) => setSlotClassId(e.target.value)}
+                  className="field !py-1.5 text-xs"
+                >
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name} {c.section ?? ""}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Day">
+                <select
+                  aria-label="Slot day"
+                  value={slotDay}
+                  onChange={(e) => setSlotDay(e.target.value)}
+                  className="field !py-1.5 text-xs"
+                >
+                  {DAYS.slice(0, 6).map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Period">
+                <select
+                  aria-label="Slot period"
+                  value={String(slotPeriod)}
+                  onChange={(e) => setSlotPeriod(Number(e.target.value))}
+                  className="field !py-1.5 text-xs"
+                >
+                  {(periods.filter((p) => !p.isBreak).length > 0
+                    ? periods.filter((p) => !p.isBreak).map((p) => p.periodNumber)
+                    : [1, 2, 3, 4, 5, 6, 7, 8]
+                  ).map((n) => (
+                    <option key={n} value={n}>Period {n}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Subject">
+                <select
+                  aria-label="Slot subject"
+                  value={slotSubject}
+                  onChange={(e) => setSlotSubject(e.target.value)}
+                  className="field !py-1.5 text-xs"
+                >
+                  {Array.from(new Set([...subjectDraft, ...schoolSubjects])).map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <select
+                aria-label="Slot room"
+                value={slotRoomId}
+                onChange={(e) => setSlotRoomId(e.target.value)}
+                className="field !w-auto !py-1.5 text-xs"
+              >
+                <option value="">Room (optional)</option>
+                {rooms.map((r) => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+              </select>
+              <Button type="button" size="sm" variant="soft" loading={slotSaving} onClick={assignTeacherPeriodSlot}>
+                <Icon name="plus" className="h-3.5 w-3.5" /> Assign Period Slot
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

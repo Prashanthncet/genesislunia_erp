@@ -28,7 +28,7 @@ export type NavGroup = { group: string; items: NavItem[] };
 
 const STAFF = R.STAFF;
 /** Staff who request gate passes from the Leaves screen (they have no Gate Desk). */
-const TEACHING_PASS: readonly string[] = [ROLE.TEACHER, ROLE.HOD];
+
 const uniq = (...lists: readonly (readonly string[])[]) => Array.from(new Set(lists.flat()));
 
 /** Staff navigation. Portal roles never see any of it. */
@@ -58,8 +58,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { name: "Fees", href: "/fees", icon: "fees", hint: "Invoices, collections and receipts", roles: R.FEES_READ },
       // Teachers/HODs still request + track gate passes from /leaves; everyone with the
       // Gate Desk works passes there instead, so for them this screen is just "Leaves".
-      { name: "Leaves & Passes", href: "/leaves", icon: "leaves", hint: "Leave requests, approvals and gate-pass requests", roles: TEACHING_PASS },
-      { name: "Leaves", href: "/leaves", icon: "leaves", hint: "My leave, leave approvals and student leave", roles: STAFF.filter((r) => !TEACHING_PASS.includes(r)) },
+
+      { name: "Leaves", href: "/leaves", icon: "leaves", hint: "My leave, leave approvals and student leave", roles: STAFF },
       { name: "Gate Desk", href: "/gate", icon: "door", hint: "Issue passes, verify exit codes, check in, pass records, visitors", roles: R.GATE_DESK },
       { name: "Hostel", href: "/hostel", icon: "hostel", hint: "Rooms, beds, roll-call and visitors", roles: R.HOSTEL_ADMIN },
     ],
@@ -107,7 +107,7 @@ export const PORTAL_NAV_GROUPS: NavGroup[] = [
       { name: "Leave requests", href: "/portal/leaves", icon: "leaves", hint: "Ask for leave and track approvals", roles: PARENT_ONLY },
       { name: "Gate passes", href: "/portal/gate-passes", icon: "door", hint: "Gate pass history and status", roles: PARENT_ONLY },
       { name: "Notices & messages", href: "/portal/messages", icon: "bell", hint: "School notices plus the SMS and email sent to you", roles: PORTAL },
-      { name: "Admission status", href: "/portal/admission", icon: "admissions", hint: "Your application and its progress", roles: PARENT_ONLY },
+      { name: "Admissions & Form", href: "/portal/admission", icon: "admissions", hint: "Fill your admission form, upload documents, and track progress", roles: PARENT_ONLY },
     ],
   },
 ];

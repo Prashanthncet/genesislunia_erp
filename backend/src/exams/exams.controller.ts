@@ -6,7 +6,7 @@ import type { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthGuard, Roles, RolesGuard } from '../auth/auth.guard';
 import { R, ROLE } from '../auth/roles';
-import { assertCanSeeStudent, assertInBranch, audit, AuthUser, currentStaffId, portalStudentIds } from '../common/access';
+import { assertCanSeeStudent, assertInBranch, audit, AuthUser, currentStaffId, portalStudentIds, teacherClassIds } from '../common/access';
 import { sendPdf } from '../common/pdf';
 import { ReportCacheService } from '../reports/report-cache.service';
 import {
@@ -79,6 +79,14 @@ export class ExamsController {
       const kids = await this.prisma.student.findMany({ where: { id: { in: portal }, branchId: req.user.branch_id }, select: { classId: true } });
       const ids = kids.map((k) => k.classId).filter((c): c is string => !!c);
       classFilter = { OR: [{ classId: { in: classId ? ids.filter((i) => i === classId) : ids } }, { classId: null }] };
+    } else {
+      const teacherScope = await teacherClassIds(this.prisma, req.user);
+      if (teacherScope !== null) {
+        if (classId && !teacherScope.includes(classId)) {
+          throw new ForbiddenException('You can only view exams for classes assigned to you');
+        }
+        classFilter = classId ? { classId } : { classId: { in: teacherScope } };
+      }
     }
     return this.prisma.exam.findMany({
       where: { branchId: req.user.branch_id, ...classFilter, ...(term ? { term } : {}), ...(year ? { academicYear: year } : {}) },
@@ -318,6 +326,11 @@ export class ExamsController {
   @Roles(...MARKS_WRITE)
   async roster(@Req() req: Req_, @Param('classId') classId: string) {
     await assertInBranch(this.prisma, 'class', classId, req.user.branch_id);
+    await assertInBranch(this.prisma, 'class', classId, req.user.branch_id);
+    const teacherScope = await teacherClassIds(this.prisma, req.user);
+    if (teacherScope !== null && !teacherScope.includes(classId)) {
+      throw new ForbiddenException('You can only view students in classes assigned to you');
+    }
     return this.prisma.student.findMany({
       where: { branchId: req.user.branch_id, classId, status: 'Active' },
       select: { id: true, fullName: true, admissionNo: true, rollNo: true },
@@ -334,6 +347,10 @@ export class ExamsController {
   @Post('report-cards/class/:classId')
   @Roles(...MARKS_WRITE)
   async generateClass(@Req() req: Req_, @Param('classId') classId: string, @Query() q: Record<string, string>) {
+    const teacherScope = await teacherClassIds(this.prisma, req.user);
+    if (teacherScope !== null && !teacherScope.includes(classId)) {
+      throw new ForbiddenException('You can only generate report cards for classes assigned to you');
+    }
     const f = cardFilters(q);
     const cards = await this.cards.classCards(req.user.branch_id, classId, f);
     const qs = new URLSearchParams(Object.entries({ term: f.term, academic_year: f.academicYear, from: f.from, to: f.to }).filter(([, v]) => v) as [string, string][]).toString();
@@ -364,6 +381,10 @@ export class ExamsController {
   @Get('report-cards/class/:classId/pdf')
   @Roles(...MARKS_WRITE)
   async classPdf(@Req() req: Req_, @Param('classId') classId: string, @Query() q: Record<string, string>, @Res() res: Response) {
+    const teacherScope = await teacherClassIds(this.prisma, req.user);
+    if (teacherScope !== null && !teacherScope.includes(classId)) {
+      throw new ForbiddenException('You can only export report cards for classes assigned to you');
+    }
     const f = cardFilters(q);
     const cards = await this.cards.classCards(req.user.branch_id, classId, f);
     const className = cards[0]?.student.class_name ?? classId;
@@ -436,6 +457,10 @@ export class ExamsController {
   async publication(@Req() req: Req_, @Query('class_id') classId?: string, @Query('term') term?: string, @Query('academic_year') year?: string) {
     if (!classId || !term || !year) throw new BadRequestException('class_id, term and academic_year are required');
     const f = cardFilters({ term, academic_year: year });
+    const teacherScope = await teacherClassIds(this.prisma, req.user);
+    if (teacherScope !== null && !teacherScope.includes(classId)) {
+      throw new ForbiddenException('You can only view report cards for classes assigned to you');
+    }
     await assertInBranch(this.prisma, 'class', classId, req.user.branch_id);
     const cards = await this.cards.classCards(req.user.branch_id, classId, f);
     const snaps = await this.prisma.reportCardSnapshot.findMany({
