@@ -39,7 +39,7 @@ import {
   UploadDocumentDto,
   ValidateDto,
 } from './admissions.dto';
-import { AdmissionsService, LINK_DAYS, formLink, toPublicField } from './admissions.service';
+import { AdmissionsService, LINK_DAYS, formLink, formQrDataUrl, formQrPng, toPublicField } from './admissions.service';
 import {
   ADM,
   Actor,
@@ -319,14 +319,19 @@ export class AdmissionsController {
       },
       orderBy: { createdAt: 'desc' },
     });
-    return apps.map((a) => ({
+    return Promise.all(apps.map(async (a) => {
+      const link = [ADM.LINKS_SENT, ADM.RESUBMIT].includes(a.status as never) && a.token ? formLink(a.token) : null;
+      const qr = a.token ? await formQrDataUrl(formLink(a.token)) : null;
+      return {
       id: a.id,
       status: a.status,
       academic_year: a.academicYear,
       student_name: a.studentName,
       remarks: a.remarks,
       link_expires_at: a.linkExpiresAt,
-      form_link: [ADM.LINKS_SENT, ADM.RESUBMIT].includes(a.status as never) && a.token ? formLink(a.token) : null,
+      token: [ADM.LINKS_SENT, ADM.RESUBMIT, ADM.VALIDATED].includes(a.status as never) ? a.token : null,
+      form_link: link,
+      qr_data_url: qr,
       fee_amount: a.feeAmount,
       payment_status: a.paymentStatus,
       can_pay: a.status === ADM.VALIDATED,
@@ -345,6 +350,7 @@ export class AdmissionsController {
             }
           : null,
       letter_available: a.status === ADM.COMPLETE,
+      };
     }));
   }
 
@@ -405,11 +411,14 @@ export class AdmissionsController {
     const app = await this.svc.getInBranch(req.user.branch_id, id);
     const fields = app.academicYear ? await this.svc.publishedTemplate(app.branchId, app.academicYear) : [];
     const canSeeLink = (R.ADMISSION_SETUP as string[]).includes(req.user.role);
+    const link = canSeeLink && app.token ? formLink(app.token) : null;
+    const qrDataUrl = link ? await formQrDataUrl(link) : null;
     return {
       ...view(app),
       dynamic_data: parseDynamic(app.dynamicData),
       template: fields.map(toPublicField),
-      form_link: canSeeLink && app.token ? formLink(app.token) : null,
+      form_link: link,
+      qr_data_url: qrDataUrl,
     };
   }
 
@@ -558,9 +567,11 @@ export class AdmissionsController {
     });
     const countOf = (h: string) =>
       (counts.find((c) => c.house === h)?._count ?? 0) + (pendingCounts.find((c) => c.house === h)?._count ?? 0);
-    const house = houses.reduce((min, h) => (countOf(h) < countOf(min) ? h : min), houses[0]);
+    const autoHouse = houses.reduce((min, h) => (countOf(h) < countOf(min) ? h : min), houses[0]);
+    const house = body.house?.trim() ? body.house.trim() : autoHouse;
+    const stepRemarks = body.forward_to?.trim() ? `Forwarded to ${body.forward_to.trim()}` : undefined;
 
-    await this.step(req, id, 'assign_roll', undefined, { rollNo, house, classId: cls?.id ?? app.classId });
+    await this.step(req, id, 'assign_roll', stepRemarks, { rollNo, house, classId: cls?.id ?? app.classId });
     return { message: 'Roll No and House allocated', roll_no: rollNo, house, class_id: cls?.id ?? null };
   }
 
@@ -616,7 +627,26 @@ export class AdmissionsController {
     const app = await this.svc.getInBranch(req.user.branch_id, id);
     await this.svc.notifyParent(app, 'Admission form link re-issued',
       `Your admission form link: ${formLink(token)} (valid until ${linkExpiresAt.toISOString().slice(0, 10)}). Login ID: ${app.loginId ?? '-'}`);
-    return { message: 'Link re-issued', form_link: formLink(token), link_expires_at: linkExpiresAt };
+    const reissuedLink = formLink(token);
+    const qrDataUrl = await formQrDataUrl(reissuedLink);
+    return { message: 'Link re-issued', form_link: reissuedLink, qr_data_url: qrDataUrl, link_expires_at: linkExpiresAt };
+  }
+
+  /** QR code PNG for an admission application's form link. */
+  @Get(':id/qr.png')
+  @Roles(...R.ADMISSION_READ, ROLE.PARENT)
+  async qrPng(@Req() req: Req, @Param('id') id: string, @Res() res: Response) {
+    const app = await this.svc.getInBranch(req.user.branch_id, id);
+    if (req.user.role === ROLE.PARENT && app.parentUserId !== req.user.sub) {
+      throw new NotFoundException('Application not found');
+    }
+    const targetUrl = app.token
+      ? formLink(app.token)
+      : `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/portal/admission`;
+    const buf = await formQrPng(targetUrl);
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Disposition', `inline; filename="admission-qr-${app.id.slice(0, 8)}.png"`);
+    return res.send(buf);
   }
 
   @Post(':id/documents')

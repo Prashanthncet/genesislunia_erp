@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import * as QRCode from 'qrcode';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Admission, AdmissionField } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -19,6 +20,23 @@ import {
 
 export const LINK_DAYS = 15;
 const DAY = 86_400_000;
+
+export async function formQrDataUrl(url: string): Promise<string> {
+  return QRCode.toDataURL(url, {
+    margin: 1,
+    width: 240,
+    color: { dark: '#0f172a', light: '#ffffff' },
+  });
+}
+
+export async function formQrPng(url: string): Promise<Buffer> {
+  return QRCode.toBuffer(url, {
+    type: 'png',
+    margin: 1,
+    width: 320,
+    color: { dark: '#0f172a', light: '#ffffff' },
+  });
+}
 
 export function formLink(token: string): string {
   return `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/admission-form?token=${token}`;
@@ -99,6 +117,9 @@ export class AdmissionsService {
         if (f.fieldType === 'date' && Number.isNaN(Date.parse(value))) errors.push(`${f.label} must be a date`);
         if (f.fieldType === 'number' && !/^-?\d+(\.\d+)?$/.test(value)) errors.push(`${f.label} must be a number`);
         if (f.fieldType === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) errors.push(`${f.label} must be an email`);
+        if ((f.fieldType === 'phone' || /\b(phone|mobile|contact|whatsapp)\b/i.test(f.label)) && !/^\d{10}$/.test(value)) {
+          errors.push(`${f.label} must be a 10-digit phone number (numbers only)`);
+        }
         if (f.validationRule) {
           let re: RegExp | null = null;
           try {
@@ -206,7 +227,8 @@ export class AdmissionsService {
         `(valid until ${linkExpiresAt.toISOString().slice(0, 10)}). Parent portal login ID: ${loginId}, password: ${password}`,
       [password],
     );
-    return { id: app.id, parent_name: p.parent_name, login_id: loginId, password, token, form_link: link, link_expires_at: linkExpiresAt };
+    const qrDataUrl = await formQrDataUrl(link);
+    return { id: app.id, parent_name: p.parent_name, login_id: loginId, password, token, form_link: link, qr_data_url: qrDataUrl, link_expires_at: linkExpiresAt };
   }
 
   /**

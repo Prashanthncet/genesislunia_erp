@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { apiDownload, apiFetch } from "@/lib/api";
 import { hasRole, isPortal, R, useMe } from "@/lib/auth";
+import { NUMBER_RE } from "@/lib/validation";
 import { Badge, Button, EmptyState, Icon, Input, PageHeader, ProgressBar, Reveal, Select, useToast } from "@/components/ui";
 
 import { TableView } from "@/components/TableView";
@@ -72,6 +73,10 @@ export default function FeesPage() {
   const [stClass, setStClass] = useState("");
   const [stType, setStType] = useState("");
   const [stAmount, setStAmount] = useState("");
+  const [structureClassFilter, setStructureClassFilter] = useState("");
+  const [structureHeadFilter, setStructureHeadFilter] = useState("");
+  const [structureSearch, setStructureSearch] = useState("");
+  const [reminding, setReminding] = useState("");
 
   useEffect(() => {
     if (!message) return;
@@ -118,6 +123,40 @@ export default function FeesPage() {
   };
   const receipt = (id: string, no: string | null) => download(`rc-${id}`, `/api/fees/payments/${id}/receipt.pdf`, `receipt-${no ?? id}.pdf`);
   const invoicePdf = (id: string, no: string | null) => download(`inv-${id}`, `/api/fees/invoices/${id}/invoice.pdf`, `invoice-${no ?? id}.pdf`);
+
+  const sendPendingReminders = async (opts?: { invoice_id?: string; student_id?: string; label?: string }) => {
+    const key = opts?.invoice_id ?? opts?.student_id ?? "all";
+    const targetLabel = opts?.label ?? "all parents with pending fee instalments";
+    if (!opts?.invoice_id && !opts?.student_id) {
+      if (!(await confirmAction({
+        title: "Send instalment reminder to pending parents only?",
+        text: "Only parents with unpaid or partially-paid fee instalments will receive an SMS reminder. Settled/paid invoices are automatically excluded.",
+        confirmText: "Send to Pending Parents",
+        tone: "primary",
+      }))) return;
+    }
+    setReminding(key);
+    try {
+      const res = await apiFetch<{ pending_invoices: number; paid_excluded: number; dispatched: number; skipped_no_contact: number }>(
+        "/api/fees/reminders/pending",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            ...(opts?.invoice_id ? { invoice_id: opts.invoice_id } : {}),
+            ...(opts?.student_id ? { student_id: opts.student_id } : {}),
+            channel: "sms",
+          }),
+        },
+      );
+      setMessage(
+        `Instalment reminder sent for ${targetLabel}: ${res.dispatched} pending parent(s) notified (${res.paid_excluded} paid excluded)`,
+      );
+    } catch (e) {
+      setMessage(`Failed: ${e instanceof Error ? e.message : ""}`);
+    } finally {
+      setReminding("");
+    }
+  };
 
   const generateInvoices = async () => {
     if (!genClass) return setMessage("Select class (required)");
@@ -231,7 +270,6 @@ export default function FeesPage() {
             </CardBody>
             <CardFooter className="!justify-between">
               <span className="font-mono text-[11.5px] text-ink-3">{inv.invoiceNo ?? ""}</span>
-              {/* z-[2]: the card's hover glow/border layers sit at z-index 1 — keep the actions above them. */}
               <div className="relative z-[2] flex flex-wrap items-center justify-end gap-1.5">
                 <Button type="button" size="sm" variant="ghost" loading={busy === `inv-${inv.id}`} onClick={() => invoicePdf(inv.id, inv.invoiceNo)} aria-label={`Download invoice ${inv.invoiceNo ?? ""} PDF`}>
                   <Icon name="download" className="h-3.5 w-3.5" /> Invoice PDF
@@ -242,13 +280,92 @@ export default function FeesPage() {
                   </Button>
                 ))}
                 {canWrite && !settled && (
-                  <Button type="button" size="sm" variant="primary" onClick={() => { setPayInvoice(inv.id); setPayAmount(String(inv.balance)); setMessage(`Ready to collect ${fmt(inv.balance)} from ${inv.student.fullName}`); }}>
-                    <Icon name="fees" className="h-3.5 w-3.5" /> Collect
-                  </Button>
+                  <>
+                    <Button type="button" size="sm" variant="soft" loading={reminding === inv.id} onClick={() => sendPendingReminders({ invoice_id: inv.id, label: inv.student.fullName })}>
+                      <Icon name="bell" className="h-3.5 w-3.5" /> Remind Parent
+                    </Button>
+                    <Button type="button" size="sm" variant="primary" onClick={() => { setPayInvoice(inv.id); setPayAmount(String(inv.balance)); setMessage(`Ready to collect ${fmt(inv.balance)} from ${inv.student.fullName}`); }}>
+                      <Icon name="fees" className="h-3.5 w-3.5" /> Collect
+                    </Button>
+                  </>
+                )}
+                {portal && !settled && (
+                  <Link href="/portal/fees" className="btn btn-primary btn-sm">
+                    <Icon name="wallet" className="h-3.5 w-3.5" /> Pay Fees
+                  </Link>
                 )}
               </div>
             </CardFooter>
           </RecordCard>
+          </StaggerItem>
+        );
+      })}
+    </CardGrid>
+  );
+
+  const uniqueFeeHeads = Array.from(new Set(structures.map((st) => st.feeType))).sort();
+  const filteredStructures = structures.filter((st) => {
+    if (structureClassFilter && st.classId !== structureClassFilter) return false;
+    if (structureHeadFilter && st.feeType !== structureHeadFilter) return false;
+    if (structureSearch.trim()) {
+      const q = structureSearch.trim().toLowerCase();
+      const clsLabel = `${st.class.name} ${st.class.section ?? ""}`.toLowerCase();
+      if (!st.feeType.toLowerCase().includes(q) && !clsLabel.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const defaulterCards = (
+    <CardGrid min="19rem" empty={<CardEmpty title="No defaulters" hint="Every past-due invoice is settled." icon="check" />}>
+      {(defaulters?.students ?? []).map((d, index) => {
+        const className = d.student.class ? `${d.student.class.name} ${d.student.class.section ?? ""}`.trim() : "—";
+        const severe = d.days_overdue > 60;
+        return (
+          <StaggerItem key={d.student.id} delay={Math.min(index, 8) * 40}>
+            <RecordCard rail={severe ? "danger" : "warn"}>
+              <CardBody>
+                <CardTitle
+                  lead={<Monogram text={initials(d.student.fullName)} tone={severe ? "danger" : "warn"} shape="circle" />}
+                  title={<Link href={`/students/${d.student.id}`} className="hover:text-brand-700 hover:underline">{d.student.fullName}</Link>}
+                  subtitle={<span className="font-mono">{d.student.admissionNo} · {className}</span>}
+                  aside={
+                    <Badge tone={severe ? "rose" : "amber"}>
+                      {d.days_overdue} {d.days_overdue === 1 ? "day" : "days"} overdue
+                    </Badge>
+                  }
+                />
+                <div className="grid grid-cols-2 gap-3 rounded-xl border border-line bg-surface-2/80 p-3.5">
+                  <div>
+                    <p className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-ink-3">Overdue Amount</p>
+                    <p className="tnum mt-0.5 text-[20px] font-bold leading-tight text-danger-ink">{fmt(d.overdue_amount)}</p>
+                  </div>
+                  <div className="border-l border-line pl-3">
+                    <p className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-ink-3">Days Overdue</p>
+                    <p className={`tnum mt-0.5 text-[20px] font-bold leading-tight ${severe ? "text-danger-ink" : "text-warn-ink"}`}>
+                      {d.days_overdue} <span className="text-[12px] font-semibold">days</span>
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Chip icon="layers">{className}</Chip>
+                  <Chip icon="receipt" tone="danger">{d.overdue_invoices} overdue {d.overdue_invoices === 1 ? "invoice" : "invoices"}</Chip>
+                  <Chip icon="calendar" tone="warn">Oldest due {formatDate(d.oldest_due)}</Chip>
+                </div>
+              </CardBody>
+              {canWrite && (
+                <CardFooter className="!justify-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="soft"
+                    loading={reminding === d.student.id}
+                    onClick={() => sendPendingReminders({ student_id: d.student.id, label: d.student.fullName })}
+                  >
+                    <Icon name="bell" className="h-3.5 w-3.5" /> Remind Pending Parent
+                  </Button>
+                </CardFooter>
+              )}
+            </RecordCard>
           </StaggerItem>
         );
       })}
@@ -304,6 +421,11 @@ export default function FeesPage() {
                   <option value="Unpaid">Unpaid</option>
                 </select>
                 </MobileFilters>
+                {canWrite && (
+                  <Button type="button" size="sm" variant="soft" loading={reminding === "all"} onClick={() => sendPendingReminders()}>
+                    <Icon name="bell" className="h-4 w-4" /> Send Instalment Reminder (Pending Parents Only)
+                  </Button>
+                )}
               </div>
             </Reveal>
             <Reveal delay={150}>
@@ -354,9 +476,19 @@ export default function FeesPage() {
                                   </Button>
                                 ))}
                                 {canWrite && inv.balance > 0 && (
-                                  <Button size="sm" variant="primary" onClick={() => { setPayInvoice(inv.id); setPayAmount(String(inv.balance)); }}>
-                                    <Icon name="fees" className="h-3.5 w-3.5" /> Collect
-                                  </Button>
+                                  <>
+                                    <Button size="sm" variant="soft" loading={reminding === inv.id} onClick={() => sendPendingReminders({ invoice_id: inv.id, label: inv.student.fullName })}>
+                                      <Icon name="bell" className="h-3.5 w-3.5" /> Remind
+                                    </Button>
+                                    <Button size="sm" variant="primary" onClick={() => { setPayInvoice(inv.id); setPayAmount(String(inv.balance)); }}>
+                                      <Icon name="fees" className="h-3.5 w-3.5" /> Collect
+                                    </Button>
+                                  </>
+                                )}
+                                {portal && inv.balance > 0 && (
+                                  <Link href="/portal/fees" className="btn btn-primary btn-sm">
+                                    <Icon name="wallet" className="h-3.5 w-3.5" /> Pay Fees
+                                  </Link>
                                 )}
                               </div>
                             </td>
@@ -452,9 +584,16 @@ export default function FeesPage() {
                   <h3 className="font-semibold text-ink">Fee defaulters</h3>
                   <p className="text-xs text-ink-3">Invoices past their due date with a balance, as of {defaulters ? formatDate(defaulters.as_of) : "—"}</p>
                 </div>
-                <span className="font-mono text-sm font-bold text-danger-ink">{fmt(defaulters?.total_overdue ?? 0)} overdue</span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="font-mono text-sm font-bold text-danger-ink">{fmt(defaulters?.total_overdue ?? 0)} overdue</span>
+                  {canWrite && (defaulters?.count ?? 0) > 0 && (
+                    <Button type="button" size="sm" variant="soft" loading={reminding === "all"} onClick={() => sendPendingReminders()}>
+                      <Icon name="bell" className="h-3.5 w-3.5" /> Remind All Pending Parents
+                    </Button>
+                  )}
+                </div>
               </div>
-              <TableView id="fees-defaulters" mobileHide={["Overdue invoices", "Oldest due"]}>
+              <TableView id="fees-defaulters" cards={defaulterCards}>
                 <table className="w-full text-sm text-left">
                   <thead className="bg-surface-2/70 border-b border-line">
                     <tr className="text-[11px] font-bold text-ink-2 uppercase tracking-wider">
@@ -469,7 +608,7 @@ export default function FeesPage() {
                         <td className="px-4 py-3 text-xs text-ink-2">{d.student.class ? `${d.student.class.name} ${d.student.class.section ?? ""}` : "—"}</td>
                         <td className="px-4 py-3 text-right tnum">{d.overdue_invoices}</td>
                         <td className="px-4 py-3 text-xs tnum">{formatDate(d.oldest_due)}</td>
-                        <td className="px-4 py-3 text-right tnum"><Badge tone={d.days_overdue > 60 ? "rose" : "amber"}>{d.days_overdue}</Badge></td>
+                        <td className="px-4 py-3 text-right tnum"><Badge tone={d.days_overdue > 60 ? "rose" : "amber"}>{d.days_overdue} days</Badge></td>
                         <td className="px-4 py-3 text-right font-mono text-xs font-bold text-danger-ink">{fmt(d.overdue_amount)}</td>
                       </tr>
                     ))}
@@ -485,6 +624,54 @@ export default function FeesPage() {
           <Reveal>
             <div className={`grid grid-cols-1 gap-6 max-md:gap-4 ${canWrite ? "lg:grid-cols-3" : ""}`}>
               <div className={`${canWrite ? "lg:col-span-2" : ""} rounded-xl border border-line bg-white shadow-soft overflow-hidden`}>
+                <div className="flex flex-wrap items-center gap-3 border-b border-line p-4">
+                  <div className="relative min-w-[180px] flex-1">
+                    <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
+                    <Input
+                      type="search"
+                      value={structureSearch}
+                      onChange={(e) => setStructureSearch(e.target.value)}
+                      placeholder="Search fee head or class…"
+                      aria-label="Search fee structure"
+                      className="!pl-9"
+                    />
+                  </div>
+                  <Select
+                    aria-label="Filter fee structure by class"
+                    value={structureClassFilter}
+                    onChange={(e) => setStructureClassFilter(e.target.value)}
+                    className="w-auto max-md:!w-full"
+                  >
+                    <option value="">All classes</option>
+                    {classes.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name} {c.section ?? ""}</option>
+                    ))}
+                  </Select>
+                  <Select
+                    aria-label="Filter fee structure by fee head"
+                    value={structureHeadFilter}
+                    onChange={(e) => setStructureHeadFilter(e.target.value)}
+                    className="w-auto max-md:!w-full"
+                  >
+                    <option value="">All fee heads</option>
+                    {uniqueFeeHeads.map((h) => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </Select>
+                  {(structureClassFilter || structureHeadFilter || structureSearch.trim()) && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setStructureClassFilter("");
+                        setStructureHeadFilter("");
+                        setStructureSearch("");
+                      }}
+                    >
+                      Clear filter
+                    </Button>
+                  )}
+                </div>
                 <TableView id="fees-structures">
                   <table className="w-full text-sm text-left">
                     <thead className="bg-surface-2/70 border-b border-line">
@@ -493,7 +680,7 @@ export default function FeesPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line">
-                      {structures.map((st) => (
+                      {filteredStructures.map((st) => (
                         <tr key={st.id}>
                           <td className="px-5 py-3 text-xs text-ink-2">{st.class.name} {st.class.section ?? ""}</td>
                           <td className="px-4 py-3 font-semibold text-ink">{st.feeType}</td>
@@ -505,7 +692,7 @@ export default function FeesPage() {
                           )}
                         </tr>
                       ))}
-                      {structures.length === 0 && <tr><td colSpan={canWrite ? 4 : 3} className="px-4 py-12 text-center text-ink-3">No fee structures defined</td></tr>}
+                      {filteredStructures.length === 0 && <tr><td colSpan={canWrite ? 4 : 3} className="px-4 py-12 text-center text-ink-3">{structures.length === 0 ? "No fee structures defined" : "No fee structures match the current filter"}</td></tr>}
                     </tbody>
                   </table>
                 </TableView>

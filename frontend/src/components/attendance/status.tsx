@@ -2,8 +2,7 @@
 
 /**
  * One look for attendance status everywhere (mark sheet, register, calendars, student
- * profile, portal): Present = ok (green), Absent = danger (red), Late = warn (amber),
- * OD = info (blue, "OD" label), Leave = neutral. Colour is always paired with text.
+ * profile, portal): Present = ok (green), Absent = danger (red).
  *
  * The % rule mirrors backend/src/attendance/attendance-math.ts — keep them in sync.
  */
@@ -16,10 +15,8 @@ export type AttStatus = "Present" | "Absent" | "Late" | "OD" | "Leave";
 export const ATT_STATUSES: AttStatus[] = ["Present", "Absent", "Late", "OD", "Leave"];
 
 /**
- * What the mark sheet puts in front of a teacher: Present or Absent, nothing else.
- * The other three are still recorded and displayed everywhere (Late/OD rows from earlier
- * terms, approved leave pre-filled from the leave register), so ATT_STATUSES stays the
- * full set for rendering, tallies and filters.
+ * Attendance status options restricted to Present (P) and Absent (A).
+ * OD and Leave are removed from the attendance status options.
  */
 export const MARK_STATUSES: AttStatus[] = ["Present", "Absent"];
 
@@ -51,10 +48,14 @@ export const STATUS_META: Record<AttStatus, Meta> = {
 
 /** Long names for tooltips / screen readers. */
 export const STATUS_LONG: Record<AttStatus, string> = {
-  Present: "Present", Absent: "Absent", Late: "Late (counts as present)", OD: "On Duty (counts as present)", Leave: "Approved leave (not counted)",
+  Present: "Present (P)",
+  Absent: "Absent (A)",
+  Late: "Late (counts as present)",
+  OD: "On Duty (counts as present)",
+  Leave: "Approved leave (not counted)",
 };
 
-/** Normalises legacy values ('On Leave') onto the five statuses. */
+/** Normalises legacy values ('On Leave') onto the statuses. */
 export function normStatus(s: string | null | undefined): AttStatus | null {
   if (!s) return null;
   if (s === "On Leave") return "Leave";
@@ -67,7 +68,7 @@ export const metaOf = (s: string | null | undefined) => {
 };
 
 export const ATTENDANCE_RULE_TEXT =
-  "Attendance % = (Present + Late + OD) ÷ (Present + Late + OD + Absent). Approved leave and Sundays are not counted.";
+  "Attendance % = Present ÷ (Present + Absent). Sundays are not counted.";
 
 /** Who can open a student's attendance calendar (mirrors the backend CALENDAR_READ). */
 export const ATTENDANCE_READ: string[] = [
@@ -82,7 +83,7 @@ export function pctTone(p: number | null | undefined): "ok" | "warn" | "danger" 
 
 export function StatusTag({ status, title }: { status: string; title?: string }) {
   const m = metaOf(status);
-  const label = m?.label ?? status;
+  const label = m ? `${m.label} (${m.short})` : status;
   return (
     <span
       title={title ?? (m ? STATUS_LONG[normStatus(status)!] : status)}
@@ -94,7 +95,7 @@ export function StatusTag({ status, title }: { status: string; title?: string })
   );
 }
 
-/** Legend: colour + code + meaning, and the % rule. Phones get the card design. */
+/** Legend: colour + code + meaning (restricted to P and A), and the % rule. */
 export function AttendanceLegend({ showRule = true, extra }: { showRule?: boolean; extra?: ReactNode }) {
   return (
     <>
@@ -107,7 +108,7 @@ export function AttendanceLegend({ showRule = true, extra }: { showRule?: boolea
           <h2 className="text-[20px] font-bold leading-tight text-brand-900 max-md:!text-[16px]">Attendance Legend &amp; Calculation</h2>
         </div>
         <ul className="px-4" aria-label="Attendance legend">
-          {ATT_STATUSES.map((s) => (
+          {MARK_STATUSES.map((s) => (
             <li key={s} className="flex items-center gap-3 border-b border-line py-3 last:border-0">
               <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl text-[15px] max-md:!text-[13.5px] font-bold ${STATUS_META[s].cell} ring-1 ring-inset`} aria-hidden>
                 {STATUS_META[s].short}
@@ -124,20 +125,16 @@ export function AttendanceLegend({ showRule = true, extra }: { showRule?: boolea
               Attendance %
             </p>
             <p className="mt-2 rounded-xl bg-white px-3 py-3 text-center text-[14.5px] font-semibold leading-relaxed text-ink">
-              Attendance % = (Present + Late + OD)<br />÷ (Present + Late + OD + Absent)
+              Attendance % = Present ÷ (Present + Absent)
             </p>
           </div>
         )}
-        <div className="mx-3 mb-3 flex items-start gap-2.5 rounded-2xl bg-info-soft/60 px-3 py-3">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/70 text-info-ink"><Icon name="info" className="h-4 w-4" /></span>
-          <p className="border-l-2 border-info-line pl-2.5 text-[14px] leading-relaxed text-ink-2">Approved leave and Sundays are not counted.</p>
-        </div>
       </section>
 
-      {/* Tablets / desktop: the compact inline legend (unchanged). */}
+      {/* Tablets / desktop: the compact inline legend. */}
       <div className="hidden space-y-1.5 text-[12px] text-ink-2 md:block">
         <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5" aria-label="Attendance legend">
-          {ATT_STATUSES.map((s) => (
+          {MARK_STATUSES.map((s) => (
             <li key={s} className="flex items-center gap-1.5">
               <span className={`grid h-5 min-w-5 place-items-center rounded px-1 text-[10px] font-bold ring-1 ${STATUS_META[s].cell}`} aria-hidden>
                 {STATUS_META[s].short}

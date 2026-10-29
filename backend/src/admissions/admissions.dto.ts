@@ -83,7 +83,7 @@ export class ParentInviteDto {
   @IsOptional() @IsEmail() @MaxLength(160)
   parent_email?: string;
 
-  @IsOptional() @Matches(/^\+?[0-9 -]{7,16}$/, { message: 'parent_contact must be a phone number' })
+  @IsOptional() @Matches(/^\d{10}$/, { message: 'parent_contact must be a 10-digit phone number (numbers only)' })
   parent_contact?: string;
 }
 
@@ -145,7 +145,14 @@ export class FeeApproveDto {
 
 export class AllocateDto {
   @IsOptional() @IsString() @MaxLength(60)
+  @IsOptional() @IsString() @MaxLength(60)
   class_id?: string;
+
+  @IsOptional() @IsString() @MaxLength(60)
+  house?: string;
+
+  @IsOptional() @IsString() @MaxLength(80)
+  forward_to?: string;
 }
 
 export class SignDto {

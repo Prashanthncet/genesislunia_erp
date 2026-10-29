@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { apiDownload, apiFetch } from "@/lib/api";
 import { hasRole, isPortal, R, useMe } from "@/lib/auth";
 import {
-  Badge, Button, Card, CardHead, EmptyState, Icon, MailLink, PageHeader, PhoneLink, ProgressBar, Skeleton, StatCard, Tabs, useToast,
+  Badge, Button, Card, CardHead, EmptyState, Field, Icon, Input, MailLink, Modal, PageHeader, PhoneLink, ProgressBar, Skeleton, StatCard, Tabs, useToast,
 } from "@/components/ui";
 import { TableView } from "@/components/TableView";
 import { DocLink, docHref } from "@/components/admissions/shared";
@@ -43,6 +43,22 @@ type Profile = {
 
 type TabId = "overview" | "attendance" | "fees" | "academics" | "documents";
 
+const ID_TEMPLATES = [
+  { id: "classic", name: "Classic Institutional (Navy)", badge: "Default", headerBg: "bg-brand-900 text-white", desc: "Standard portrait layout with full student & guardian particulars" },
+  { id: "modern", name: "Modern Split Grid", badge: "2-Col", headerBg: "bg-sky-900 text-white", desc: "Two-column tabular badge layout with prominent house & roll number" },
+  { id: "compact", name: "Compact Lanyard Card", badge: "Compact", headerBg: "bg-emerald-900 text-white", desc: "Streamlined essential fields for quick gate & library scanning" },
+  { id: "crest", name: "Royal Crest & Motto", badge: "Ceremonial", headerBg: "bg-amber-900 text-white", desc: "Formal ceremonial layout with custom school motto banner" },
+] as const;
+
+const ID_FIELD_OPTIONS = [
+  { key: "roll_no", label: "Roll No" },
+  { key: "house", label: "House" },
+  { key: "blood_group", label: "Blood Group" },
+  { key: "dob", label: "Date of Birth" },
+  { key: "emergency_contact", label: "Emergency Contact" },
+  { key: "valid_until", label: "Valid Until" },
+] as const;
+
 /** 2-up KPI tiles at 360px are ~156px wide: a 30px "₹1,25,000" would overflow. */
 const KPI_M = "max-md:min-w-0 max-md:p-3.5 max-md:[&_.font-display]:text-[22px] max-md:[&_.font-display]:[overflow-wrap:anywhere]";
 
@@ -65,6 +81,10 @@ export default function StudentProfilePage() {
   const [error, setError] = useState("");
   const [tab, setTab] = useState<TabId>("overview");
   const [busy, setBusy] = useState("");
+  const [showIdCustomizer, setShowIdCustomizer] = useState(false);
+  const [idTemplate, setIdTemplate] = useState<string>("classic");
+  const [idTagline, setIdTagline] = useState<string>("DISCIPLINE · HONOUR · EXCELLENCE");
+  const [idFields, setIdFields] = useState<string[]>(["roll_no", "house", "blood_group", "dob", "emergency_contact", "valid_until"]);
 
   const canRead = hasRole(me, R.STUDENT_READ) || isPortal(me);
   const canExport = hasRole(me, R.STUDENT_WRITE);
@@ -85,6 +105,10 @@ export default function StudentProfilePage() {
     } finally {
       setBusy("");
     }
+  };
+
+  const toggleIdField = (key: string) => {
+    setIdFields((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
   };
 
   /** DMS documents: ask for a short-lived signed URL, then let the browser fetch the file directly. */
@@ -130,6 +154,15 @@ export default function StudentProfilePage() {
   }
 
   const s = data.student;
+  const activeTpl = ID_TEMPLATES.find((t) => t.id === idTemplate) ?? ID_TEMPLATES[0];
+  const buildIdCardUrl = () => {
+    const q = new URLSearchParams();
+    q.set("template", idTemplate);
+    if (idTagline.trim()) q.set("tagline", idTagline.trim());
+    q.set("fields", idFields.join(","));
+    return `/api/students/${s.id}/export/id-card.pdf?${q.toString()}`;
+  };
+
   const tabs = [
     { id: "overview" as const, label: "Overview" },
     { id: "attendance" as const, label: "Attendance", count: data.attendance.records_counted },
@@ -149,9 +182,14 @@ export default function StudentProfilePage() {
           <>
             {!isPortal(me) && <Link href="/students" className="btn-ghost"><Icon name="chevronLeft" className="h-4 w-4" /> Students</Link>}
             {canExport && s.status === "Active" && (
-              <Button loading={busy === "id"} onClick={() => download("id", `/api/students/${s.id}/export/id-card.pdf`, `ID-${s.admission_no}.pdf`)}>
-                <Icon name="user" className="h-4 w-4" /> ID card
-              </Button>
+              <>
+                <Button variant="soft" onClick={() => setShowIdCustomizer(true)}>
+                  <Icon name="spark" className="h-4 w-4" /> Customize ID Card
+                </Button>
+                <Button loading={busy === "id"} onClick={() => download("id", buildIdCardUrl(), `ID-${s.admission_no}.pdf`)}>
+                  <Icon name="user" className="h-4 w-4" /> ID card
+                </Button>
+              </>
             )}
             {canExport && s.status !== "Active" && (
               <Button variant="primary" loading={busy === "tc"} onClick={() => download("tc", `/api/students/${s.id}/export/tc.pdf`, `TC-${s.admission_no}.pdf`)}>
@@ -161,6 +199,132 @@ export default function StudentProfilePage() {
           </>
         }
       />
+
+      {/* Customizable ID Card Template Modal */}
+      <Modal
+        open={showIdCustomizer}
+        onClose={() => setShowIdCustomizer(false)}
+        title="Customize Student ID Card Template"
+        subtitle="Select from 4 static institutional templates and customize displayed fields & motto."
+        size="lg"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowIdCustomizer(false)}>Close</Button>
+            <Button
+              variant="primary"
+              loading={busy === "id"}
+              onClick={() => download("id", buildIdCardUrl(), `ID-${s.admission_no}-${idTemplate}.pdf`)}
+            >
+              <Icon name="download" className="h-4 w-4" /> Download ID Card ({activeTpl.name.split(" ")[0]})
+            </Button>
+          </>
+        }
+      >
+        <div className="grid gap-5 md:grid-cols-2">
+          <div className="space-y-4">
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-3">1. Choose Static Template</p>
+              <div className="space-y-2">
+                {ID_TEMPLATES.map((tpl) => {
+                  const active = idTemplate === tpl.id;
+                  return (
+                    <button
+                      key={tpl.id}
+                      type="button"
+                      onClick={() => setIdTemplate(tpl.id)}
+                      className={`w-full rounded-xl border p-3 text-left transition-all ${
+                        active ? "border-brand-700 bg-brand-50/70 ring-2 ring-brand-700/15" : "border-line bg-surface hover:bg-surface-2"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold text-ink">{tpl.name}</span>
+                        <Badge tone={active ? "sky" : "slate"}>{tpl.badge}</Badge>
+                      </div>
+                      <p className="mt-1 text-xs text-ink-3">{tpl.desc}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <Field label="2. Custom Header Motto / Tagline">
+              <Input
+                value={idTagline}
+                onChange={(e) => setIdTagline(e.target.value)}
+                placeholder="e.g. DISCIPLINE · HONOUR · EXCELLENCE"
+              />
+            </Field>
+
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-3">3. Toggle Card Fields</p>
+              <div className="flex flex-wrap gap-2">
+                {ID_FIELD_OPTIONS.map((f) => {
+                  const on = idFields.includes(f.key);
+                  return (
+                    <button
+                      key={f.key}
+                      type="button"
+                      onClick={() => toggleIdField(f.key)}
+                      className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                        on ? "border-brand-700 bg-brand-50 text-brand-700" : "border-line bg-surface-2 text-ink-3"
+                      }`}
+                    >
+                      {on ? "✓ " : ""}{f.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Live Visual Preview */}
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-line bg-surface-2/60 p-4">
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-3">Live Template Preview</p>
+            <div className="w-full max-w-[280px] overflow-hidden rounded-2xl border border-line bg-white shadow-xl">
+              <div className={`px-4 py-3 text-center ${activeTpl.headerBg}`}>
+                <p className="text-xs font-bold uppercase tracking-wider">Sainik School / Genesis ERP</p>
+                {idTagline.trim() && <p className="mt-0.5 text-[10px] opacity-85">{idTagline.trim()}</p>}
+              </div>
+              <div className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="grid h-14 w-12 shrink-0 place-items-center rounded-lg border border-line bg-surface-2 text-xs font-bold text-brand-700">
+                    PHOTO
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-ink">{s.full_name}</p>
+                    <p className="font-mono text-xs text-ink-3">{s.admission_no}</p>
+                    <p className="mt-0.5 text-xs font-semibold text-brand-700">{s.class_label || "No class"}</p>
+                  </div>
+                </div>
+                <dl className="mt-3 space-y-1 border-t border-line pt-2.5 text-xs">
+                  {idFields.includes("roll_no") && (
+                    <div className="flex justify-between"><dt className="text-ink-3">Roll No</dt><dd className="font-semibold text-ink">{s.roll_no ?? "—"}</dd></div>
+                  )}
+                  {idFields.includes("house") && idTemplate !== "compact" && (
+                    <div className="flex justify-between"><dt className="text-ink-3">House</dt><dd className="font-semibold text-ink">{s.house ?? "—"}</dd></div>
+                  )}
+                  {idFields.includes("blood_group") && (
+                    <div className="flex justify-between"><dt className="text-ink-3">Blood Group</dt><dd className="font-semibold text-ink">{s.blood_group ?? "—"}</dd></div>
+                  )}
+                  {idFields.includes("dob") && idTemplate !== "compact" && (
+                    <div className="flex justify-between"><dt className="text-ink-3">DOB</dt><dd className="font-semibold text-ink">{s.dob ?? "—"}</dd></div>
+                  )}
+                  {idFields.includes("emergency_contact") && (
+                    <div className="flex justify-between"><dt className="text-ink-3">Emergency</dt><dd className="font-mono font-semibold text-ink">{data.parents.mobile_number ?? "—"}</dd></div>
+                  )}
+                  {idFields.includes("valid_until") && (
+                    <div className="flex justify-between"><dt className="text-ink-3">Valid Until</dt><dd className="font-mono text-ink-2">2027-03-31</dd></div>
+                  )}
+                </dl>
+                <div className="mt-3 flex items-center justify-between border-t border-line pt-2.5 text-[10px] text-ink-3">
+                  <span className="font-mono">QR · GENESIS:{s.id.slice(0, 6)}</span>
+                  <span className="font-semibold text-ink-2">Principal Sign</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Modal>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 max-md:gap-3">
         <StatCard className={KPI_M} label="Attendance" value={data.attendance.percentage} suffix="%" decimals={1} icon="attendance" tone="emerald"
@@ -287,10 +451,17 @@ export default function StudentProfilePage() {
                         <td className="tnum text-right">{rupees(i.balance)}</td>
                         <td>{i.overdue ? <Badge tone="rose">Overdue</Badge> : <Badge tone={i.status === "Paid" ? "emerald" : "amber"}>{i.status}</Badge>}</td>
                         <td className="text-right">
-                          <Button size="sm" variant="ghost" loading={busy === `inv-${i.id}`}
-                            onClick={() => download(`inv-${i.id}`, `/api/fees/invoices/${i.id}/invoice.pdf`, `invoice-${i.invoice_no ?? i.id}.pdf`)}>
-                            <Icon name="download" className="h-3.5 w-3.5" /> PDF
-                          </Button>
+                          <div className="flex justify-end gap-1.5">
+                            <Button size="sm" variant="ghost" loading={busy === `inv-${i.id}`}
+                              onClick={() => download(`inv-${i.id}`, `/api/fees/invoices/${i.id}/invoice.pdf`, `invoice-${i.invoice_no ?? i.id}.pdf`)}>
+                              <Icon name="download" className="h-3.5 w-3.5" /> PDF
+                            </Button>
+                            {isPortal(me) && i.balance > 0 && (
+                              <Link href="/portal/fees" className="btn btn-primary btn-sm">
+                                <Icon name="wallet" className="h-3.5 w-3.5" /> Pay Fees
+                              </Link>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}

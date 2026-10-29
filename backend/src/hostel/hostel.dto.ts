@@ -135,4 +135,13 @@ export class VisitorDto {
 
   @IsOptional() @IsString() @MaxLength(300)
   purpose?: string;
+
+  /** Base64 data URL image captured by the warden/security desk for the visitor log. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2_800_000)
+  @Matches(/^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/, {
+    message: 'visitor_photo must be a base64 data URL image (JPEG, PNG, or WebP)',
+  })
+  visitor_photo?: string;
 }

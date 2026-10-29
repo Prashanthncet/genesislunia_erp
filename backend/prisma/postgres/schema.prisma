@@ -785,6 +785,7 @@ model VisitorLog {
   inTime       String  @map("in_time")
   outTime      String? @map("out_time")
   passNo       String? @map("pass_no")
+  visitorPhoto String? @map("visitor_photo")
 
   branch Branch @relation(fields: [branchId], references: [id])
 

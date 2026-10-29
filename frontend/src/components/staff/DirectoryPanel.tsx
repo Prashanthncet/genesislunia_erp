@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { R, ROLE_LABEL, hasRole, useMe } from "@/lib/auth";
+import { sanitizePhone, sanitizePersonName, validatePhone, validateEmail, validatePersonName } from "@/lib/validation";
 import { Badge, Button, Card, CardHead, EmptyState, Field, Icon, Input, MailLink, Modal, PhoneLink, Select, SkeletonRows, useToast } from "@/components/ui";
 import { CardBody, CardEmpty, CardFooter, CardGrid, CardTitle, Chip, Monogram, RecordCard, StatusPill, initials, toneFor } from "@/components/RecordCard";
 import { TableView } from "@/components/TableView";
@@ -57,15 +58,27 @@ export function DirectoryPanel() {
   };
 
   const edit = (s: StaffRow) => {
-    setForm({ id: s.id, name: s.name, email: s.email, role: s.role, department: s.department ?? "", phone: s.phone ?? "", subjects: s.subjects ?? "", max_periods_per_day: String(s.maxPeriodsPerDay) });
+    setForm({ id: s.id, name: s.name, email: s.email, role: s.role, department: s.department ?? "", phone: sanitizePhone(s.phone ?? ""), subjects: s.subjects ?? "", max_periods_per_day: String(s.maxPeriodsPerDay) });
     setFormOpen(true);
   };
 
+  const nameErr = form.name ? validatePersonName(form.name, true, "Name") : null;
+  const emailErr = form.email ? validateEmail(form.email, true, "Email") : null;
+  const phoneErr = form.phone ? validatePhone(form.phone, false, "Phone") : null;
+
   const save = async () => {
+    const vName = validatePersonName(form.name, true, "Name");
+    if (vName) { toast.push(vName, "error"); return; }
+    const vEmail = validateEmail(form.email, true, "Email");
+    if (vEmail) { toast.push(vEmail, "error"); return; }
+    if (form.phone) {
+      const vPhone = validatePhone(form.phone, false, "Phone");
+      if (vPhone) { toast.push(vPhone, "error"); return; }
+    }
     if (form.id && !(await confirmAction({ title: `Save changes to ${form.name || "this staff member"}?`, text: "Their staff profile will be updated.", confirmText: "Save changes", tone: "primary" }))) return;
     setBusy(true);
     try {
-      const body = { name: form.name, email: form.email, role: form.role, department: form.department, phone: form.phone, subjects: form.subjects, max_periods_per_day: Number(form.max_periods_per_day) };
+      const body = { name: form.name.trim(), email: form.email.trim(), role: form.role, department: form.department, phone: form.phone, subjects: form.subjects, max_periods_per_day: Number(form.max_periods_per_day) };
       if (form.id) await apiFetch(`/api/staff/${form.id}`, { method: "PUT", body: JSON.stringify(body) });
       else await apiFetch("/api/staff", { method: "POST", body: JSON.stringify({ ...body, phone: form.phone || undefined, department: form.department || undefined }) });
       toast.push(form.id ? `Profile updated for ${form.name}` : `${form.name} added to staff`, "success");
@@ -143,7 +156,6 @@ export function DirectoryPanel() {
     </CardGrid>
   );
 
-  /** Phones: staff card (avatar + status, contact panel, role/subject chips, Profile + Edit). */
   const mobileCards = rows.length === 0 ? (
     <CardEmpty title="No staff match" hint="Try a different search or clear the filters." icon="staff" />
   ) : rows.map((s) => {
@@ -296,13 +308,19 @@ export function DirectoryPanel() {
       </Modal>
 
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title={form.id ? "Edit staff profile" : "Add staff member"}
-        footer={<Button variant="primary" loading={busy} disabled={!form.name.trim() || !form.email.trim()} onClick={save}>Save</Button>}>
+        footer={<Button variant="primary" loading={busy} disabled={!form.name.trim() || !form.email.trim() || !!nameErr || !!emailErr || !!phoneErr} onClick={save}>Verify &amp; Save</Button>}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Name" required><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-          <Field label="Email" required><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
+          <Field label="Name" required error={nameErr ?? undefined}>
+            <Input value={form.name} placeholder="Full name (alphabets only)" onChange={(e) => setForm({ ...form, name: sanitizePersonName(e.target.value) })} />
+          </Field>
+          <Field label="Email" required error={emailErr ?? undefined}>
+            <Input type="email" value={form.email} placeholder="staff@school.edu" onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          </Field>
           <Field label="Designation"><Input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} list="staff-designations" /></Field>
           <Field label="Department"><Input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} list="staff-departments" /></Field>
-          <Field label="Phone"><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
+          <Field label="Phone (10 digits)" error={phoneErr ?? undefined} hint={!phoneErr && form.phone ? `${form.phone.length}/10 digits` : undefined}>
+            <Input type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile number" value={form.phone} onChange={(e) => setForm({ ...form, phone: sanitizePhone(e.target.value) })} />
+          </Field>
           <Field label="Max periods per day"><Input type="number" min={0} max={12} value={form.max_periods_per_day} onChange={(e) => setForm({ ...form, max_periods_per_day: e.target.value })} /></Field>
           <div className="sm:col-span-2"><Field label="Subjects"><Input value={form.subjects} onChange={(e) => setForm({ ...form, subjects: e.target.value })} /></Field></div>
         </div>

@@ -1,7 +1,7 @@
-import { BadRequestException, Body, ConflictException, Controller, Delete, Get, NotFoundException, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get, NotFoundException, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard, Roles, RolesGuard } from '../auth/auth.guard';
 import { R, ROLE } from '../auth/roles';
-import { audit, ReqWithUser } from '../common/access';
+import { audit, ReqWithUser, teacherClassIds } from '../common/access';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateClassDto, UpdateClassDto } from './dto/class.dto';
 
@@ -15,9 +15,13 @@ export class ClassesController {
 
   @Get()
   @Roles(...R.ACADEMIC_STAFF)
-  list(@Req() req: ReqWithUser) {
+  async list(@Req() req: ReqWithUser) {
+    const scope = await teacherClassIds(this.prisma, req.user);
     return this.prisma.class.findMany({
-      where: { branchId: req.user.branch_id },
+      where: {
+        branchId: req.user.branch_id,
+        ...(scope !== null ? { id: { in: scope } } : {}),
+      },
       include: { _count: { select: { students: true } }, classTeacher: { select: { id: true, name: true } } },
       orderBy: { name: 'asc' },
     });
@@ -37,6 +41,10 @@ export class ClassesController {
       },
     });
     if (!cls) throw new NotFoundException('Class not found');
+    const scope = await teacherClassIds(this.prisma, req.user);
+    if (scope !== null && !scope.includes(id)) {
+      throw new ForbiddenException('You can only view classes and sections assigned to you');
+    }
     return cls;
   }
 

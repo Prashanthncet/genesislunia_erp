@@ -100,7 +100,8 @@ describe('Gate desk, role scope & change password (e2e)', () => {
       expect((await as('teacher').post('/api/gate-passes', body)).status).toBe(403);
       expect((await as('principal').post('/api/gate-passes', body)).status).toBe(403);
       expect((await as('warden').post('/api/gate-passes', { ...body, student_id: 'g2_stu_001' })).status).toBe(404);
-      const plain = await as('teacher').post('/api/gate-passes', { ...body, issue: undefined });
+      expect((await as('teacher').post('/api/gate-passes', { ...body, issue: undefined })).status).toBe(403);
+      const plain = await as('principal').post('/api/gate-passes', { ...body, issue: undefined });
       expect(plain.status).toBe(201);
       expect(plain.body.status).toBe('Pending');
     });
@@ -282,6 +283,20 @@ describe('Gate desk, role scope & change password (e2e)', () => {
       const row = await prisma.auditLog.findFirst({ where: { entity: 'user', action: 'UPDATE', detail: 'password changed' } });
       expect(row).toBeTruthy();
       expect(row?.detail).not.toContain(NEW);
+      const samplePhoto = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+      const created = await as('warden').post('/api/hostel/visitors', {
+        visitor_name: 'Ramesh Verma',
+        visitor_phone: '9876543210',
+        whom_to_meet: 'Aditya Vardhan Singh',
+        purpose: 'Parent visit',
+        visitor_photo: samplePhoto,
+      });
+      expect(created.status).toBe(201);
+      expect(created.body.visitor_photo).toBe(samplePhoto);
+      const list = await as('warden').get('/api/hostel/visitors');
+      expect(list.status).toBe(200);
+      const found = list.body.find((v: any) => v.id === created.body.id);
+      expect(found?.visitorPhoto).toBe(samplePhoto);
     });
   });
 });

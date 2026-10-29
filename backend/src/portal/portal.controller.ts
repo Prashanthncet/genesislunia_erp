@@ -16,7 +16,11 @@ import { ROLE } from '../auth/roles';
 import { AuthUser, ReqWithUser, assertCanSeeStudent, portalStudentIds } from '../common/access';
 import { PortalLeaveRequestDto } from './portal.dto';
 import { ATTENDANCE_RULE, isSunday, tally } from '../attendance/attendance-math';
+import * as crypto from 'crypto';
 import { sortPeriods } from '../timetable/timetable.util';
+import { LINK_DAYS, formLink, formQrDataUrl } from '../admissions/admissions.service';
+import { ADM, academicYearOf } from '../admissions/workflow';
+import { defaultAdmissionFee } from '../payments/payments.service';
 
 /** Today as YYYY-MM-DD in local time (school dates are stored as plain strings). */
 function todayISO(): string {
@@ -456,14 +460,71 @@ export class PortalController {
     return this.messagesFor(req.user, s);
   }
 
-  /** The parent's own admission application(s) and their status timeline. Read-only. */
+  /** Allows a signed-in parent in the portal to start a new admission form for their child/ward directly. */
+  @Post('admission/start')
+  async startAdmission(@Req() req: ReqWithUser, @Body() body?: { academic_year?: string; student_name?: string }) {
+    if (req.user.role !== ROLE.PARENT) throw new BadRequestException('Only parents can start a portal admission form');
+    const year = body?.academic_year && /^\d{4}-\d{2}$/.test(body.academic_year) ? body.academic_year : academicYearOf();
+    const published = await this.prisma.admissionField.count({
+      where: { branchId: req.user.branch_id, academicYear: year, status: 'Published' },
+    });
+    if (!published) {
+      throw new BadRequestException(`The admission form template for ${year} is not published yet. Please contact the admission office.`);
+    }
+    const parent = await this.prisma.user.findUnique({
+      where: { id: req.user.sub },
+      select: { id: true, name: true, email: true },
+    });
+    const token = `tok_${crypto.randomBytes(24).toString('hex')}`;
+    const linkExpiresAt = new Date(Date.now() + LINK_DAYS * 86_400_000);
+    const created = await this.prisma.$transaction(async (tx) => {
+      const app = await tx.admission.create({
+        data: {
+          branchId: req.user.branch_id,
+          parentName: parent?.name ?? 'Parent',
+          parentEmail: parent?.email?.includes('@') ? parent.email : null,
+          status: ADM.LINKS_SENT,
+          loginId: parent?.email ?? null,
+          token,
+          academicYear: year,
+          parentUserId: req.user.sub,
+          studentName: body?.student_name?.trim() || null,
+          linkExpiresAt,
+          feeAmount: defaultAdmissionFee(),
+        },
+      });
+      await tx.admissionStep.create({
+        data: {
+          branchId: req.user.branch_id,
+          admissionId: app.id,
+          fromStatus: null,
+          toStatus: ADM.LINKS_SENT,
+          action: 'create_form',
+          actorId: req.user.sub,
+          actorRole: ROLE.PARENT,
+          remarks: 'Started from Parent Portal',
+        },
+      });
+      return app;
+    });
+    const link = formLink(token);
+    return {
+      id: created.id,
+      token,
+      form_link: link,
+      qr_data_url: await formQrDataUrl(link),
+      academic_year: year,
+    };
+  }
+
+  /** The parent's own admission application(s) and their status timeline. */
   @Get('admission')
   async admission(@Req() req: ReqWithUser) {
     if (req.user.role !== ROLE.PARENT) return [];
     const apps = await this.prisma.admission.findMany({
       where: { branchId: req.user.branch_id, parentUserId: req.user.sub },
       select: {
-        id: true, studentName: true, status: true, rollNo: true, house: true, paymentStatus: true,
+        id: true, studentName: true, status: true, rollNo: true, house: true, paymentStatus: true, token: true, linkExpiresAt: true,
         feeAmount: true, receiptNo: true, submittedAt: true, paidAt: true, academicYear: true,
         studentId: true, remarks: true, createdAt: true, updatedAt: true,
         class: { select: { id: true, name: true, section: true } },
@@ -474,7 +535,16 @@ export class PortalController {
       },
       orderBy: { createdAt: 'desc' },
     });
-    return apps.map((a) => ({
+    const withQr = await Promise.all(
+      apps.map(async (a) => {
+        const editable = ['Links Sent', 'Re-submit'].includes(a.status);
+        const canPay = a.status === 'Document Validated';
+        const link = a.token ? formLink(a.token) : null;
+        const qr = link ? await formQrDataUrl(link) : null;
+        return { ...a, editable, canPay, link, qr };
+      }),
+    );
+    return withQr.map((a) => ({
       id: a.id,
       student_name: a.studentName,
       status: a.status,
@@ -492,6 +562,12 @@ export class PortalController {
       created_at: a.createdAt,
       updated_at: a.updatedAt,
       confirmed: ['Admission Complete', 'Admission Confirmed'].includes(a.status),
+      editable: a.editable,
+      can_pay: a.canPay,
+      token: (a.editable || a.canPay) ? a.token : null,
+      form_link: a.link,
+      qr_data_url: a.qr,
+      link_expires_at: a.linkExpiresAt,
       timeline: a.steps.map((st) => ({
         id: st.id, from_status: st.fromStatus, to_status: st.toStatus, action: st.action,
         actor_role: st.actorRole, remarks: st.remarks, at: st.createdAt,

@@ -1,17 +1,17 @@
 import { ATTENDANCE_RULE, tally } from '../attendance/attendance-math';
 import {
-  Body, ConflictException, Controller, Delete, Get, NotFoundException, Param, Post, Put, Query, Req, Res, UseGuards,
+  BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get, NotFoundException, Param, Post, Put, Query, Req, Res, UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import * as QRCode from 'qrcode';
 import { AuthGuard, Roles, RolesGuard } from '../auth/auth.guard';
 import { R, ROLE } from '../auth/roles';
-import { assertCanSeeStudent, assertInBranch, audit, AuthUser, ReqWithUser } from '../common/access';
+import { assertCanSeeStudent, assertInBranch, audit, AuthUser, ReqWithUser, teacherClassIds } from '../common/access';
 import { buildPdf, PdfBlock, sendPdf } from '../common/pdf';
 import { studentFeeSummary } from '../fees/fee-summary';
 import { PrismaService } from '../prisma/prisma.service';
 import { DocumentStorage } from '../storage/document-storage.service';
-import { CreateStudentDto } from './dto/create-student.dto';
+import { BulkCreateStudentsDto, CreateStudentDto } from './dto/create-student.dto';
 import { StudentStatusDto } from './dto/student-status.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 import { textContains } from '../common/search';
@@ -65,7 +65,12 @@ export class StudentsController {
   ) {
     if (classId) await assertInBranch(this.prisma, 'class', classId, req.user.branch_id);
     const where: Record<string, unknown> = { branchId: req.user.branch_id };
+    const teacherScope = await teacherClassIds(this.prisma, req.user);
+    if (classId && teacherScope !== null && !teacherScope.includes(classId)) {
+      throw new ForbiddenException('You can only view students in classes assigned to you');
+    }
     if (classId) where.classId = classId;
+    else if (teacherScope !== null) where.classId = { in: teacherScope };
     if (status) where.status = status;
     if (q) where.OR = [{ fullName: textContains(q) }, { admissionNo: textContains(q) }];
 
@@ -83,6 +88,74 @@ export class StudentsController {
       }),
     ]);
     return { total, page: pageNum, page_size: size, contacts_hidden: !canSeeContacts(req.user), data: rows.map((r) => stripContacts(r, req.user)) };
+  }
+
+  /**
+   * Bulk student upload (CSV / spreadsheet import).
+   * Validates classes in the branch, skips duplicate admission numbers within the branch,
+   * and returns created + skipped counts.
+   */
+  @Post('bulk')
+  @Roles(...R.STUDENT_WRITE)
+  async bulkCreate(@Req() req: ReqWithUser, @Body() body: BulkCreateStudentsDto) {
+    const branchId = req.user.branch_id;
+    const uniqueClassIds = Array.from(new Set(body.students.map((s) => s.class_id)));
+    for (const cid of uniqueClassIds) {
+      await assertInBranch(this.prisma, 'class', cid, branchId);
+    }
+
+    const createdIds: string[] = [];
+    const skippedDuplicates: string[] = [];
+
+    for (const row of body.students) {
+      const admNo = row.admission_no.trim();
+      const exists = await this.prisma.student.findFirst({
+        where: { branchId, admissionNo: admNo },
+        select: { id: true },
+      });
+      if (exists || createdIds.length > 0 && skippedDuplicates.includes(admNo)) {
+        skippedDuplicates.push(admNo);
+        continue;
+      }
+      try {
+        const student = await this.prisma.student.create({
+          data: {
+            branchId,
+            admissionNo: admNo,
+            fullName: row.full_name.trim(),
+            fatherName: row.father_name?.trim() || null,
+            motherName: row.mother_name?.trim() || null,
+            mobileNumber: row.mobile_number?.trim() || null,
+            email: row.email?.trim() || null,
+            gender: row.gender,
+            classId: row.class_id,
+            rollNo: row.roll_no?.trim() || null,
+            house: row.house?.trim() || null,
+            bloodGroup: row.blood_group?.trim() || null,
+            dob: row.dob?.trim() || null,
+            enrollmentDate: row.enrollment_date?.trim() || new Date().toISOString().slice(0, 10),
+          },
+        });
+        createdIds.push(student.id);
+      } catch {
+        skippedDuplicates.push(admNo);
+      }
+    }
+
+    await audit(
+      this.prisma,
+      req.user,
+      'CREATE',
+      'student_bulk',
+      branchId,
+      `created=${createdIds.length} skipped=${skippedDuplicates.length}`,
+    );
+    return {
+      created: createdIds.length,
+      skipped_duplicates: skippedDuplicates.length,
+      skipped_admission_nos: skippedDuplicates,
+      ids: createdIds,
+    };
   }
 
   // ─── Read-only Student Master profile (literal sub-routes before :id) ──────
@@ -280,7 +353,7 @@ export class StudentsController {
   /**
    * ID card data. Shape:
    * { card_no, valid_until, school, student: { id, admission_no, full_name, class, roll_no, house,
-   *   blood_group, dob }, emergency_contact, qr_payload }
+   *   blood_group, dob }, emergency_contact, qr_payload, templates }
    * Only for Active students — 409 otherwise.
    */
   @Get(':id/export/id-card')
@@ -299,12 +372,25 @@ export class StudentsController {
       },
       emergency_contact: s.mobileNumber,
       qr_payload: `GENESIS:STUDENT:${s.id}`,
+      templates: [
+        { id: 'classic', name: 'Classic Institutional (Navy)', description: 'Standard portrait layout with full student & guardian particulars' },
+        { id: 'modern', name: 'Modern Split Grid', description: 'Two-column tabular badge layout with prominent house & roll number' },
+        { id: 'compact', name: 'Compact Lanyard Card', description: 'Streamlined essential fields for quick gate & library scanning' },
+        { id: 'crest', name: 'Royal Crest & Motto', description: 'Formal ceremonial layout with custom school motto banner' },
+      ],
     };
   }
 
   @Get(':id/export/id-card.pdf')
   @Roles(...R.STUDENT_WRITE)
-  async idCardPdf(@Req() req: ReqWithUser, @Param('id') id: string, @Res() res: Response) {
+  async idCardPdf(
+    @Req() req: ReqWithUser,
+    @Param('id') id: string,
+    @Res() res: Response,
+    @Query('template') template = 'classic',
+    @Query('tagline') tagline?: string,
+    @Query('fields') fieldsCsv?: string,
+  ) {
     const card = await this.idCardData(req, id);
     const qr = await QRCode.toBuffer(card.qr_payload, { type: 'png', margin: 1, width: 240 });
     const photo = await this.prisma.admissionDocument.findFirst({
@@ -314,26 +400,67 @@ export class StudentsController {
       },
       orderBy: { createdAt: 'desc' },
     });
+    const enabled = new Set(
+      fieldsCsv
+        ? fieldsCsv.split(',').map((f) => f.trim()).filter(Boolean)
+        : ['roll_no', 'house', 'blood_group', 'dob', 'emergency_contact', 'valid_until'],
+    );
+    const tpl = ['classic', 'modern', 'compact', 'crest'].includes(template) ? template : 'classic';
     const blocks: PdfBlock[] = [];
+    if (tagline?.trim() || tpl === 'crest') {
+      blocks.push({ kind: 'heading', text: tagline?.trim() || 'DISCIPLINE · HONOUR · EXCELLENCE' });
+    }
     if (photo) {
       try {
         const file = await this.docs.read(photo);
-        if (file) blocks.push({ kind: 'image', png: file.bytes, width: 96, height: 120 });
+        if (file) blocks.push({ kind: 'image', png: file.bytes, width: tpl === 'compact' ? 80 : 96, height: tpl === 'compact' ? 100 : 120 });
       } catch { /* unreadable / missing photo — card still prints */ }
     }
+    const rows: [string, string | number | null | undefined][] = [
+      ['Name', card.student.full_name],
+      ['Admission No', card.student.admission_no],
+      ['Class', card.student.class],
+    ];
+    if (enabled.has('roll_no')) rows.push(['Roll No', card.student.roll_no]);
+    if (enabled.has('house') && tpl !== 'compact') rows.push(['House', card.student.house]);
+    if (enabled.has('blood_group')) rows.push(['Blood group', card.student.blood_group]);
+    if (enabled.has('dob') && tpl !== 'compact') rows.push(['Date of birth', card.student.dob]);
+    if (enabled.has('emergency_contact')) rows.push(['Emergency contact', card.emergency_contact]);
+    rows.push(['Card No', card.card_no]);
+    if (enabled.has('valid_until')) rows.push(['Valid until', card.valid_until]);
+
+    if (tpl === 'modern') {
+      blocks.push({
+        kind: 'table',
+        head: ['Student Name', 'Admission No', 'Class', 'House / Roll'],
+        widths: [160, 110, 110, 119],
+        rows: [[
+          card.student.full_name,
+          card.student.admission_no,
+          card.student.class || '-',
+          `${card.student.house || '-'} / ${card.student.roll_no || '-'}`,
+        ]],
+      });
+    }
     blocks.push(
-      { kind: 'fields', rows: [
-        ['Name', card.student.full_name], ['Admission No', card.student.admission_no],
-        ['Class', card.student.class], ['Roll No', card.student.roll_no],
-        ['House', card.student.house], ['Blood group', card.student.blood_group],
-        ['Date of birth', card.student.dob], ['Emergency contact', card.emergency_contact],
-        ['Card No', card.card_no], ['Valid until', card.valid_until],
-      ] },
-      { kind: 'image', png: qr, width: 110, height: 110 },
+      { kind: 'fields', rows },
+      { kind: 'image', png: qr, width: tpl === 'compact' ? 95 : 110, height: tpl === 'compact' ? 95 : 110 },
       { kind: 'signature', name: 'Principal', title: card.school.name },
     );
-    const pdf = await buildPdf({ school: card.school.name, schoolLine: card.school.location ?? undefined, title: 'Student Identity Card', reference: card.card_no, blocks });
-    await audit(this.prisma, req.user, 'EXPORT', 'student', id, 'id-card.pdf');
+    const titleMap: Record<string, string> = {
+      classic: 'Student Identity Card',
+      modern: 'Student Identity Card — Modern Edition',
+      compact: 'Student Quick-Pass ID Card',
+      crest: 'Official Cadet / Student Identity Card',
+    };
+    const pdf = await buildPdf({
+      school: card.school.name,
+      schoolLine: tagline?.trim() ? `${card.school.location ?? ''} · ${tagline.trim()}`.replace(/^ · /, '') : (card.school.location ?? undefined),
+      title: titleMap[tpl] ?? 'Student Identity Card',
+      reference: card.card_no,
+      blocks,
+    });
+    await audit(this.prisma, req.user, 'EXPORT', 'student', id, `id-card.pdf (${tpl})`);
     return sendPdf(res, pdf, `ID-${card.student.admission_no}.pdf`);
   }
 
@@ -362,6 +489,7 @@ export class StudentsController {
       },
     });
     if (!student) throw new NotFoundException('Student not found');
+    await assertCanSeeStudent(this.prisma, req.user, id);
 
     // True aggregate over ALL attendance records (optional date range), not a window.
     const rangeWhere: Record<string, unknown> = { studentId: id };
@@ -442,6 +570,9 @@ export class StudentsController {
   async setStatus(@Req() req: ReqWithUser, @Param('id') id: string, @Body() body: StudentStatusDto) {
     const existing = await this.prisma.student.findFirst({ where: { id, branchId: req.user.branch_id } });
     if (!existing) throw new NotFoundException('Student not found');
+    if ((body.status === 'Left' || body.status === 'Transferred') && !body.reason?.trim()) {
+      throw new BadRequestException('A reason is required when marking a student as leaving');
+    }
     await this.prisma.student.update({ where: { id }, data: { status: body.status } });
     await audit(this.prisma, req.user, 'UPDATE', 'student', id, `status ${existing.status} -> ${body.status}${body.reason ? `: ${body.reason}` : ''}`);
     return { success: true, status: body.status };

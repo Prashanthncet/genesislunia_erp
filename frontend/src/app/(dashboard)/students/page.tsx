@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { hasRole, R, useMe } from "@/lib/auth";
-import { Button, EmptyState, Field, Icon, IconButton, Input, MailLink, PageHeader, PhoneLink, Reveal, Select, SkeletonRows, StatCard, useToast, Portal } from "@/components/ui";
+import { sanitizePhone, sanitizePersonName, validatePhone, validateEmail, validatePersonName } from "@/lib/validation";
+import { Button, EmptyState, Field, Icon, IconButton, Input, MailLink, Modal, PageHeader, PhoneLink, Reveal, Select, SkeletonRows, StatCard, Textarea, useToast, Portal } from "@/components/ui";
 import { confirmAction, confirmWithReason } from "@/components/confirm";
 
 import { TableView } from "@/components/TableView";
@@ -14,6 +15,7 @@ import { MAvatar, MCard, MChip, MCopyRow, MPanel } from "@/components/mobile/Mob
 import {
   CardBody, CardEmpty, CardFooter, CardGrid, CardTitle, Chip, Monogram, RecordCard, StatusPill, initials, toneFor, type Tone,
 } from "@/components/RecordCard";
+
 type ClassItem = { id: string; name: string; section: string | null };
 type Student = {
   id: string;
@@ -62,6 +64,10 @@ export default function StudentsPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkClassId, setBulkClassId] = useState("");
+  const [bulkCsvText, setBulkCsvText] = useState("");
+  const [bulkUploading, setBulkUploading] = useState(false);
   const toast = useToast();
   const { me, loading: meLoading } = useMe();
   const canRead = hasRole(me, R.STUDENT_READ);
@@ -112,6 +118,93 @@ export default function StudentsPage() {
     setShowForm(true);
   };
 
+  const openBulkUpload = () => {
+    setBulkClassId(classFilter || classes[0]?.id || "");
+    setBulkCsvText(
+      "admission_no,full_name,gender,roll_no,father_name,mother_name,mobile_number,house,blood_group\nADM-2026-901,Aarav Kulkarni,Male,41,Ramesh Kulkarni,Sunita Kulkarni,9876543210,Shivaji,O+\nADM-2026-902,Ananya Deshmukh,Female,42,Vikram Deshmukh,Priya Deshmukh,9876543211,Tagore,B+",
+    );
+    setShowBulkModal(true);
+  };
+
+  const parseBulkCsv = useCallback(() => {
+    const lines = bulkCsvText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) return [];
+    const header = lines[0].toLowerCase().split(",").map((h) => h.trim());
+    const hasHeader = header.includes("admission_no") || header.includes("full_name") || header.includes("name");
+    const dataLines = hasHeader ? lines.slice(1) : lines;
+    const idx = (names: string[], fallback: number) => {
+      if (!hasHeader) return fallback;
+      for (const n of names) {
+        const i = header.indexOf(n);
+        if (i >= 0) return i;
+      }
+      return -1;
+    };
+    return dataLines.map((line) => {
+      const cols = line.split(",").map((c) => c.trim());
+      const get = (names: string[], fb: number) => {
+        const i = idx(names, fb);
+        return i >= 0 && i < cols.length ? cols[i] : "";
+      };
+      const genderRaw = get(["gender", "sex"], 2);
+      const gender = ["Male", "Female", "Other"].find((g) => g.toLowerCase() === genderRaw.toLowerCase()) ?? "Male";
+      return {
+        admission_no: get(["admission_no", "admissionno", "adm_no"], 0),
+        full_name: get(["full_name", "fullname", "name", "student_name"], 1),
+        gender,
+        roll_no: get(["roll_no", "rollno", "roll"], 3) || undefined,
+        father_name: get(["father_name", "father"], 4) || undefined,
+        mother_name: get(["mother_name", "mother"], 5) || undefined,
+        mobile_number: get(["mobile_number", "mobile", "phone", "parent_contact"], 6) || undefined,
+        house: get(["house"], 7) || undefined,
+        blood_group: get(["blood_group", "blood"], 8) || undefined,
+        class_id: bulkClassId,
+      };
+    }).filter((r) => r.admission_no && r.full_name);
+  }, [bulkCsvText, bulkClassId]);
+
+  const downloadSampleCsv = () => {
+    const csv = "admission_no,full_name,gender,roll_no,father_name,mother_name,mobile_number,house,blood_group\nADM-2026-901,Aarav Kulkarni,Male,41,Ramesh Kulkarni,Sunita Kulkarni,9876543210,Shivaji,O+\nADM-2026-902,Ananya Deshmukh,Female,42,Vikram Deshmukh,Priya Deshmukh,9876543211,Tagore,B+\n";
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "students-bulk-sample.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const submitBulkUpload = async () => {
+    if (!bulkClassId) {
+      toast.push("Please select a target class for bulk upload", "error");
+      return;
+    }
+    const rows = parseBulkCsv();
+    if (rows.length === 0) {
+      toast.push("No valid student rows found in CSV", "error");
+      return;
+    }
+    setBulkUploading(true);
+    try {
+      const res = await apiFetch<{ created: number; skipped_duplicates: number }>("/api/students/bulk", {
+        method: "POST",
+        body: JSON.stringify({ students: rows }),
+      });
+      setShowBulkModal(false);
+      await load();
+      toast.push(
+        `Bulk upload complete: ${res.created} student(s) added${res.skipped_duplicates ? ` (${res.skipped_duplicates} duplicate skipped)` : ""}`,
+        "success",
+      );
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "Bulk upload failed", "error");
+    } finally {
+      setBulkUploading(false);
+    }
+  };
+
   const openEdit = (s: Student) => {
     setForm({
       id: s.id,
@@ -133,9 +226,33 @@ export default function StudentsPage() {
   const save = async () => {
     if (!form.admission_no || !form.full_name || !form.class_id) {
       setMessage("Admission no, name and class are required");
+      toast.push("Admission no, name and class are required", "error");
       return;
     }
-    if (form.id && !(await confirmAction({ title: `Update ${form.full_name.trim() || "this student"}?`, text: "Saves your changes to the student record.", confirmText: "Update", tone: "primary" }))) return;
+    const nameErr = validatePersonName(form.full_name, true, "Student full name");
+    if (nameErr) { setMessage(nameErr); toast.push(nameErr, "error"); return; }
+    if (form.mobile_number) {
+      const pErr = validatePhone(form.mobile_number, false, "Mobile number");
+      if (pErr) { setMessage(pErr); toast.push(pErr, "error"); return; }
+    }
+    if (form.email) {
+      const eErr = validateEmail(form.email, false, "Email");
+      if (eErr) { setMessage(eErr); toast.push(eErr, "error"); return; }
+    }
+    let leavingReason = "";
+    if (form.id && (form.status === "Left" || form.status === "Transferred") && selectedStudent?.status !== form.status) {
+      const r = await confirmWithReason({
+        title: `Mark ${form.full_name.trim() || "this student"} as ${form.status}?`,
+        text: "A mandatory reason is required before marking a student as leaving.",
+        placeholder: "Enter reason for leaving (required)",
+        confirmText: `Mark as ${form.status}`,
+        tone: "danger",
+        required: true,
+        errorMessage: "Please enter a valid reason before continuing.",
+      });
+      if (!r || !r.trim()) return;
+      leavingReason = r.trim();
+    } else if (form.id && !(await confirmAction({ title: `Update ${form.full_name.trim() || "this student"}?`, text: "Saves your changes to the student record.", confirmText: "Update", tone: "primary" }))) return;
     setLoading(true);
     setMessage("");
 
@@ -151,6 +268,9 @@ export default function StudentsPage() {
     try {
       if (form.id) {
         await apiFetch(`/api/students/${form.id}`, { method: "PUT", body: JSON.stringify(payload) });
+        if (leavingReason) {
+          await apiFetch(`/api/students/${form.id}/status`, { method: "PUT", body: JSON.stringify({ status: form.status, reason: leavingReason }) });
+        }
       } else {
         await apiFetch("/api/students", { method: "POST", body: JSON.stringify(payload) });
       }
@@ -167,7 +287,16 @@ export default function StudentsPage() {
 
   /** Hard delete only succeeds for a record with no history; otherwise the API answers 409. */
   const remove = async (s: Student) => {
-    if (!(await confirmAction({ title: `Delete ${s.fullName}?`, text: 'This only works for a record created by mistake (no attendance, marks or fees). Use "Mark as Left" for students who have left. This cannot be undone.', confirmText: "Delete", tone: "danger" }))) return;
+    const reason = await confirmWithReason({
+      title: `Remove ${s.fullName}?`,
+      text: 'Enter a mandatory reason for removing this student. Records with history should use "Mark left" instead.',
+      placeholder: "Enter reason for removal (required)",
+      confirmText: "Delete",
+      tone: "danger",
+      required: true,
+      errorMessage: "Please enter a valid reason before removing this student.",
+    });
+    if (!reason || !reason.trim()) return;
     setLoading(true);
     try {
       await apiFetch(`/api/students/${s.id}`, { method: "DELETE" });
@@ -181,10 +310,18 @@ export default function StudentsPage() {
   };
 
   const setLeft = async (s: Student) => {
-    const reason = await confirmWithReason({ title: `Mark ${s.fullName} as Left?`, text: "Their records are kept and a Transfer Certificate can be issued.", placeholder: "Reason they left (optional)", confirmText: "Mark left", tone: "danger" });
-    if (reason === null) return;
+    const reason = await confirmWithReason({
+      title: `Mark ${s.fullName} as Left?`,
+      text: "Their records are kept and a Transfer Certificate can be issued. A valid reason is required.",
+      placeholder: "Enter reason for leaving (required)",
+      confirmText: "Mark left",
+      tone: "danger",
+      required: true,
+      errorMessage: "Please enter a valid reason for leaving.",
+    });
+    if (!reason || !reason.trim()) return;
     try {
-      await apiFetch(`/api/students/${s.id}/status`, { method: "PUT", body: JSON.stringify({ status: "Left", ...(reason.trim() ? { reason: reason.trim() } : {}) }) });
+      await apiFetch(`/api/students/${s.id}/status`, { method: "PUT", body: JSON.stringify({ status: "Left", reason: reason.trim() }) });
       await load();
       toast.push(`${s.fullName} marked as Left`, "success");
     } catch (e) {
@@ -194,6 +331,7 @@ export default function StudentsPage() {
 
   const totalPages = result ? Math.max(1, Math.ceil(result.total / result.page_size)) : 1;
   const filtered = !!(query || classFilter || statusFilter);
+  const parsedBulkRows = parseBulkCsv();
 
   useMobileBack(showForm, () => setShowForm(false));
 
@@ -227,7 +365,7 @@ export default function StudentsPage() {
             </Link>
             {canWrite && <Button size="sm" variant="ghost" onClick={() => openEdit(s)}><Icon name="edit" className="h-3.5 w-3.5" /> Edit</Button>}
             {canWrite && s.status === "Active" && <Button size="sm" variant="ghost" onClick={() => setLeft(s)}><Icon name="flag" className="h-3.5 w-3.5" /> Mark left</Button>}
-            {canDelete && <IconButton name="trash" label={`Delete ${s.fullName}`} variant="ghost" className="text-danger" onClick={() => remove(s)} />}
+            {canDelete && <IconButton name="trash" label={`Delete ${s.fullName}`} variant="ghost" className="!min-h-8 !px-2 !py-1.5 max-md:!min-h-10 max-md:!px-3 text-danger hover:!bg-danger-soft hover:!text-danger" onClick={() => remove(s)} />}
           </CardFooter>
         </RecordCard>
       ))}
@@ -291,11 +429,16 @@ export default function StudentsPage() {
             icon="students"
             title="Students"
             subtitle="The master record — admission, profile and status for every student."
-            actions={canWrite &&
-              <Button variant="primary" onClick={openCreate} className="shadow-lg shadow-brand-700/20 hover:shadow-xl hover:shadow-brand-700/30 transition-all duration-300">
-                <Icon name="plus" className="h-4 w-4" /> Add Student
-              </Button>
-            }
+            actions={canWrite && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="soft" onClick={openBulkUpload}>
+                  <Icon name="upload" className="h-4 w-4" /> Bulk Upload Students
+                </Button>
+                <Button variant="primary" onClick={openCreate} className="shadow-lg shadow-brand-700/20 hover:shadow-xl hover:shadow-brand-700/30 transition-all duration-300">
+                  <Icon name="plus" className="h-4 w-4" /> Add Student
+                </Button>
+              </div>
+            )}
           />
         </div>
       </Reveal>
@@ -434,18 +577,18 @@ export default function StudentsPage() {
                         <td className="whitespace-nowrap"><StatusPill status={s.status} tone={STATUS_TONE[s.status] ?? "slate"} /></td>
                         <td className="td-end">
                           <div className="flex items-center justify-end gap-1.5">
-                            <Link href={`/students/${s.id}`} className="btn-ghost !px-2.5 !py-1.5" title="View profile" aria-label={`View profile of ${s.fullName}`}>
+                            <Link href={`/students/${s.id}`} className="btn-ghost !min-h-9 !px-2.5 !py-2" title="View profile" aria-label={`View profile of ${s.fullName}`}>
                               <Icon name="eye" className="h-4 w-4" />
                               <span className="row-action-label hidden">Profile</span>
                             </Link>
                             {canWrite && (
-                              <IconButton name="edit" label={`Edit ${s.fullName}`} variant="ghost" onClick={() => openEdit(s)} />
+                              <IconButton name="edit" label={`Edit ${s.fullName}`} variant="ghost" className="!min-h-9" onClick={() => openEdit(s)} />
                             )}
                             {canWrite && s.status === "Active" && (
-                              <IconButton name="flag" label={`Mark ${s.fullName} as Left`} variant="ghost" onClick={() => setLeft(s)} />
+                              <IconButton name="flag" label={`Mark ${s.fullName} as Left`} variant="ghost" className="!min-h-9" onClick={() => setLeft(s)} />
                             )}
                             {canDelete && (
-                              <IconButton name="trash" label={`Delete ${s.fullName}`} variant="ghost" className="text-danger" onClick={() => remove(s)} />
+                              <IconButton name="trash" label={`Delete ${s.fullName}`} variant="ghost" className="!min-h-9 text-danger hover:!bg-danger-soft hover:!text-danger" onClick={() => remove(s)} />
                             )}
                           </div>
                         </td>
@@ -485,6 +628,89 @@ export default function StudentsPage() {
           </div>
         </div>
       </Reveal>
+
+      {/* Bulk Upload Students Modal */}
+      <Modal
+        open={showBulkModal}
+        onClose={() => setShowBulkModal(false)}
+        title="Bulk Upload Students (CSV)"
+        subtitle="Upload a CSV file or paste spreadsheet rows to import multiple students at once."
+        size="lg"
+        footer={
+          <>
+            <Button variant="ghost" onClick={downloadSampleCsv}>
+              <Icon name="download" className="h-4 w-4" /> Sample CSV
+            </Button>
+            <Button variant="soft" onClick={() => setShowBulkModal(false)}>Cancel</Button>
+            <Button variant="primary" loading={bulkUploading} disabled={parsedBulkRows.length === 0 || !bulkClassId} onClick={submitBulkUpload}>
+              <Icon name="upload" className="h-4 w-4" /> Import {parsedBulkRows.length} Student{parsedBulkRows.length === 1 ? "" : "s"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Target Class & Section" required>
+              <Select value={bulkClassId} onChange={(e) => setBulkClassId(e.target.value)} aria-label="Target Class for Bulk Upload">
+                <option value="">Select Class *</option>
+                {classes.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name} {c.section ?? ""}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Upload CSV File" hint="Columns: admission_no, full_name, gender, roll_no, father_name, mother_name, mobile_number, house, blood_group">
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = () => setBulkCsvText(String(reader.result ?? ""));
+                  reader.readAsText(file);
+                }}
+                className="block w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-xs text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-brand-700 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-white"
+              />
+            </Field>
+          </div>
+          <Field label="CSV Content (editable)" hint={`${parsedBulkRows.length} valid student row(s) detected`}>
+            <Textarea
+              rows={5}
+              value={bulkCsvText}
+              onChange={(e) => setBulkCsvText(e.target.value)}
+              className="font-mono text-xs"
+            />
+          </Field>
+          {parsedBulkRows.length > 0 && (
+            <div className="max-h-44 overflow-y-auto rounded-xl border border-line">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-surface-2 font-semibold text-ink-2">
+                  <tr>
+                    <th className="px-3 py-2">Admission No</th>
+                    <th className="px-3 py-2">Full Name</th>
+                    <th className="px-3 py-2">Gender</th>
+                    <th className="px-3 py-2">Roll</th>
+                    <th className="px-3 py-2">House</th>
+                    <th className="px-3 py-2">Parent Mobile</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {parsedBulkRows.slice(0, 15).map((r, i) => (
+                    <tr key={`${r.admission_no}-${i}`}>
+                      <td className="px-3 py-1.5 font-mono">{r.admission_no}</td>
+                      <td className="px-3 py-1.5 font-semibold text-ink">{r.full_name}</td>
+                      <td className="px-3 py-1.5">{r.gender}</td>
+                      <td className="px-3 py-1.5">{r.roll_no ?? "—"}</td>
+                      <td className="px-3 py-1.5">{r.house ?? "—"}</td>
+                      <td className="px-3 py-1.5 font-mono">{r.mobile_number ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {/* Modal */}
       {showForm && ( <Portal>
@@ -531,7 +757,7 @@ export default function StudentsPage() {
               <Field label="Full name" required>
                 <Input
                   value={form.full_name}
-                  onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                  onChange={(e) => setForm({ ...form, full_name: sanitizePersonName(e.target.value) })}
                   placeholder="Student name"
                   className="bg-surface-2 hover:bg-white"
                 />
@@ -540,14 +766,14 @@ export default function StudentsPage() {
               <Field label="Father's name">
                 <Input
                   value={form.father_name}
-                  onChange={(e) => setForm({ ...form, father_name: e.target.value })}
+                  onChange={(e) => setForm({ ...form, father_name: sanitizePersonName(e.target.value) })}
                   className="bg-surface-2 hover:bg-white"
                 />
               </Field>
               <Field label="Mother's name">
                 <Input
                   value={form.mother_name}
-                  onChange={(e) => setForm({ ...form, mother_name: e.target.value })}
+                  onChange={(e) => setForm({ ...form, mother_name: sanitizePersonName(e.target.value) })}
                   className="bg-surface-2 hover:bg-white"
                 />
               </Field>
@@ -555,8 +781,10 @@ export default function StudentsPage() {
                 <Input
                   type="tel"
                   value={form.mobile_number}
-                  onChange={(e) => setForm({ ...form, mobile_number: e.target.value })}
-                  placeholder="98XXXXXXXX"
+                  onChange={(e) => setForm({ ...form, mobile_number: sanitizePhone(e.target.value) })}
+                  maxLength={10}
+                  inputMode="numeric"
+                  placeholder="10-digit mobile number"
                   className="bg-surface-2 hover:bg-white"
                 />
               </Field>
