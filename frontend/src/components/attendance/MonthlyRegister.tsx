@@ -1,10 +1,8 @@
 "use client";
 
 /**
- * Monthly register: students down, days across, with a per-student summary block on the
- * right (P / A / L / OD / Leave, %, mini bar). The register scrolls inside its card in
- * both directions — sticky header row, sticky student column, and (on wide screens) a
- * sticky summary block — so the page itself never overflows.
+ * Monthly register: Student ID and Student Name displayed as separate columns,
+ * days across, with a per-student summary block on the right (P / A, %, mini bar).
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -14,7 +12,7 @@ import { EmptyState, IconButton, Input, Skeleton } from "@/components/ui";
 import { CardBody, CardGrid, CardEmpty, CardTitle, Chip, Meter, RecordCard, Ring } from "@/components/RecordCard";
 import { TableView } from "@/components/TableView";
 import { ClassSectionSelect, resolveClass, selFor, type ClassOpt, type ClassSel } from "./ClassSectionSelect";
-import { AttendanceLegend, CountTile, STATUS_LONG, metaOf, normStatus, pctTone, shiftMonth, thisMonthLocal, type Tally } from "./status";
+import { AttendanceLegend, CountTile, STATUS_LONG, STATUS_META, normStatus, pctTone, shiftMonth, thisMonthLocal, type Tally } from "./status";
 
 type RegStudent = Tally & {
   id: string; fullName: string; rollNo: string | null; admissionNo: string;
@@ -70,14 +68,11 @@ export function MonthlyRegister({
             <CardTitle
               lead={<Ring value={s.percentage ?? 0} tone={pctTone(s.percentage)} size={52} label={`${s.fullName}: ${s.percentage ?? "no"}%`}>{s.percentage == null ? "—" : `${Math.round(s.percentage)}%`}</Ring>}
               title={s.fullName}
-              subtitle={<span className="tnum">Roll {s.rollNo ?? "—"} · {s.attended}/{s.counted} days</span>}
+              subtitle={<span className="tnum"><span className="font-mono">{s.admissionNo}</span> · Roll {s.rollNo ?? "—"} · {s.attended}/{s.counted} days</span>}
             />
             <div className="flex flex-wrap gap-1.5">
               <Chip tone="ok">{s.present} P</Chip>
               <Chip tone="danger">{s.absent} A</Chip>
-              <Chip tone="warn">{s.late} L</Chip>
-              <Chip tone="sky">{s.od} OD</Chip>
-              <Chip>{s.leave} Leave</Chip>
             </div>
           </CardBody>
         </RecordCard>
@@ -103,16 +98,13 @@ export function MonthlyRegister({
       </div>
 
       {t && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <div className="flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-2">
             <span className="text-[12px] text-ink-2">Class attendance</span>
             <span className="tnum ml-auto text-[15px] font-bold text-brand-700">{t.percentage == null ? "—" : `${t.percentage}%`}</span>
           </div>
           <CountTile status="Present" value={t.present} />
           <CountTile status="Absent" value={t.absent} />
-          <CountTile status="Late" value={t.late} />
-          <CountTile status="OD" value={t.od} />
-          <CountTile status="Leave" value={t.leave} />
         </div>
       )}
 
@@ -129,8 +121,11 @@ export function MonthlyRegister({
               <table className="w-max min-w-full border-separate border-spacing-0 text-[12.5px]" aria-label={`Attendance register ${monthLabel}`}>
                 <thead>
                   <tr>
-                    <th scope="col" className="sticky left-0 top-0 z-30 min-w-[13rem] max-md:min-w-[9.5rem] border-b border-r border-line bg-surface-2 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">
-                      Student
+                    <th scope="col" className="sticky left-0 top-0 z-30 min-w-[6.5rem] border-b border-r border-line bg-surface-2 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">
+                      Student ID
+                    </th>
+                    <th scope="col" className="sticky left-[6.5rem] top-0 z-30 min-w-[11rem] max-md:static max-md:min-w-[9.5rem] border-b border-r border-line bg-surface-2 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">
+                      Student Name
                     </th>
                     {allDays.map((d) => {
                       const sun = dow(d) === 0;
@@ -141,7 +136,7 @@ export function MonthlyRegister({
                         </th>
                       );
                     })}
-                    {(["P", "A", "L", "OD", "Lv"] as const).map((h, i) => (
+                    {(["P", "A"] as const).map((h, i) => (
                       <th key={h} scope="col" className={`sticky top-0 z-20 w-10 border-b border-line bg-surface-2 px-1.5 py-2 text-right text-[11px] font-semibold uppercase text-ink-3 ${i === 0 ? "border-l" : ""}`}>{h}</th>
                     ))}
                     <th scope="col" className="sticky right-0 top-0 z-30 min-w-[7.5rem] max-md:static border-b border-l border-line bg-surface-2 px-3 py-2 text-right text-[11px] font-semibold uppercase text-ink-3">
@@ -152,32 +147,32 @@ export function MonthlyRegister({
                 <tbody>
                   {students.map((s) => (
                     <tr key={s.id} className="group">
-                      <th scope="row" className="sticky left-0 z-10 border-b border-r border-line bg-surface px-3 py-1.5 max-md:px-2.5 text-left font-medium group-hover:bg-brand-50">
-                        {/* Phones stack roll over name (each on its own line, name truncated)
-                            instead of running them together in a single squeezed line. */}
-                        <span className="tnum mr-2 inline-block w-6 text-right text-ink-3 max-md:hidden">{s.rollNo ?? "—"}</span>
+                      <td className="sticky left-0 z-10 border-b border-r border-line bg-surface px-3 py-1.5 font-mono text-[12px] text-ink-2 group-hover:bg-brand-50">
+                        <span className="block font-semibold text-ink">{s.admissionNo}</span>
+                        {s.rollNo && <span className="tnum block text-[10.5px] text-ink-3">Roll {s.rollNo}</span>}
+                      </td>
+                      <th scope="row" className="sticky left-[6.5rem] z-10 max-md:static border-b border-r border-line bg-surface px-3 py-1.5 text-left font-medium group-hover:bg-brand-50">
                         <button
                           type="button"
                           onClick={() => onOpenStudent({ id: s.id, name: s.fullName })}
-                          className="max-w-[10rem] truncate align-middle text-ink hover:text-brand-700 hover:underline max-md:flex max-md:min-h-11 max-md:w-full max-md:max-w-none max-md:flex-col max-md:items-start max-md:justify-center max-md:gap-0 max-md:text-left"
+                          className="max-w-[11rem] truncate align-middle font-semibold text-ink hover:text-brand-700 hover:underline"
                           title="Open attendance calendar"
                         >
-                          <span className="tnum hidden text-[10px] font-semibold uppercase leading-tight tracking-wide text-ink-3 max-md:block">Roll {s.rollNo ?? "—"}</span>
-                          <span className="block max-w-full truncate">{s.fullName}</span>
+                          {s.fullName}
                         </button>
                       </th>
                       {allDays.map((d) => {
-                        const st = s.days[d];
-                        const meta = metaOf(st);
+                        const raw = s.days[d];
+                        const mapped = raw === "Absent" ? "Absent" : raw ? "Present" : null;
+                        const meta = mapped ? STATUS_META[mapped] : null;
                         const sun = dow(d) === 0;
                         const note = s.notes[d];
-                        const text = `${formatDate(d)}: ${st ? (normStatus(st) ? STATUS_LONG[normStatus(st)!] : st) : sun ? "Sunday" : "not marked"}${note ? ` — ${note}` : ""}`;
+                        const text = `${formatDate(d)}: ${mapped ? STATUS_LONG[mapped] : sun ? "Sunday" : "not marked"}${note ? ` — ${note}` : ""}`;
                         return (
                           <td key={d} className={`border-b border-line p-0.5 text-center ${sun ? "bg-surface-2/70" : "group-hover:bg-brand-50/50"}`}>
                             {meta ? (
                               <span title={text} aria-label={text} className={`relative mx-auto grid h-6 w-7 place-items-center rounded text-[10px] font-bold ring-1 ${meta.cell}`}>
                                 {meta.short}
-                                {note && <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-brand-500" aria-hidden />}
                               </span>
                             ) : (
                               <span title={text} aria-label={text} className="text-ink-3/50">·</span>
@@ -185,7 +180,7 @@ export function MonthlyRegister({
                           </td>
                         );
                       })}
-                      {([[s.present, "text-ok-ink"], [s.absent, "text-danger-ink"], [s.late, "text-warn-ink"], [s.od, "text-info-ink"], [s.leave, "text-ink-2"]] as const).map(([v, c], i) => (
+                      {([[s.present, "text-ok-ink"], [s.absent, "text-danger-ink"]] as const).map(([v, c], i) => (
                         <td key={i} className={`tnum border-b border-line bg-surface px-1.5 text-right font-semibold ${v ? c : "text-ink-3/60"} ${i === 0 ? "border-l" : ""}`}>{v}</td>
                       ))}
                       <td className="sticky right-0 z-10 border-b border-l border-line bg-surface px-3 py-1.5 group-hover:bg-brand-50 max-md:static">

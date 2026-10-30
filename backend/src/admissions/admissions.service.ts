@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import * as QRCode from 'qrcode';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Admission, AdmissionField } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -19,6 +20,23 @@ import {
 
 export const LINK_DAYS = 15;
 const DAY = 86_400_000;
+
+export async function formQrDataUrl(url: string): Promise<string> {
+  return QRCode.toDataURL(url, {
+    margin: 1,
+    width: 240,
+    color: { dark: '#0f172a', light: '#ffffff' },
+  });
+}
+
+export async function formQrPng(url: string): Promise<Buffer> {
+  return QRCode.toBuffer(url, {
+    type: 'png',
+    margin: 1,
+    width: 320,
+    color: { dark: '#0f172a', light: '#ffffff' },
+  });
+}
 
 export function formLink(token: string): string {
   return `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/admission-form?token=${token}`;
@@ -99,6 +117,9 @@ export class AdmissionsService {
         if (f.fieldType === 'date' && Number.isNaN(Date.parse(value))) errors.push(`${f.label} must be a date`);
         if (f.fieldType === 'number' && !/^-?\d+(\.\d+)?$/.test(value)) errors.push(`${f.label} must be a number`);
         if (f.fieldType === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) errors.push(`${f.label} must be an email`);
+        if ((f.fieldType === 'phone' || /\b(phone|mobile|contact|whatsapp)\b/i.test(f.label)) && !/^\d{10}$/.test(value)) {
+          errors.push(`${f.label} must be a 10-digit phone number (numbers only)`);
+        }
         if (f.validationRule) {
           let re: RegExp | null = null;
           try {
@@ -206,7 +227,8 @@ export class AdmissionsService {
         `(valid until ${linkExpiresAt.toISOString().slice(0, 10)}). Parent portal login ID: ${loginId}, password: ${password}`,
       [password],
     );
-    return { id: app.id, parent_name: p.parent_name, login_id: loginId, password, token, form_link: link, link_expires_at: linkExpiresAt };
+    const qrDataUrl = await formQrDataUrl(link);
+    return { id: app.id, parent_name: p.parent_name, login_id: loginId, password, token, form_link: link, qr_data_url: qrDataUrl, link_expires_at: linkExpiresAt };
   }
 
   /**
@@ -391,5 +413,66 @@ export class AdmissionsService {
     });
     if (!app) throw new NotFoundException('Application not found');
     return app;
+  }
+
+  async summaryPdf(app: Admission & { class?: { name: string; section: string | null } | null }) {
+    const [branch, fields, docs] = await Promise.all([
+      this.prisma.branch.findUnique({ where: { id: app.branchId }, select: { name: true, location: true } }),
+      this.publishedTemplate(app.branchId, app.academicYear ?? academicYearOf()),
+      this.prisma.admissionDocument.findMany({
+        where: { admissionId: app.id, branchId: app.branchId },
+        orderBy: { createdAt: 'asc' },
+        select: { docType: true, fileName: true, sizeBytes: true, createdAt: true },
+      }),
+    ]);
+    const dyn = parseDynamic(app.dynamicData);
+    const cls = app.class ? `${app.class.name}${app.class.section ? ` - ${app.class.section}` : ''}` : null;
+    const qaRows: [string, string | null | undefined][] =
+      fields.length > 0
+        ? fields.map((f, i) => [`${i + 1}. ${f.label}${f.isRequired ? ' *' : ''}`, String(dyn[fieldKey(f.label)] || '—')])
+        : Object.entries(dyn).map(([k, v]) => [k, String(v || '—')]);
+    return buildPdf({
+      school: branch?.name ?? 'School',
+      schoolLine: branch?.location ?? undefined,
+      title: 'Admission Application Summary',
+      reference: `App ID: ${app.id.slice(0, 8).toUpperCase()} · Year: ${app.academicYear ?? academicYearOf()} · Status: ${app.status}`,
+      blocks: [
+        { kind: 'heading', text: 'Applicant & Workflow Summary' },
+        {
+          kind: 'fields',
+          rows: [
+            ['Applicant Name', app.studentName ?? '—'],
+            ['Date of Birth', app.dob ? String(app.dob).slice(0, 10) : '—'],
+            ['Parent / Guardian', app.parentName ?? '—'],
+            ['Parent Contact', app.parentContact ?? '—'],
+            ['Parent Email', app.parentEmail ?? '—'],
+            ['Parent Login ID', app.loginId ?? '—'],
+            ['Class Applied / Assigned', cls ?? '—'],
+            ['Roll Number', app.rollNo ?? 'Pending'],
+            ['House Allotment', app.house ?? 'Pending'],
+            ['Payment Status', `${app.paymentStatus}${app.feeAmount != null ? ` (INR ${app.feeAmount})` : ''}`],
+            ['Fee Receipt No.', app.receiptNo ?? '—'],
+          ],
+        },
+        ...(qaRows.length > 0
+          ? [
+              { kind: 'heading' as const, text: 'Form Responses' },
+              {
+                kind: 'fields' as const,
+                rows: qaRows,
+              },
+            ]
+          : []),
+        ...(docs.length > 0
+          ? [
+              { kind: 'heading' as const, text: `Uploaded Documents (${docs.length})` },
+              {
+                kind: 'fields' as const,
+                rows: docs.map((d) => [d.docType, `${d.fileName} (${Math.round(d.sizeBytes / 1024)} KB)`] as [string, string | null]),
+              },
+            ]
+          : []),
+      ],
+    });
   }
 }

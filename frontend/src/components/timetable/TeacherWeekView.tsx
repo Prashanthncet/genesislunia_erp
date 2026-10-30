@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiDownload, apiFetch } from "@/lib/api";
-import { Button, Icon, Select, Tabs } from "@/components/ui";
+import { Button, Icon, Input, Select, Tabs } from "@/components/ui";
 import { WeekGrid, type WeekSlot } from "@/components/WeekGrid";
 import { DayView } from "./DayView";
 import { type TeacherWeekResponse, type TtPeriod, type TtTeacher, errMsg } from "./types";
@@ -20,6 +20,7 @@ export function TeacherWeekView({
   canDownload?: (teacherId: string) => boolean;
 }) {
   const [teacherId, setTeacherId] = useState(defaultTeacherId ?? "");
+  const [search, setSearch] = useState("");
   const [data, setData] = useState<TeacherWeekResponse | null>(null);
   const [view, setView] = useState<"week" | "day">("week");
   const [downloading, setDownloading] = useState(false);
@@ -38,6 +39,27 @@ export function TeacherWeekView({
   useEffect(() => {
     if (!teacherId && (defaultTeacherId || teachers[0])) setTeacherId(defaultTeacherId ?? teachers[0].id);
   }, [teacherId, defaultTeacherId, teachers]);
+
+  // Teacher list for the picker: include the default even if its designation isn't "Teacher" (e.g. HOD/VP).
+  const options = useMemo(
+    () =>
+      teachers.some((t) => t.id === teacherId) || !data
+        ? teachers
+        : [{ id: data.teacher.id, name: data.teacher.name } as TtTeacher, ...teachers],
+    [teachers, teacherId, data],
+  );
+
+  const filteredOptions = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((t) => `${t.name} ${t.subjects ?? ""}`.toLowerCase().includes(q));
+  }, [options, search]);
+
+  useEffect(() => {
+    if (search.trim() && filteredOptions.length > 0 && !filteredOptions.some((t) => t.id === teacherId)) {
+      setTeacherId(filteredOptions[0].id);
+    }
+  }, [search, filteredOptions, teacherId]);
 
   useEffect(() => {
     if (!teacherId) return;
@@ -73,11 +95,6 @@ export function TeacherWeekView({
   const lessons = data?.slots.length ?? 0;
   const roomAt = new Map((data?.slots ?? []).map((x) => [`${x.day_of_week}|${x.period_number}`, x.room_name]));
 
-  // Teacher list for the picker: include the default even if its designation isn't "Teacher" (e.g. HOD/VP).
-  const options = teachers.some((t) => t.id === teacherId) || !data
-    ? teachers
-    : [{ id: data.teacher.id, name: data.teacher.name } as TtTeacher, ...teachers];
-
   return (
     <div className="rounded-xl border border-line bg-white p-4 shadow-sm space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -89,8 +106,32 @@ export function TeacherWeekView({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 max-md:w-full">
-          <Select aria-label="Teacher" value={teacherId} onChange={(e) => setTeacherId(e.target.value)} className="w-auto max-md:!w-full">
-            {options.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          <div className="relative min-w-[210px] max-md:w-full">
+            <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
+            <Input
+              type="search"
+              aria-label="Search teacher"
+              placeholder="Search teacher or subject…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="!pl-9 w-full"
+            />
+          </div>
+          <Select
+            aria-label="Teacher"
+            value={teacherId}
+            onChange={(e) => setTeacherId(e.target.value)}
+            className="w-auto max-md:!w-full"
+          >
+            {filteredOptions.length === 0 ? (
+              <option value={teacherId}>No matching teachers</option>
+            ) : (
+              filteredOptions.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}{t.subjects ? ` — ${t.subjects}` : ""}
+                </option>
+              ))
+            )}
           </Select>
           {data && canDownload?.(data.teacher.id) && (
             <Button size="sm" variant="soft" onClick={download} loading={downloading}>

@@ -5,7 +5,7 @@ import { AuthGuard, Roles, RolesGuard } from '../auth/auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { R, ROLE } from '../auth/roles';
-import { ReqWithUser, assertCanSeeStudent, assertInBranch, audit, currentStaffId, portalStudentIds } from '../common/access';
+import { ReqWithUser, assertCanSeeStudent, assertInBranch, audit, currentStaffId, portalStudentIds, teacherClassIds } from '../common/access';
 import { CreateStaffLeaveDto, CreateStudentLeaveDto, LeaveDecisionDto } from './dto/leaves.dto';
 import { inclusiveDays, notifyParents, resolveActor } from './leave-helpers';
 
@@ -215,10 +215,13 @@ export class LeavesController {
   async listStudentLeaves(@Req() req: ReqWithUser, @Query('student_id') studentId?: string, @Query('status') status?: string) {
     const portal = await portalStudentIds(this.prisma, req.user);
     if (portal && studentId && !portal.includes(studentId)) throw new ForbiddenException('You can only view your own child');
+    if (studentId) await assertCanSeeStudent(this.prisma, req.user, studentId);
+    const teacherScope = await teacherClassIds(this.prisma, req.user);
     return this.prisma.studentLeave.findMany({
       where: {
         branchId: req.user.branch_id,
         ...(studentId ? { studentId } : portal ? { studentId: { in: portal } } : {}),
+        ...(teacherScope !== null ? { student: { classId: { in: teacherScope } } } : {}),
         ...(status ? { status } : {}),
       },
       include: { student: STUDENT_SUMMARY },
@@ -275,6 +278,7 @@ export class LeavesController {
       include: { student: { select: { fullName: true } } },
     });
     if (!leave) throw new NotFoundException('Leave request not found');
+    await assertCanSeeStudent(this.prisma, req.user, leave.studentId);
     if (leave.status !== 'Pending') throw new BadRequestException('Leave already decided');
     const actor = await resolveActor(this.prisma, req.user);
     const remarks = body.remarks?.trim() || '';

@@ -1,4 +1,5 @@
-import { IsEmail, IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsEmail, IsIn, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
 
 export class CreateStudentDto {
   @IsString()
@@ -38,5 +39,26 @@ export class CreateStudentDto {
 
   @IsOptional()
   @IsString()
+  house?: string;
+
+  @IsOptional()
+  @IsString()
+  blood_group?: string;
+
+  @IsOptional()
+  @IsString()
+  dob?: string;
+
+  @IsOptional()
+  @IsString()
   enrollment_date?: string;
+}
+
+export class BulkCreateStudentsDto {
+  @IsArray()
+  @ArrayMinSize(1, { message: 'students must contain at least one student row' })
+  @ArrayMaxSize(500, { message: 'Maximum 500 students per bulk upload' })
+  @ValidateNested({ each: true })
+  @Type(() => CreateStudentDto)
+  students!: CreateStudentDto[];
 }

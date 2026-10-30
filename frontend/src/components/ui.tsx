@@ -74,6 +74,14 @@ const PATHS: Record<string, ReactNode> = {
   edit: <><path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3Z" /><path d="M14.5 6.5 17.5 9.5" /></>,
   trash: <><path d="M4 7h16M9 7V4.5h6V7" /><path d="M6 7l1 13h10l1-13" /><path d="M10 11v6M14 11v6" /></>,
   chevronDown: <path d="m6 9 6 6 6-6" />,
+  chevronUp: <path d="m18 15-6-6-6 6" />,
+  arrowUp: <><path d="M12 19V5" /><path d="m5 12 7-7 7 7" /></>,
+  arrowDown: <><path d="M12 5v14" /><path d="m19 12-7 7-7-7" /></>,
+  qr: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 19h2M19 14v2" /></>,
+  grip: <><circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle cx="9" cy="12" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="9" cy="18" r="1" /><circle cx="15" cy="18" r="1" /></>,
+  type: <><path d="M4 7V4h16v3" /><path d="M9 20h6" /><path d="M12 4v16" /></>,
+  alignLeft: <><path d="M17 10H3" /><path d="M21 6H3" /><path d="M21 14H3" /><path d="M17 18H3" /></>,
+  checkCircle: <><circle cx="12" cy="12" r="9" /><path d="m8.5 12.5 2.5 2.5 4.5-5" /></>,
   chevronRight: <path d="m9 6 6 6-6 6" />,
   chevronLeft: <path d="m15 6-6 6 6 6" />,
   arrowUpRight: <><path d="M7 17 17 7" /><path d="M9 7h8v8" /></>,
@@ -418,8 +426,30 @@ export function Field({
   );
 }
 
-export const Input = ({ className = "", ...rest }: InputHTMLAttributes<HTMLInputElement>) => (
-  <input className={`field ${className}`} {...rest} />
+export const Input = ({ className = "", type, onChange, maxLength, inputMode, pattern, ...rest }: InputHTMLAttributes<HTMLInputElement>) => (
+  (() => {
+    const isPhone =
+      type === "tel" ||
+      /\b(phone|mobile|contact|whatsapp)\b/i.test(`${rest.placeholder ?? ""} ${rest["aria-label"] ?? ""} ${rest.name ?? ""}`);
+    return (
+      <input
+        type={type}
+        inputMode={inputMode ?? (isPhone ? "numeric" : undefined)}
+        maxLength={isPhone ? undefined : maxLength}
+        pattern={pattern ?? (isPhone ? "[0-9]{10}" : undefined)}
+        onChange={(e) => {
+          if (isPhone) {
+            const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+            if (e.target.value !== digits) e.target.value = digits;
+          }
+          onChange?.(e);
+        }}
+        className={`field ${className}`}
+        {...rest}
+      />
+    );
+  })()
+
 );
 
 export const Select = ({ className = "", children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) => (
@@ -506,14 +536,14 @@ export function ProgressBar({ value, tone = "brand", className = "", label }: {
 export function Tabs<T extends string>({
   tabs, value, onChange, className = "",
 }: {
-  tabs: readonly { id: T; label: string; count?: number }[];
+  tabs: readonly { id: T; label: string; count?: number; icon?: string }[];
   value: T;
   onChange: (id: T) => void;
   className?: string;
 }) {
   return (
     <div
-      className={`inline-flex flex-wrap items-center gap-1 rounded-lg border border-line bg-surface-2 p-1 max-md:flex max-md:max-w-full max-md:flex-nowrap m-scroll-x ${className}`}
+      className={`inline-flex flex-wrap items-center gap-1.5 rounded-2xl border border-line/90 bg-gradient-to-b from-surface-2/95 to-surface-2/60 p-1.5 shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)] max-md:flex max-md:max-w-full max-md:flex-nowrap m-scroll-x ${className}`}
       role="tablist"
     >
       {tabs.map((t) => {
@@ -525,15 +555,20 @@ export function Tabs<T extends string>({
             type="button"
             aria-selected={active}
             onClick={() => onChange(t.id)}
-            className={`relative rounded-md px-3.5 py-1.5 text-[13px] font-semibold capitalize transition-all duration-200 max-md:min-h-10 max-md:shrink-0 max-md:snap-start max-md:whitespace-nowrap ${
+            className={`group relative inline-flex items-center gap-2 rounded-xl px-4 py-2 text-[13px] font-semibold capitalize transition-all duration-200 max-md:min-h-10 max-md:shrink-0 max-md:snap-start max-md:whitespace-nowrap ${
               active
-                ? "bg-brand-50 text-brand-700 ring-1 ring-brand-100"
-                : "text-ink-2 hover:bg-surface hover:text-ink"
+                ? "bg-brand-700 text-white shadow-[0_2px_10px_-2px_rgba(30,58,138,0.45)] ring-1 ring-brand-800/20"
+                : "text-ink-2 hover:bg-surface/90 hover:text-ink hover:shadow-2xs"
             }`}
           >
-            {t.label}
+            {t.icon ? (
+              <Icon name={t.icon} className={`h-3.5 w-3.5 shrink-0 ${active ? "text-white" : "text-ink-3 group-hover:text-brand-700"}`} />
+            ) : (
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full transition-all ${active ? "bg-amber-300 shadow-[0_0_6px_rgba(252,211,77,0.9)]" : "bg-line group-hover:bg-brand-400"}`} aria-hidden />
+            )}
+            <span>{t.label}</span>
             {t.count !== undefined && (
-              <span className={`ml-1.5 text-[11px] font-bold ${active ? "text-brand-500" : "text-ink-3"}`}>
+              <span className={`ml-0.5 inline-flex min-w-[1.35rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-bold leading-none tnum ${active ? "bg-white/20 text-white ring-1 ring-white/25" : "bg-surface text-ink-2 ring-1 ring-line"}`}>
                 {t.count}
               </span>
             )}

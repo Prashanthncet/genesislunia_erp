@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { hasRole, type Me } from "@/lib/auth";
 import { Badge, Button, Card, CardHead, EmptyState, Field, Icon, Input, Select, Skeleton, Textarea, useToast } from "@/components/ui";
+import { Monogram, initials, toneFor } from "@/components/RecordCard";
 import { GATE_TYPES, classLabel, errMsg, fmtTime } from "@/components/leaves/shared";
 import { ISSUE_DIRECT, type PickStudent } from "./types";
 
@@ -63,6 +64,8 @@ export function IssuePassPanel({ me, onIssued }: { me: Me; onIssued?: () => void
   const toast = useToast();
   const direct = hasRole(me, ISSUE_DIRECT);
   const [q, setQ] = useState("");
+  const [resFilter, setResFilter] = useState<"all" | "hostel" | "day">("all");
+  const [classFilter, setClassFilter] = useState("");
   const [options, setOptions] = useState<PickStudent[] | null>(null);
   const [student, setStudent] = useState<PickStudent | null>(null);
   const [form, setForm] = useState(() => ({ type: GATE_TYPES[0], reason: "", out_time: localStamp(new Date()), expected_in_time: "" }));
@@ -81,6 +84,26 @@ export function IssuePassPanel({ me, onIssued }: { me: Me; onIssued?: () => void
     }, 250);
     return () => { live = false; clearTimeout(t); };
   }, [q, toast]);
+
+  const classOptions = useMemo(() => {
+    if (!options) return [];
+    const seen = new Set<string>();
+    for (const s of options) {
+      const lbl = classLabel(s.class);
+      if (lbl) seen.add(lbl);
+    }
+    return Array.from(seen).sort();
+  }, [options]);
+
+  const filteredOptions = useMemo(() => {
+    if (!options) return null;
+    return options.filter((s) => {
+      if (resFilter === "hostel" && !s.hostel) return false;
+      if (resFilter === "day" && !!s.hostel) return false;
+      if (classFilter && classLabel(s.class) !== classFilter) return false;
+      return true;
+    });
+  }, [options, resFilter, classFilter]);
 
   const backBeforeOut = !!form.expected_in_time && form.expected_in_time < form.out_time;
   const canSubmit = !!student && form.reason.trim().length > 0 && !!form.out_time && !backBeforeOut && !busy;
@@ -136,33 +159,66 @@ export function IssuePassPanel({ me, onIssued }: { me: Me; onIssued?: () => void
           <div>
             <span className="label">Student <span className="text-danger">*</span></span>
             {student ? (
-              <div className="flex flex-wrap items-center gap-3 rounded-xl border border-brand-100 bg-brand-50/60 px-3.5 py-2.5">
+              <div className="flex flex-wrap items-center gap-3 rounded-xl border border-brand-200 bg-brand-50/70 px-3.5 py-3 shadow-xs">
+                <Monogram text={initials(student.fullName)} tone={toneFor(student.fullName)} shape="circle" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13.5px] font-semibold text-ink">{student.fullName}</p>
+                  <p className="truncate text-[14px] font-semibold text-ink">{student.fullName}</p>
                   <p className="text-[12px] text-ink-3 max-md:break-words">
-                    <span className="font-mono">{student.admissionNo}</span>
+                    <span className="font-mono font-medium text-ink-2">{student.admissionNo}</span>
                     {classLabel(student.class) && ` · ${classLabel(student.class)}`}
                     {student.hostel && ` · ${student.hostel.name}, room ${student.hostel.room}`}
                   </p>
                 </div>
-                <Button type="button" size="sm" variant="ghost" onClick={() => setStudent(null)}>Change</Button>
+                <Button type="button" size="sm" variant="soft" onClick={() => setStudent(null)}>Change student</Button>
               </div>
             ) : (
-              <div className="rounded-xl border border-line">
-                <div className="relative border-b border-line p-2">
-                  <Icon name="search" className="pointer-events-none absolute left-4.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
-                  <Input
-                    value={q}
-                    onChange={(e) => setQ(e.target.value)}
-                    placeholder="Search by name or admission no."
-                    aria-label="Search students by name or admission number"
-                    className="pl-9"
-                    autoComplete="off"
-                  />
+              <div className="overflow-hidden rounded-xl border border-line bg-surface">
+                <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-2/60 p-2.5">
+                  <div className="relative min-w-[200px] flex-1">
+                    <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
+                    <Input
+                      type="search"
+                      value={q}
+                      onChange={(e) => setQ(e.target.value)}
+                      placeholder="Search by student name or admission no…"
+                      aria-label="Search students by name or admission number"
+                      className="!pl-9 w-full bg-white"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <select
+                    aria-label="Filter students by class"
+                    value={classFilter}
+                    onChange={(e) => setClassFilter(e.target.value)}
+                    className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-[12px] font-medium text-ink-2"
+                  >
+                    <option value="">All classes</option>
+                    {classOptions.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                  <div className="inline-flex items-center rounded-lg border border-line bg-white p-0.5 text-[12px]" role="group" aria-label="Filter by residence">
+                    {([
+                      { id: "all", label: "All" },
+                      { id: "hostel", label: "Hostel" },
+                      { id: "day", label: "Day scholar" },
+                    ] as const).map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setResFilter(f.id)}
+                        className={`rounded-md px-2.5 py-1 font-semibold transition ${
+                          resFilter === f.id ? "bg-brand-700 text-white shadow-xs" : "text-ink-2 hover:bg-surface-2"
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <ul className="scroll-slim max-h-64 divide-y divide-line overflow-y-auto" role="listbox" aria-label="Students">
-                  {options === null && [0, 1, 2].map((i) => <li key={i} className="px-3.5 py-2.5"><Skeleton className="h-8 w-full" /></li>)}
-                  {options?.map((s) => (
+                  {filteredOptions === null && [0, 1, 2].map((i) => <li key={i} className="px-3.5 py-2.5"><Skeleton className="h-8 w-full" /></li>)}
+                  {filteredOptions?.map((s) => (
                     <li key={s.id}>
                       <button
                         type="button"
@@ -171,6 +227,7 @@ export function IssuePassPanel({ me, onIssued }: { me: Me; onIssued?: () => void
                         onClick={() => setStudent(s)}
                         className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-surface-2"
                       >
+                        <Monogram text={initials(s.fullName)} tone={toneFor(s.fullName)} size="sm" shape="circle" />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[13px] font-semibold text-ink">{s.fullName}</span>
                           <span className="block text-[11.5px] text-ink-3 max-md:!text-[12.5px]">
@@ -181,19 +238,18 @@ export function IssuePassPanel({ me, onIssued }: { me: Me; onIssued?: () => void
                       </button>
                     </li>
                   ))}
-                  {options?.length === 0 && <li><EmptyState icon="students" title="No matching students" hint="Try part of the name or the admission number." /></li>}
+                  {filteredOptions?.length === 0 && <li><EmptyState icon="students" title="No matching students" hint="Try part of the name or the admission number." /></li>}
                 </ul>
               </div>
             )}
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="Pass type" required>
               <Select aria-label="Pass type" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
                 {GATE_TYPES.map((t) => <option key={t}>{t}</option>)}
               </Select>
             </Field>
-            <div className="hidden sm:block" />
             <Field label="Out time" required>
               <Input type="datetime-local" value={form.out_time} onChange={(e) => setForm({ ...form, out_time: e.target.value })} required />
             </Field>

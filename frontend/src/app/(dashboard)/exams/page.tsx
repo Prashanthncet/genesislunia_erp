@@ -116,9 +116,9 @@ function MarksEntry({ classes, subjects, exams, teaching, isTeacher, onSaved }: 
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const classOptions = teaching.all
-    ? classes.map((c) => ({ id: c.id, label: cls(c) }))
-    : [...new Map(teaching.pairs.map((p) => [p.class_id, { id: p.class_id, label: p.class_name }])).values()];
+  const classOptions = teaching.all ? classes.map((c) => ({ id: c.id, label: cls(c) })) : [...new Map(teaching.pairs.map((p) => [p.class_id, { id: p.class_id, label: p.class_name }])).values()];
+
+
   const subjectOptions = teaching.all
     ? subjects.map((s) => ({ id: s.id, label: s.name }))
     : teaching.pairs.filter((p) => p.class_id === classId).map((p) => ({ id: p.subject_id, label: p.subject_name }));
@@ -270,9 +270,9 @@ function ReportCards({ classes, teaching, bands, canGenerate, canPublish, portal
   }, [me]);
   useEffect(() => { if (portal && portalKids.length && !studentId) setStudentId(portalKids[0].id); }, [portal, portalKids, studentId]);
 
-  const classOptions = teaching.all || !canGenerate
-    ? classes.map((c) => ({ id: c.id, label: cls(c) }))
-    : [...new Map(teaching.pairs.map((p) => [p.class_id, { id: p.class_id, label: p.class_name }])).values()];
+  const classOptions = classes.map((c) => ({ id: c.id, label: cls(c) }));
+
+
 
   useEffect(() => {
     setStudentId(portal ? studentId : ""); setCard(null); setGen(null); setRoster([]);

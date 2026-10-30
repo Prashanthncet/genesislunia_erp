@@ -23,7 +23,7 @@ export type RosterRow = {
 
 export type Visitor = {
   id: string; hostelId: string | null; hostelName: string | null; visitorName: string; visitorPhone: string | null;
-  whomToMeet: string; purpose: string | null; inTime: string; outTime: string | null; passNo: string;
+  whomToMeet: string; purpose: string | null; visitorPhoto?: string | null; inTime: string; outTime: string | null; passNo: string;
 };
 
 export const classLabel = (s?: StudentLite | null) => (s?.class ? `${s.class.name}${s.class.section ? ` ${s.class.section}` : ""}` : "");

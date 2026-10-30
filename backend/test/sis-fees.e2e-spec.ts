@@ -109,6 +109,7 @@ describe('SIS / fees / notifications / classes (e2e)', () => {
       expect(await prisma.student.count({ where: { id: 'stu_003' } })).toBe(1);
       expect((await as('os').del('/api/students/stu_003')).status).toBe(403); // delete is admins-only
       expect((await as('os').put('/api/students/stu_003/status', { status: 'Bogus' })).status).toBe(400);
+      expect((await as('os').put('/api/students/stu_003/status', { status: 'Left', reason: '   ' })).status).toBe(400);
     });
 
     it('cross-school: sainik admin requesting g2_stu_001 → 404', async () => {
@@ -397,6 +398,8 @@ describe('SIS / fees / notifications / classes (e2e)', () => {
     it('class detail does not leak student contacts', async () => {
       const res = await as('teacher').get('/api/classes/cls_10a');
       expect(res.body.students[0]).not.toHaveProperty('mobileNumber');
+      expect((await as('teacher').get('/api/classes/cls_10b')).status).toBe(403);
+      expect((await as('teacher').get('/api/students/stu_004/profile')).status).toBe(403);
     });
   });
 });

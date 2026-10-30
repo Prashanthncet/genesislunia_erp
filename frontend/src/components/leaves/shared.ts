@@ -32,10 +32,10 @@ export type StudentOption = { id: string; fullName: string; admissionNo: string 
 /** Mirrors the backend's leaves/gate-pass role lists (backend enforces; these only hide controls). */
 export const LEAVE_ON_BEHALF: string[] = [...R.ADMINS, ROLE.HR];
 export const LEAVE_VIEW_ALL: string[] = [...R.LEADERSHIP, ROLE.HR];
-export const STUDENT_LEAVE_FILE: string[] = [...R.STUDENT_LEAVE_APPROVE, ROLE.OFFICE_SUPERINTENDENT];
-export const STUDENT_LEAVE_READ: string[] = [...new Set([...R.STUDENT_READ, ...R.STUDENT_LEAVE_APPROVE])];
-export const GATE_REQUEST: string[] = [...R.LEADERSHIP, ROLE.WARDEN, ROLE.TEACHER, ROLE.HOD];
-export const GATE_READ: string[] = [...new Set([...R.GATE_DESK, ...R.GATE_PASS_APPROVE, ROLE.TEACHER, ROLE.HOD])];
+export const STUDENT_LEAVE_FILE: string[] = [...R.STUDENT_LEAVE_APPROVE, ROLE.OFFICE_SUPERINTENDENT].filter((r) => r !== ROLE.TEACHER);
+export const STUDENT_LEAVE_READ: string[] = [...new Set([...R.STUDENT_READ, ...R.STUDENT_LEAVE_APPROVE])].filter((r) => r !== ROLE.TEACHER);
+export const GATE_REQUEST: string[] = [...R.LEADERSHIP, ROLE.WARDEN, ROLE.HOD];
+export const GATE_READ: string[] = [...new Set([...R.GATE_DESK, ...R.GATE_PASS_APPROVE, ROLE.HOD])];
 export const GATE_WARDEN_STEP: string[] = [...R.ADMINS, ROLE.WARDEN];
 export const GATE_PRINCIPAL_STEP: string[] = [...R.ADMINS, ROLE.PRINCIPAL];
 export const GATE_PRINT: string[] = [...new Set([...R.GATE_DESK, ...R.GATE_PASS_APPROVE])];

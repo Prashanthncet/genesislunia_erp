@@ -60,11 +60,37 @@ export async function portalStudentIds(prisma: PrismaService, user: AuthUser): P
   return links.map((l) => l.studentId);
 }
 
-/** 403 unless a portal user is allowed to see this student. Staff pass through. */
+/**
+ * For a teacher, returns the class IDs assigned to them (as class teacher, via timetable slots,
+ * or via an active substitution cover). Returns `null` for non-teacher roles.
+ */
+export async function teacherClassIds(prisma: PrismaService, user: AuthUser): Promise<string[] | null> {
+  if (user.role !== ROLE.TEACHER) return null;
+  const staffId = await currentStaffId(prisma, user);
+  if (!staffId) return [];
+  const [own, slots, subs] = await Promise.all([
+    prisma.class.findMany({ where: { branchId: user.branch_id, classTeacherId: staffId }, select: { id: true } }),
+    prisma.timetableSlot.findMany({ where: { branchId: user.branch_id, teacherId: staffId }, select: { classId: true }, distinct: ['classId'] }),
+    prisma.substitution.findMany({ where: { branchId: user.branch_id, substituteTeacherId: staffId, status: 'Assigned' }, select: { classId: true }, distinct: ['classId'] }),
+  ]);
+  return [...new Set([...own.map((c) => c.id), ...slots.map((s) => s.classId), ...subs.map((s) => s.classId)])];
+}
+
+/**
+ * 403 unless a portal user is allowed to see this student, or a teacher is assigned to
+ * the student's class/section. Other staff roles pass through.
+ */
 export async function assertCanSeeStudent(prisma: PrismaService, user: AuthUser, studentId: string) {
   const allowed = await portalStudentIds(prisma, user);
   if (allowed && !allowed.includes(studentId)) {
     throw new ForbiddenException('You can only view your own child');
+  }
+  const teacherScope = await teacherClassIds(prisma, user);
+  if (teacherScope !== null) {
+    const stu = await prisma.student.findFirst({ where: { id: studentId, branchId: user.branch_id }, select: { classId: true } });
+    if (!stu?.classId || !teacherScope.includes(stu.classId)) {
+      throw new ForbiddenException('You can only view students in classes assigned to you');
+    }
   }
 }
 

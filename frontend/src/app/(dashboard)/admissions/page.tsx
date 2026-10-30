@@ -1,52 +1,60 @@
 "use client";
 
+/**
+ * Admissions workflow screen — role-based queues with redesigned tabbed menu,
+ * comprehensive filter options (status, payment status, academic year, class, house, search),
+ * client-side QR code modal/download, and Google Forms-style form builder.
+ */
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { R, hasRole, useMe } from "@/lib/auth";
-import { Badge, Button, EmptyState, Icon, Input, PageHeader, Reveal, Select, SkeletonRows, StatCard, Tabs, useToast } from "@/components/ui";
-import { confirmAction } from "@/components/confirm";
-import { TableView } from "@/components/TableView";
+import { R, ROLE, hasRole, useMe } from "@/lib/auth";
+import { Badge, Button, Card, EmptyState, Icon, Input, MailLink, Modal, PageHeader, PhoneLink, Reveal, Select, SkeletonRows, StatCard, Tabs, useToast } from "@/components/ui";
+import { downloadQrPng, makeQrDataUrl } from "@/lib/qr";
+import { QrScannerModal } from "@/components/QrScannerModal";
+import { Application, PIPELINE, STATUS_TONE, fmtDate, inr, post } from "@/components/admissions/shared";
 import { ApplicationPanel } from "@/components/admissions/ApplicationPanel";
 import { CreateForms } from "@/components/admissions/CreateForms";
 import { TemplateApprovals, TemplateBuilder } from "@/components/admissions/TemplateBuilder";
-import { Application, PIPELINE, STATUS_TONE, fmtDate, inr, post } from "@/components/admissions/shared";
 
-type TabId =
-  | "template" | "create" | "submitted" | "approvals" | "fee-approved"
-  | "payment-received" | "awaiting-payment" | "roll-assigned" | "vp-approved" | "all";
+type Tab = "applications" | "create" | "template" | "approvals";
 
-/** Role-driven work queues: each role sees the step it owns, plus the full list. */
-const QUEUES: { id: TabId; label: string; roles: readonly string[]; status?: string; hint?: string }[] = [
-  { id: "template", label: "Form template", roles: R.ADMISSION_SETUP },
-  { id: "create", label: "Create admission forms", roles: R.ADMISSION_SETUP },
-  { id: "submitted", label: "Submitted — validate", roles: R.ADMISSION_SETUP, status: "Submitted by Parent", hint: "Check the form and documents; mark valid or send back for re-submission." },
-  { id: "approvals", label: "Template approvals", roles: R.ADMISSION_OS },
-  { id: "fee-approved", label: "Fee approved — assign roll", roles: R.ADMISSION_OS, status: "Fee Approved", hint: "Generate the roll number ([CLASS]-[YEAR]-[SEQ]) and balanced house." },
-  { id: "payment-received", label: "Payment received — verify", roles: R.ADMISSION_ACCOUNTS, status: "Payment Received", hint: "Verify the payment, enter or generate the receipt number, attach the receipt." },
-  { id: "awaiting-payment", label: "Awaiting payment", roles: R.ADMISSION_ACCOUNTS, status: "Document Validated", hint: "Parents pay online; record counter/cheque payments here with a reference." },
-  { id: "roll-assigned", label: "VP review", roles: R.ADMISSION_VP, status: "Roll No Assigned", hint: "Approve, or send back to the OS with remarks." },
-  { id: "vp-approved", label: "Principal sign-off", roles: R.ADMISSION_PRINCIPAL, status: "VP Approved", hint: "Digitally sign to confirm; the student record is created immediately." },
-  { id: "all", label: "All applications", roles: R.ADMISSION_READ },
-];
+const ROLE_QUEUE: Record<string, string[]> = {
+  [ROLE.ADMISSION_OFFICER]: ["Submitted by Parent", "Re-submit", "Link Expired"],
+  [ROLE.ACCOUNTS]: ["Document Validated", "Payment Received"],
+  [ROLE.OFFICE_SUPERINTENDENT]: ["Fee Approved"],
+  [ROLE.VICE_PRINCIPAL]: ["Roll No Assigned"],
+  [ROLE.PRINCIPAL]: ["VP Approved"],
+};
 
 export default function AdmissionsPage() {
-  const { me, loading: meLoading } = useMe();
-  const toast = useToast();
-  const notify = useCallback((msg: string, tone: "success" | "error" = "success") => toast.push(msg, tone), [toast]);
-
-  const tabs = useMemo(() => QUEUES.filter((q) => hasRole(me, q.roles)), [me]);
-  const [tab, setTab] = useState<TabId | null>(null);
+  const { me } = useMe();
+  const { push: notify } = useToast();
+  const [tab, setTab] = useState<Tab>("applications");
   const [apps, setApps] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [running, setRunning] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [reminding, setReminding] = useState(false);
+  const [qrApp, setQrApp] = useState<{ app: Application; url: string; qrDataUrl: string } | null>(null);
+  const [showScanner, setShowScanner] = useState(false);
+
+  // Comprehensive Filters
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [paymentFilter, setPaymentFilter] = useState<string>("all");
+  const [yearFilter, setYearFilter] = useState<string>("all");
+  const [classFilter, setClassFilter] = useState<string>("all");
+  const [houseFilter, setHouseFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"updated" | "name" | "status">("updated");
+  const [search, setSearch] = useState("");
+
+  const canSetup = hasRole(me, R.ADMISSION_SETUP);
+  const canOs = hasRole(me, R.ADMISSION_OS);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setApps(await apiFetch<Application[]>("/api/admissions"));
+      const list = await apiFetch<Application[] | { data: Application[] }>("/api/admissions");
+      setApps(Array.isArray(list) ? list : list.data ?? []);
     } catch (e) {
       notify(e instanceof Error ? e.message : "Failed to load applications", "error");
     } finally {
@@ -54,149 +62,383 @@ export default function AdmissionsPage() {
     }
   }, [notify]);
 
-  useEffect(() => { if (hasRole(me, R.ADMISSION_READ)) void load(); }, [me, load]);
-  useEffect(() => {
-    if (!tab && tabs.length) {
-      // Start on the first queue that has work in it, else the first tab.
-      const busy = tabs.find((t) => t.status && apps.some((a) => a.status === t.status));
-      setTab((busy ?? tabs[0]).id);
-    }
-  }, [tabs, tab, apps]);
+  useEffect(() => { void load(); }, [load]);
 
-  if (meLoading) return <div className="card p-6"><SkeletonRows rows={4} cols={3} /></div>;
-  if (!hasRole(me, R.ADMISSION_READ)) {
-    return (
-      <div className="card">
-        <EmptyState icon="lock" title="You don't have access to this page" hint="Admissions are handled by the admission office, OS, accounts and school leadership." />
-      </div>
-    );
-  }
+  const myQueue = useMemo(() => (me ? ROLE_QUEUE[me.role] ?? [] : []), [me]);
+  const myQueueCount = useMemo(() => apps.filter((a) => myQueue.includes(a.status)).length, [apps, myQueue]);
 
-  const current = tabs.find((t) => t.id === tab) ?? tabs[0];
-  const count = (status: string) => apps.filter((a) => a.status === status).length;
-  const complete = count("Admission Complete");
-  const inFlight = apps.filter((a) => !["Admission Complete", "Rejected", "Link Expired"].includes(a.status)).length;
+  const distinctYears = useMemo(
+    () => Array.from(new Set(apps.map((a) => a.academicYear).filter((x): x is string => Boolean(x)))).sort().reverse(),
+    [apps],
+  );
+  const distinctClasses = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          apps
+            .filter((a) => a.class)
+            .map((a) => [a.class!.id, `${a.class!.name}${a.class!.section ? `-${a.class!.section}` : ""}`]),
+        ).entries(),
+      ),
+    [apps],
+  );
+  const distinctHouses = useMemo(
+    () => Array.from(new Set(apps.map((a) => a.house).filter((x): x is string => Boolean(x)))).sort(),
+    [apps],
+  );
 
-  const rows = apps.filter((a) => {
-    if (current?.status && a.status !== current.status) return false;
-    if (current?.id === "all" && statusFilter && a.status !== statusFilter) return false;
-    if (q) {
-      const hay = `${a.studentName ?? ""} ${a.parentName ?? ""} ${a.parentEmail ?? ""} ${a.loginId ?? ""} ${a.rollNo ?? ""}`.toLowerCase();
-      if (!hay.includes(q.toLowerCase())) return false;
-    }
-    return true;
-  });
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = apps.filter((a) => {
+      if (statusFilter === "__mine__" && !myQueue.includes(a.status)) return false;
+      if (statusFilter !== "all" && statusFilter !== "__mine__" && a.status !== statusFilter) return false;
+      if (paymentFilter !== "all" && a.paymentStatus !== paymentFilter) return false;
+      if (yearFilter !== "all" && a.academicYear !== yearFilter) return false;
+      if (classFilter !== "all" && a.classId !== classFilter && a.class?.id !== classFilter) return false;
+      if (houseFilter !== "all" && a.house !== houseFilter) return false;
+      if (!q) return true;
+      return [a.studentName, a.parentName, a.parentEmail, a.parentContact, a.loginId, a.rollNo, a.receiptNo]
+        .some((v) => v?.toLowerCase().includes(q));
+    });
+    return [...list].sort((a, b) => {
+      if (sortBy === "name") return (a.studentName ?? a.parentName ?? "").localeCompare(b.studentName ?? b.parentName ?? "");
+      if (sortBy === "status") return a.status.localeCompare(b.status);
+      return (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
+    });
+  }, [apps, statusFilter, paymentFilter, yearFilter, classFilter, houseFilter, sortBy, search, myQueue]);
+
+  const hasActiveFilters =
+    statusFilter !== "all" || paymentFilter !== "all" || yearFilter !== "all" || classFilter !== "all" || houseFilter !== "all" || Boolean(search.trim());
+
+  const resetFilters = () => {
+    setStatusFilter("all");
+    setPaymentFilter("all");
+    setYearFilter("all");
+    setClassFilter("all");
+    setHouseFilter("all");
+    setSearch("");
+  };
 
   const runReminders = async () => {
-    if (!(await confirmAction({ title: "Run admission reminders now?", text: "Pending parents get day-7 / day-13 reminders and overdue form links expire.", confirmText: "Run reminders", tone: "primary" }))) return;
-    setRunning(true);
+    setReminding(true);
     try {
-      const r = await post<{ checked: number; reminded_day7: number; reminded_day13: number; expired: number }>("/api/admissions/reminders/run");
-      notify(`Checked ${r.checked}: ${r.reminded_day7} day-7 and ${r.reminded_day13} day-13 reminders, ${r.expired} links expired`);
+      const r = await post<{ reminded: number; expired: number }>("/api/admissions/reminders/run");
+      notify(`Reminders sent: ${r.reminded} · Expired: ${r.expired}`);
       await load();
     } catch (e) {
-      notify(e instanceof Error ? e.message : "Reminder run failed", "error");
+      notify(e instanceof Error ? e.message : "Reminder job failed", "error");
     } finally {
-      setRunning(false);
+      setReminding(false);
     }
   };
 
-  const queueTable = (
-    <div className="space-y-3">
-      {current?.hint && <p className="text-[13px] text-ink-3">{current.hint}</p>}
-      <div className="flex flex-wrap items-center gap-2">
-        <Input aria-label="Search applications" placeholder="Search name, email, login ID, roll no…" value={q} onChange={(e) => setQ(e.target.value)} className="field flex-1 min-w-56 max-md:min-w-full" />
-        {current?.id === "all" && (
-          <Select aria-label="Filter by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-auto max-md:min-w-[9rem] max-md:flex-1">
-            <option value="">All statuses</option>
-            {[...PIPELINE, "Re-submit", "Link Expired", "Rejected"].map((s) => <option key={s}>{s}</option>)}
-          </Select>
-        )}
-        {hasRole(me, R.ADMISSION_SETUP) && current?.id === "all" && (
-          <Button variant="soft" loading={running} onClick={runReminders} className="max-md:flex-1"><Icon name="bell" className="h-4 w-4" /> Run reminders now</Button>
-        )}
-        <Button variant="ghost" onClick={() => void load()} className="max-md:flex-1"><Icon name="refresh" className="h-4 w-4" /> Refresh</Button>
-      </div>
-      <div className="card overflow-x-auto">
-        <TableView id={`queue-${current?.id ?? "all"}`} mobileHide={["Updated"]}>
-          <table className="w-full text-sm">
-            <thead className="table-head">
-              <tr>
-                <th className="px-4 py-3">Applicant</th>
-                <th className="px-4 py-3">Parent</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Fee</th>
-                <th className="px-4 py-3">Roll / House</th>
-                <th className="px-4 py-3">Updated</th>
-                <th className="px-4 py-3">Open</th>
-              </tr>
-            </thead>
-            {loading ? <SkeletonRows rows={4} cols={7} /> : (
-              <tbody>
-                {rows.map((a) => (
-                  <tr key={a.id} className="row-hover border-t border-line">
-                    <td className="px-4 py-3">
-                      <span className="block font-semibold">{a.studentName ?? "Not submitted yet"}</span>
-                      <span className="text-[11.5px] text-ink-3">{a.academicYear ?? "—"}{a.class ? ` · ${a.class.name}${a.class.section ? `-${a.class.section}` : ""}` : ""}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="block">{a.parentName ?? "—"}</span>
-                      <span className="font-mono text-[11.5px] text-ink-3">{a.loginId ?? ""}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge tone={STATUS_TONE[a.status] ?? "sky"}>{a.status}</Badge>
-                      {a.status === "Links Sent" && a.linkExpiresAt && (
-                        <span className="mt-0.5 block text-[11px] text-ink-3">expires {fmtDate(a.linkExpiresAt)}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-xs">{a.paymentStatus} · {inr(a.feeAmount)}</td>
-                    <td className="px-4 py-3 font-mono text-xs">{a.rollNo ?? "—"}{a.house ? ` / ${a.house}` : ""}</td>
-                    <td className="px-4 py-3 text-xs text-ink-3">{fmtDate(a.updatedAt)}</td>
-                    <td className="px-4 py-3">
-                      <Button size="sm" variant={current?.status ? "primary" : "soft"} onClick={() => setOpenId(a.id)}>
-                        {current?.status ? "Review" : "Open"} <Icon name="chevronRight" className="h-3.5 w-3.5" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            )}
-          </table>
-        </TableView>
-        {!loading && rows.length === 0 && (
-          <EmptyState icon="check" title={current?.status ? "Queue is clear" : "No applications"} hint={current?.status ? `Nothing is waiting in “${current.status}”.` : undefined} />
-        )}
-      </div>
-    </div>
-  );
+  const openQrForRow = async (app: Application, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+    let targetUrl = `${origin}/portal/admission?app=${encodeURIComponent(app.id)}`;
+    let qrDataUrl = "";
+    try {
+      const detail = await apiFetch<{ form_link?: string | null; qr_data_url?: string | null }>(`/api/admissions/${app.id}`);
+      if (detail.form_link) targetUrl = detail.form_link;
+      if (detail.qr_data_url) qrDataUrl = detail.qr_data_url;
+    } catch {
+      // Fallback to client-side generated QR
+    }
+    if (!qrDataUrl) qrDataUrl = makeQrDataUrl(targetUrl, 280);
+    setQrApp({ app, url: targetUrl, qrDataUrl });
+  };
+
+  const tabs: { id: Tab; label: string; count?: number; icon: string }[] = [
+    { id: "applications", label: "Applications", count: apps.length, icon: "admissions" },
+    ...(canSetup ? [{ id: "create" as const, label: "Create Forms & QR", icon: "qr" }] : []),
+    ...(canSetup ? [{ id: "template" as const, label: "Form Builder", icon: "layers" }] : []),
+    ...(canOs ? [{ id: "approvals" as const, label: "Template Approvals", icon: "checkCircle" }] : []),
+  ];
+
+  const counts = {
+    total: apps.length,
+    waiting: myQueueCount,
+    inFlight: apps.filter((a) => !["Admission Complete", "Rejected"].includes(a.status)).length,
+    complete: apps.filter((a) => a.status === "Admission Complete").length,
+  };
 
   return (
-    <div className="space-y-6 max-md:space-y-4">
-      <Reveal>
-        <PageHeader icon="admissions" title="Admissions"
-          subtitle="AO → Parent → AO → Payment → Accounts → OS → VP → Principal. Each role sees the queue it owns." />
-      </Reveal>
+    <div className="space-y-6">
+      <PageHeader
+        icon="admissions"
+        title="Admissions"
+        subtitle="Google Forms-style template builder, parent QR links, document verification, fee approval, roll/house allotment, and Principal digital sign-off."
+        actions={
+          canSetup && (
+            <>
+              <Button variant="soft" loading={reminding} onClick={runReminders}>
+                <Icon name="clock" className="h-4 w-4" /> Run 2-day reminders
+              </Button>
+              <Button variant="primary" onClick={() => setTab("create")}>
+                <Icon name="qr" className="h-4 w-4" /> Create admission form &amp; QR
+              </Button>
+            </>
+          )
+        }
+      />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 max-md:gap-3">
-        <Reveal delay={40}><StatCard label="Applications" value={apps.length} tone="brand" icon="admissions" /></Reveal>
-        <Reveal delay={80}><StatCard label="In progress" value={inFlight} tone="amber" icon="spark" /></Reveal>
-        <Reveal delay={120}><StatCard label="Completed" value={complete} tone="emerald" icon="check" /></Reveal>
-        <Reveal delay={160}><StatCard label="Awaiting payment" value={count("Document Validated")} tone="sky" icon="wallet" /></Reveal>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 max-md:grid-cols-2 max-md:gap-2.5">
+        <StatCard label="Total applications" value={counts.total} icon="admissions" tone="brand" />
+        <StatCard label="Waiting on your role" value={counts.waiting} icon="bell" tone="amber" delay={50} />
+        <StatCard label="In workflow" value={counts.inFlight} icon="activity" tone="sky" delay={100} />
+        <StatCard label="Admissions complete" value={counts.complete} icon="check" tone="emerald" delay={150} />
       </div>
 
-      <Reveal delay={60}>
-        <Tabs value={current?.id ?? "all"} onChange={(id) => { setTab(id); setQ(""); }}
-          tabs={tabs.map((t) => ({ id: t.id, label: t.label, ...(t.status ? { count: count(t.status) } : {}) }))} />
-      </Reveal>
+      <Tabs value={tab} onChange={setTab} tabs={tabs} />
 
-      <div key={current?.id} style={{ animation: "fade-up 0.45s var(--ease-out-soft) both" }}>
-        {current?.id === "template" && <TemplateBuilder notify={notify} />}
-        {current?.id === "create" && <CreateForms notify={notify} onCreated={() => void load()} />}
-        {current?.id === "approvals" && <TemplateApprovals notify={notify} />}
-        {current && !["template", "create", "approvals"].includes(current.id) && queueTable}
-      </div>
+      {tab === "create" && canSetup && <CreateForms notify={notify} onCreated={() => { void load(); setTab("applications"); }} />}
+      {tab === "template" && canSetup && <TemplateBuilder notify={notify} />}
+      {tab === "approvals" && canOs && <TemplateApprovals notify={notify} onChanged={load} />}
 
-      {openId && <ApplicationPanel id={openId} onClose={() => setOpenId(null)} onChanged={() => void load()} notify={notify} />}
+      {tab === "applications" && (
+        <Reveal>
+          <Card>
+            {/* Comprehensive Filter Bar */}
+            <div className="space-y-3 border-b border-line p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2.5">
+                <div className="relative min-w-[15rem] flex-1">
+                  <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
+                  <Input
+                    placeholder="Search student, parent, login ID, roll no, phone, email, receipt…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant="soft" onClick={() => setShowScanner(true)}>
+                    <Icon name="qr" className="h-3.5 w-3.5" /> Scan Form QR
+                  </Button>
+                  {myQueue.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant={statusFilter === "__mine__" ? "primary" : "soft"}
+                      onClick={() => setStatusFilter(statusFilter === "__mine__" ? "all" : "__mine__")}
+                    >
+                      <Icon name="filter" className="h-3.5 w-3.5" /> My queue ({myQueueCount})
+                    </Button>
+                  )}
+                  {hasActiveFilters && (
+                    <Button size="sm" variant="ghost" onClick={resetFilters}>
+                      <Icon name="x" className="h-3.5 w-3.5" /> Clear filters
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid gap-2.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+                <Select aria-label="Filter by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                  <option value="all">Status: All ({apps.length})</option>
+                  {myQueue.length > 0 && <option value="__mine__">Waiting on me ({myQueueCount})</option>}
+                  {[...PIPELINE, "Re-submit", "Link Expired", "Rejected"].map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </Select>
+
+                <Select aria-label="Filter by payment status" value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)}>
+                  <option value="all">Payment: All</option>
+                  <option value="Pending">Payment: Pending</option>
+                  <option value="Paid">Payment: Paid</option>
+                  <option value="Verified">Payment: Verified</option>
+                </Select>
+
+                <Select aria-label="Filter by academic year" value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}>
+                  <option value="all">Year: All</option>
+                  {distinctYears.map((y) => <option key={y} value={y}>Year: {y}</option>)}
+                </Select>
+
+                <Select aria-label="Filter by class" value={classFilter} onChange={(e) => setClassFilter(e.target.value)}>
+                  <option value="all">Class: All</option>
+                  {distinctClasses.map(([id, label]) => <option key={id} value={id}>Class: {label}</option>)}
+                </Select>
+
+                <Select aria-label="Filter by house" value={houseFilter} onChange={(e) => setHouseFilter(e.target.value)}>
+                  <option value="all">House: All</option>
+                  {distinctHouses.map((h) => <option key={h} value={h}>House: {h}</option>)}
+                </Select>
+
+                <Select aria-label="Sort order" value={sortBy} onChange={(e) => setSortBy(e.target.value as "updated" | "name" | "status")}>
+                  <option value="updated">Sort: Recently updated</option>
+                  <option value="name">Sort: Name (A–Z)</option>
+                  <option value="status">Sort: Workflow status</option>
+                </Select>
+              </div>
+
+              <div className="flex items-center justify-between text-[12px] text-ink-3">
+                <span>Showing <b>{filtered.length}</b> of <b>{apps.length}</b> admission applications</span>
+                <span>Click any row to inspect responses, documents, QR code, and workflow actions</span>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="table-head">
+                  <tr>
+                    <th className="px-4 py-2.5">Applicant</th>
+                    <th className="px-4 py-2.5 max-md:hidden">Parent</th>
+                    <th className="px-4 py-2.5 max-md:hidden">Year / Class</th>
+                    <th className="px-4 py-2.5">Status</th>
+                    <th className="px-4 py-2.5 max-md:hidden">Payment</th>
+                    <th className="px-4 py-2.5 max-md:hidden">Roll / House</th>
+                    <th className="px-4 py-2.5 text-right max-md:hidden">QR / Updated</th>
+                  </tr>
+                </thead>
+                {loading ? (
+                  <SkeletonRows rows={5} cols={7} />
+                ) : filtered.length === 0 ? (
+                  <tbody>
+                    <tr>
+                      <td colSpan={7}>
+                        <EmptyState
+                          icon="admissions"
+                          title="No applications match these filters"
+                          hint={canSetup ? "Clear your filters or use 'Create Forms & QR' to send a form link to a parent." : "Applications appear here as they move through the workflow."}
+                          action={hasActiveFilters ? <Button variant="soft" onClick={resetFilters}>Reset filters</Button> : undefined}
+                        />
+                      </td>
+                    </tr>
+                  </tbody>
+                ) : (
+                  <tbody>
+                    {filtered.map((a) => (
+                      <tr
+                        key={a.id}
+                        onClick={() => setSelected(a.id)}
+                        className="cursor-pointer border-t border-line hover:bg-surface-2/60"
+                      >
+                        <td className="px-4 py-3">
+                          <div className="font-semibold text-ink">{a.studentName ?? <span className="text-ink-3">Form not submitted yet</span>}</div>
+                          <div className="font-mono text-xs text-ink-3">{a.loginId ?? a.id.slice(0, 8)}</div>
+                          <div className="mt-0.5 text-xs text-ink-3 md:hidden">{a.parentName ?? "—"} · {fmtDate(a.updatedAt)}</div>
+                        </td>
+                        <td className="px-4 py-3 max-md:hidden" onClick={(e) => e.stopPropagation()}>
+                          <div>{a.parentName ?? "—"}</div>
+                          <div className="text-xs text-ink-3">
+                            {a.parentContact ? <PhoneLink value={a.parentContact} /> : <MailLink value={a.parentEmail} />}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-ink-2 max-md:hidden">
+                          <div>{a.academicYear ?? "—"}</div>
+                          <div className="text-ink-3">{a.class ? `${a.class.name}${a.class.section ? `-${a.class.section}` : ""}` : "—"}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge tone={STATUS_TONE[a.status] ?? "slate"}>{a.status}</Badge>
+                          {myQueue.includes(a.status) && <span className="ml-1.5 text-[11px] font-bold text-warn">• Action needed</span>}
+                        </td>
+                        <td className="px-4 py-3 text-xs max-md:hidden">
+                          <div><Badge tone={a.paymentStatus === "Verified" ? "emerald" : a.paymentStatus === "Paid" ? "teal" : "amber"}>{a.paymentStatus}</Badge></div>
+                          <div className="mt-0.5 text-ink-3">{inr(a.feeAmount)}</div>
+                        </td>
+                        <td className="px-4 py-3 text-xs max-md:hidden">
+                          <div className="font-mono">{a.rollNo ?? "—"}</div>
+                          <div className="text-ink-3">{a.house ? `${a.house} house` : "—"}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right text-xs text-ink-3 max-md:hidden">
+                          <div className="inline-flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => void openQrForRow(a, e)}
+                              title="View / Download Admission Form QR Code"
+                              className="inline-flex items-center gap-1 rounded-lg border border-line bg-surface px-2 py-1 text-[11px] font-semibold text-brand-700 hover:bg-brand-50"
+                            >
+                              <Icon name="qr" className="h-3.5 w-3.5" /> QR
+                            </button>
+                            <span>{fmtDate(a.updatedAt)}</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                )}
+              </table>
+            </div>
+          </Card>
+        </Reveal>
+      )}
+
+      {selected && (
+        <ApplicationPanel
+          id={selected}
+          onClose={() => setSelected(null)}
+          onChanged={load}
+          notify={notify}
+        />
+      )}
+
+      <QrScannerModal
+        open={showScanner}
+        onClose={() => setShowScanner(false)}
+        title="Scan Admission Form QR Code"
+        subtitle="Scan a parent's admission form QR code, paste a form URL, or enter a login ID to jump directly to the application."
+        onScan={(raw) => {
+          const trimmed = raw.trim();
+          const uuidMatch = trimmed.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+          const tokenMatch = trimmed.match(/[?&]token=([^&#\s]+)/i);
+          const appById = uuidMatch ? apps.find((a) => a.id.toLowerCase() === uuidMatch[0].toLowerCase()) : null;
+          const appByLogin = apps.find((a) => (a.loginId ?? "").toLowerCase() === trimmed.toLowerCase());
+          if (appById) {
+            setSelected(appById.id);
+            notify(`Opened application for ${appById.studentName ?? appById.parentName ?? appById.loginId ?? appById.id.slice(0, 8)}`);
+            return;
+          }
+          if (appByLogin) {
+            setSelected(appByLogin.id);
+            notify(`Opened application for ${appByLogin.studentName ?? appByLogin.loginId}`);
+            return;
+          }
+          if (tokenMatch?.[1]) {
+            window.open(`/admission-form?token=${encodeURIComponent(tokenMatch[1])}`, "_blank", "noopener,noreferrer");
+            notify("Opened scanned public admission form");
+            return;
+          }
+          setSearch(trimmed);
+          notify(`Filtered applications by "${trimmed}"`);
+        }}
+      />
+
+      {qrApp && (
+        <Modal
+          open
+          onClose={() => setQrApp(null)}
+          title={`Admission Form QR — ${qrApp.app.studentName ?? qrApp.app.parentName ?? qrApp.app.loginId ?? "Application"}`}
+          size="sm"
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setQrApp(null)}>Close</Button>
+              <Button variant="soft" onClick={() => void navigator.clipboard?.writeText(qrApp.url).then(() => notify("Form link copied"))}>
+                <Icon name="copy" className="h-4 w-4" /> Copy Link
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  downloadQrPng(qrApp.url, `admission-qr-${qrApp.app.loginId ?? qrApp.app.id.slice(0, 8)}.png`, qrApp.qrDataUrl);
+                  notify("QR code PNG downloaded");
+                }}
+              >
+                <Icon name="download" className="h-4 w-4" /> Download QR PNG
+              </Button>
+            </>
+          }
+        >
+          <div className="flex flex-col items-center space-y-3 py-2 text-center">
+            {qrApp.qrDataUrl && (
+              <div className="rounded-2xl border-2 border-brand-100 bg-white p-4 shadow-sm">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={qrApp.qrDataUrl} alt="Admission Form QR" className="h-56 w-56" />
+              </div>
+            )}
+            <p className="text-xs text-ink-2">
+              Parent: <b>{qrApp.app.parentName ?? "—"}</b> · Login ID: <code className="font-mono font-bold">{qrApp.app.loginId ?? "—"}</code>
+            </p>
+            <p className="text-[11.5px] text-brand-700 break-all">{qrApp.url}</p>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

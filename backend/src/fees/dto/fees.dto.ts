@@ -67,7 +67,25 @@ export class CreatePaymentDto {
   reference_no?: string;
 
   @IsOptional() @IsString() @Matches(ISO_DATE, { message: 'payment_date must be YYYY-MM-DD' })
+  @IsOptional() @IsString() @Matches(ISO_DATE, { message: 'payment_date must be YYYY-MM-DD' })
   payment_date?: string;
+}
+
+export class SendPendingRemindersDto {
+  @IsOptional() @IsString()
+  class_id?: string;
+
+  @IsOptional() @IsString()
+  student_id?: string;
+
+  @IsOptional() @IsString()
+  invoice_id?: string;
+
+  @IsOptional() @IsString() @MaxLength(40)
+  term?: string;
+
+  @IsOptional() @IsIn(['sms', 'email', 'whatsapp'])
+  channel?: 'sms' | 'email' | 'whatsapp';
 }
 
 /* ── Attendance ───────────────────────────────────────────────── */

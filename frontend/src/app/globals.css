@@ -347,6 +347,12 @@ table th {
     border-color 0.16s var(--ease-smooth),
     box-shadow 0.16s var(--ease-smooth);
 }
+/* Icon-prefixed search inputs: .field padding otherwise wins over pl-9/pl-10 on desktop. */
+.field.pl-9 { padding-left: 2.25rem; }
+.field.pl-10 { padding-left: 2.5rem; }
+.field.pr-9 { padding-right: 2.25rem; }
+.field.pr-10 { padding-right: 2.5rem; }
+.field.pr-11 { padding-right: 2.75rem; }
 .field::placeholder {
   color: #94a3b8;
 }
