@@ -152,5 +152,13 @@ export function clearSession() {
     localStorage.removeItem("token");
     localStorage.removeItem("role");
     localStorage.removeItem("branch_id");
+    sessionStorage.removeItem("dev_access_verified");
   } catch { /* storage blocked */ }
+  if (typeof window !== "undefined") {
+    void fetch("/api/_rpc", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ p: "/api/auth/logout", m: "POST" }),
+    }).catch(() => {});
+  }
 }

@@ -11,6 +11,7 @@ import {
 import type { Notice } from "@/components/NotificationStackPopover";
 import { UserManagement } from "./UserManagement";
 import { confirmLogout } from "@/components/DashboardShell";
+import { SecurityArchitecturePanel } from "@/components/security/SecurityArchitecturePanel";
 
 const ROLE_SCOPE: Record<string, string> = {
   super_admin: "Full access to every module in the school, including money and safeguarding records.",
@@ -107,6 +108,8 @@ export default function SettingsPage() {
       </header>
 
       {canUsers && <UserManagement />}
+
+      <SecurityArchitecturePanel />
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-3">
         {/* ── Account ─────────────────────────────────────────────── */}
