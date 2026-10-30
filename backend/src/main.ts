@@ -15,20 +15,21 @@ import { AlertingService, initSentry } from './common/alerting';
  */
 function allowedOrigins(): Set<string> {
   const raw = process.env.CORS_ORIGINS;
+  const defaults = [
+    'https://genesislunia-erp.vercel.app',
+    'https://genesislumia-erp-demo.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:5173',
+  ];
   if (!raw) {
-    // Dev-only convenience. Never used when NODE_ENV=production.
-    return new Set([
-      'http://localhost:5173',
-      'http://localhost:3000',
-      'http://127.0.0.1:5173',
-    ]);
+    return new Set(defaults);
   }
-  return new Set(
-    raw
-      .split(',')
-      .map((o) => o.trim())
-      .filter(Boolean),
-  );
+  const parsed = raw
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+  return new Set([...defaults, ...parsed]);
 }
 
 async function bootstrap() {

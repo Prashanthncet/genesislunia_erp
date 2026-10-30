@@ -142,6 +142,164 @@ function smtpTransport(): Transporter {
   return t;
 }
 
+function escapeHtml(raw: string): string {
+  return raw
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Builds a responsive, institutional HTML email template for all outbound ERP emails
+ * (Admissions invites, OTPs, Fee instalment reminders, Gate pass alerts, Leave updates, Broadcasts).
+ */
+export function buildEmailHtml(msg: OutboundMessage): string {
+  const subject = escapeHtml(msg.subject ?? 'Institutional Notification');
+  const rawBody = msg.body ?? '';
+  const badgeLabel = escapeHtml((msg.ref_type ?? 'official_notice').replace(/_/g, ' ').toUpperCase());
+
+  const urlMatch = rawBody.match(/https?:\/\/[^\s)>"]+/i);
+  const actionUrl = urlMatch ? urlMatch[0].replace(/[.,;]+$/, '') : null;
+  const actionLabel = actionUrl?.includes('admission-form')
+    ? 'Complete Admission Form'
+    : actionUrl?.includes('portal')
+      ? 'Open Parent & Student Portal'
+      : 'Open Official Link';
+
+  const loginMatch = rawBody.match(/login\s*ID\s*[:=-]?\s*([A-Za-z0-9._-]+)/i);
+  const passMatch = rawBody.match(/password\s*[:=-]?\s*([^\s,.)]+)/i);
+  const otpMatch = rawBody.match(/\b(?:OTP|verification code|pass\s*code)\b[^0-9]*(\d{4,8})\b/i);
+
+  const paragraphs = rawBody
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const safe = escapeHtml(line).replace(
+        /(https?:\/\/[^\s&<]+)/gi,
+        '<a href="$1" style="color:#1d4ed8;text-decoration:underline;font-weight:600;word-break:break-all;">$1</a>',
+      );
+      return `<p style="margin:0 0 14px 0;font-size:15px;line-height:1.65;color:#1e293b;">${safe}</p>`;
+    })
+    .join('');
+
+  const credentialsBlock =
+    loginMatch || passMatch || otpMatch
+      ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;background-color:#f8fafc;border:1px solid #cbd5e1;border-left:4px solid #1e3a8a;border-radius:10px;">
+          <tr>
+            <td style="padding:16px 20px;">
+              <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#475569;margin-bottom:8px;">
+                ${otpMatch ? 'One-Time Verification Code' : 'Portal Access Credentials'}
+              </div>
+              ${
+                otpMatch
+                  ? `<div style="font-family:'Courier New',monospace;font-size:26px;font-weight:800;letter-spacing:0.18em;color:#0f172a;padding:6px 0;">${escapeHtml(otpMatch[1])}</div>`
+                  : ''
+              }
+              ${
+                loginMatch
+                  ? `<div style="font-size:14px;color:#0f172a;margin:4px 0;"><strong>Login ID:</strong> <code style="font-family:'Courier New',monospace;background:#e2e8f0;padding:2px 8px;border-radius:4px;font-weight:700;">${escapeHtml(loginMatch[1])}</code></div>`
+                  : ''
+              }
+              ${
+                passMatch
+                  ? `<div style="font-size:14px;color:#0f172a;margin:4px 0;"><strong>Temporary Password:</strong> <code style="font-family:'Courier New',monospace;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:4px;font-weight:700;">${escapeHtml(passMatch[1])}</code></div>`
+                  : ''
+              }
+            </td>
+          </tr>
+        </table>`
+      : '';
+
+  const ctaBlock = actionUrl
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0 18px 0;">
+        <tr>
+          <td align="center" bgcolor="#1e3a8a" style="border-radius:10px;">
+            <a href="${escapeHtml(actionUrl)}" target="_blank" style="display:inline-block;padding:13px 26px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:10px;">
+              ${actionLabel} &rarr;
+            </a>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:0 0 16px 0;font-size:12px;line-height:1.5;color:#64748b;">
+        Or copy and paste this link into your browser:<br/>
+        <a href="${escapeHtml(actionUrl)}" style="color:#1d4ed8;word-break:break-all;">${escapeHtml(actionUrl)}</a>
+      </p>`
+    : '';
+
+  const refFooter = msg.ref_id
+    ? `<span style="display:inline-block;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;padding:3px 8px;font-family:'Courier New',monospace;font-size:11px;color:#475569;">Ref: ${escapeHtml(msg.ref_id.slice(0, 12))}</span>`
+    : '';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>${subject}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:28px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background-color:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 10px 25px -5px rgba(15,23,42,0.08);">
+          <tr>
+            <td style="height:6px;background:linear-gradient(90deg,#1e3a8a 0%,#2563eb 60%,#d97706 100%);font-size:0;line-height:0;">&nbsp;</td>
+          </tr>
+          <tr>
+            <td style="background-color:#0f172a;padding:24px 28px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td>
+                    <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#93c5fd;margin-bottom:6px;">
+                      Genesis Lumia ERP &bull; Institutional Desk
+                    </div>
+                    <h1 style="margin:0;font-size:20px;font-weight:800;line-height:1.3;color:#ffffff;">
+                      ${subject}
+                    </h1>
+                  </td>
+                  <td align="right" valign="top">
+                    <span style="display:inline-block;background-color:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);color:#e0f2fe;font-size:10px;font-weight:700;letter-spacing:0.08em;padding:4px 10px;border-radius:999px;white-space:nowrap;">
+                      ${badgeLabel}
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px;">
+              ${paragraphs}
+              ${credentialsBlock}
+              ${ctaBlock}
+              <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 16px 0;" />
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="font-size:12px;color:#64748b;line-height:1.5;">
+                    Need assistance? Contact the school administrative office or sign in to the Parent Portal.
+                  </td>
+                  <td align="right" valign="middle">
+                    ${refFooter}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color:#f8fafc;border-top:1px solid #e2e8f0;padding:14px 28px;text-align:center;font-size:11px;color:#94a3b8;">
+              This is an automated institutional communication from Genesis Lumia ERP. Please do not share one-time codes or temporary passwords with anyone.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
 const smtpDriver: Provider = {
   name: 'smtp',
   async send(msg) {
@@ -149,7 +307,7 @@ const smtpDriver: Provider = {
     if (!from) throw new DeliveryError('not configured: SMTP_FROM missing', false);
     try {
       const info = await smtpTransport().sendMail({
-        from, to: msg.recipient, subject: msg.subject ?? 'Notification', text: msg.body,
+        from, to: msg.recipient, subject: msg.subject ?? 'Notification', text: msg.body, html: buildEmailHtml(msg),
       });
       return { provider: 'smtp', providerId: info.messageId };
     } catch (e) {

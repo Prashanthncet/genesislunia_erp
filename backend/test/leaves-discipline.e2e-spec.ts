@@ -216,8 +216,9 @@ describe('Leaves, gate passes & safeguarding (e2e)', () => {
     });
 
     it('parentOtp never appears in any GET', async () => {
+      expect((await as('teacher').get('/api/gate-passes')).status).toBe(403);
       for (const [who, url] of [
-        ['teacher', '/api/gate-passes'], ['warden', `/api/gate-passes/${passId}`], ['parent', '/api/gate-passes'],
+        ['hod', '/api/gate-passes'], ['warden', `/api/gate-passes/${passId}`], ['parent', '/api/gate-passes'],
         ['security', `/api/gate-passes/by-code/${passCode}`], ['security', '/api/gate-passes/out'], ['badmin', '/api/gate-passes?status=Returned'],
       ] as const) {
         const res = await as(who).get(url);

@@ -2,10 +2,8 @@
 
 /**
  * Mark attendance for one class (one section) on one date.
- * - Roster rows: roll, initials, name, segmented status P / A (see MARK_STATUSES in status.tsx).
- * - Keyboard: Tab into a row's control, ←/→ to move, P A L O V to set, ↑/↓ to change row.
- * - OD needs a reason (inline input) — Save stays disabled until every OD has one.
- * - Students on approved leave that day are pre-filled as Leave.
+ * - Status is restricted strictly to Present (P) and Absent (A) (OD and Leave removed).
+ * - Uses a Switch/Toggle control (`role="switch"`) for each student row.
  * - Sticky save bar: live counts + how many parent absence SMS / e-mails will go out.
  */
 
@@ -18,7 +16,7 @@ import { CardEmpty, Monogram, initials, toneFor } from "@/components/RecordCard"
 import { MAvatar, MLabel } from "@/components/mobile/MobileCard";
 import { TableView } from "@/components/TableView";
 import { ClassSectionSelect, resolveClass, selFor, type ClassOpt, type ClassSel } from "./ClassSectionSelect";
-import { ATT_STATUSES, MARK_STATUSES, AttendanceLegend, STATUS_LONG, STATUS_META, StatusTag, todayLocal, type AttStatus } from "./status";
+import { MARK_STATUSES, AttendanceLegend, STATUS_META, StatusTag, todayLocal, type AttStatus } from "./status";
 
 type SheetStudent = {
   id: string; full_name: string; roll_no: string | null; admission_no: string;
@@ -31,7 +29,77 @@ type Sheet = {
   date: string; is_sunday: boolean; already_marked: boolean; marked_count: number;
   students: SheetStudent[];
 };
-type Entry = { status: AttStatus; reason: string };
+type Entry = { status: "Present" | "Absent"; reason: string };
+
+/** Switch / Toggle control between Present (P) and Absent (A). */
+function AttendanceSwitch({
+  studentName,
+  status,
+  disabled,
+  onToggle,
+  onKeyDown,
+  buttonRef,
+  fullWidth = false,
+}: {
+  studentName: string;
+  status: "Present" | "Absent";
+  disabled?: boolean;
+  onToggle: (next: "Present" | "Absent") => void;
+  onKeyDown?: (e: KeyboardEvent<HTMLButtonElement>) => void;
+  buttonRef?: (el: HTMLButtonElement | null) => void;
+  fullWidth?: boolean;
+}) {
+  const isPresent = status === "Present";
+  return (
+    <div className={`inline-flex items-center gap-2.5 ${fullWidth ? "w-full justify-between" : ""}`}>
+      <button
+        ref={buttonRef}
+        type="button"
+        role="switch"
+        aria-checked={isPresent}
+        aria-label={`Attendance status for ${studentName}: ${isPresent ? "Present (P)" : "Absent (A)"}`}
+        disabled={disabled}
+        onClick={() => onToggle(isPresent ? "Absent" : "Present")}
+        onKeyDown={onKeyDown}
+        className={`relative inline-flex h-9 w-[4.5rem] shrink-0 cursor-pointer items-center rounded-full p-1 transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:cursor-not-allowed disabled:opacity-60 ${
+          isPresent ? "bg-ok text-white" : "bg-danger text-white"
+        }`}
+      >
+        <span
+          className={`pointer-events-none absolute inset-y-0 left-2 flex items-center text-[11px] font-bold transition-opacity ${
+            isPresent ? "opacity-100" : "opacity-0"
+          }`}
+          aria-hidden
+        >
+          P
+        </span>
+        <span
+          className={`pointer-events-none absolute inset-y-0 right-2 flex items-center text-[11px] font-bold transition-opacity ${
+            !isPresent ? "opacity-100" : "opacity-0"
+          }`}
+          aria-hidden
+        >
+          A
+        </span>
+        <span
+          className={`pointer-events-none grid h-7 w-7 transform place-items-center rounded-full bg-white text-[11.5px] font-extrabold shadow-sm transition-transform duration-200 ${
+            isPresent ? "translate-x-9 text-ok-ink" : "translate-x-0 text-danger-ink"
+          }`}
+        >
+          {isPresent ? "P" : "A"}
+        </span>
+      </button>
+      <span
+        className={`inline-flex min-w-[5.5rem] items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold ring-1 ring-inset ${
+          isPresent ? STATUS_META.Present.cell : STATUS_META.Absent.cell
+        }`}
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${isPresent ? STATUS_META.Present.dot : STATUS_META.Absent.dot}`} aria-hidden />
+        {isPresent ? "Present (P)" : "Absent (A)"}
+      </span>
+    </div>
+  );
+}
 
 export function MarkAttendance({
   classes, canMark, onMessage, onOpenStudent,
@@ -48,9 +116,9 @@ export function MarkAttendance({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [resending, setResending] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<"" | AttStatus>("");
+  const [statusFilter, setStatusFilter] = useState<"" | "Present" | "Absent">("");
   const [query, setQuery] = useState("");
-  const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const rowRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   useEffect(() => { if (!sel.className && classes[0]) setSel(selFor(classes[0])); }, [classes, sel.className]);
   const cls = resolveClass(classes, sel);
@@ -63,11 +131,9 @@ export function MarkAttendance({
       setSheet(s);
       const next: Record<string, Entry> = {};
       for (const st of s.students) {
-        next[st.id] = st.status
-          ? { status: st.status, reason: st.note ?? "" }
-          : st.on_leave
-            ? { status: "Leave", reason: st.on_leave.reason ?? `${st.on_leave.leave_type} leave` }
-            : { status: "Present", reason: "" };
+        next[st.id] = st.status === "Absent"
+          ? { status: "Absent", reason: st.note ?? "" }
+          : { status: "Present", reason: st.note ?? "" };
       }
       setEntries(next);
     } catch (e) {
@@ -80,27 +146,30 @@ export function MarkAttendance({
   useEffect(() => { load(); }, [load]);
 
   const students = sheet?.students ?? [];
-  const setStatus = (id: string, status: AttStatus) =>
-    setEntries((e) => ({ ...e, [id]: { status, reason: e[id]?.status === status ? e[id].reason : "" } }));
-  const setReason = (id: string, reason: string) => setEntries((e) => ({ ...e, [id]: { ...e[id], reason } }));
+  const setStatus = (id: string, status: "Present" | "Absent") =>
+    setEntries((e) => ({ ...e, [id]: { status, reason: e[id]?.reason ?? "" } }));
   const markAllPresent = () =>
-    setEntries((e) => Object.fromEntries(students.map((s) => [s.id, s.on_leave ? e[s.id] : { status: "Present" as AttStatus, reason: "" }])));
+    setEntries(Object.fromEntries(students.map((s) => [s.id, { status: "Present" as const, reason: "" }])));
 
   const counts = useMemo(() => {
-    const c: Record<AttStatus, number> = { Present: 0, Absent: 0, Late: 0, OD: 0, Leave: 0 };
-    for (const s of students) c[entries[s.id]?.status ?? "Present"]++;
+    const c = { Present: 0, Absent: 0 };
+    for (const s of students) {
+      const st = entries[s.id]?.status === "Absent" ? "Absent" : "Present";
+      c[st]++;
+    }
     return c;
   }, [students, entries]);
-  const missingOd = students.filter((s) => entries[s.id]?.status === "OD" && !entries[s.id].reason.trim());
+
   // A notice goes out for a student who will be Absent unless they were already Absent AND notified.
   const smsOut = students.filter((s) => entries[s.id]?.status === "Absent" && !(s.status === "Absent" && s.notified) && s.contact_reachable).length;
   const noContact = students.filter((s) => entries[s.id]?.status === "Absent" && !(s.status === "Absent" && s.notified) && !s.contact_reachable).length;
   const changed = students.filter((s) => {
     const e = entries[s.id];
-    return !s.status || e.status !== s.status || (e.reason || "") !== (s.note ?? "");
+    const savedNorm = s.status === "Absent" ? "Absent" : s.status ? "Present" : null;
+    return !savedNorm || e.status !== savedNorm;
   }).length;
-  const attended = counts.Present + counts.Late + counts.OD;
-  const counted = attended + counts.Absent;
+  const attended = counts.Present;
+  const counted = counts.Present + counts.Absent;
 
   const visible = students.filter((s) =>
     (!statusFilter || entries[s.id]?.status === statusFilter) &&
@@ -108,8 +177,7 @@ export function MarkAttendance({
   );
 
   const save = async () => {
-    if (!cls || !students.length || missingOd.length) return;
-    // Re-saving an already-marked register overwrites it — confirm first. First-time save needs none.
+    if (!cls || !students.length) return;
     if (sheet?.already_marked && !(await confirmAction({
       title: `Update attendance for ${cls.name}${cls.section ? ` ${cls.section}` : ""}?`,
       text: `${changed} change${changed === 1 ? "" : "s"} to the saved register for ${formatDate(date)}.${smsOut > 0 ? ` ${smsOut} parent absence notice${smsOut === 1 ? "" : "s"} will go out.` : ""}`,
@@ -124,8 +192,8 @@ export function MarkAttendance({
           class_id: cls.id,
           date,
           records: students.map((s) => {
-            const e = entries[s.id];
-            return { student_id: s.id, status: e.status, ...(e.reason.trim() ? { reason: e.reason.trim() } : {}) };
+            const e = entries[s.id] ?? { status: "Present", reason: "" };
+            return { student_id: s.id, status: e.status };
           }),
         }),
       });
@@ -165,28 +233,37 @@ export function MarkAttendance({
     }
   };
 
-  /** Keyboard on a row's status control. */
-  const onRowKey = (e: KeyboardEvent<HTMLDivElement>, id: string, index: number) => {
+  /** Keyboard on a row's switch control. */
+  const onRowKey = (e: KeyboardEvent<HTMLButtonElement>, id: string, index: number) => {
     if (!canMark) return;
     const cur = entries[id]?.status ?? "Present";
-    const i = MARK_STATUSES.indexOf(cur);
-    const byKey = MARK_STATUSES.find((s) => STATUS_META[s].key === e.key.toLowerCase());
-    if (byKey && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); setStatus(id, byKey); return; }
-    if (e.key === "ArrowRight") { e.preventDefault(); setStatus(id, MARK_STATUSES[(i + 1) % MARK_STATUSES.length]); }
-    else if (e.key === "ArrowLeft") { e.preventDefault(); setStatus(id, MARK_STATUSES[(i - 1 + MARK_STATUSES.length) % MARK_STATUSES.length]); }
-    else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    const k = e.key.toLowerCase();
+    if (k === "p" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      setStatus(id, "Present");
+      return;
+    }
+    if (k === "a" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      setStatus(id, "Absent");
+      return;
+    }
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      setStatus(id, cur === "Present" ? "Absent" : "Present");
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       rowRefs.current[index + (e.key === "ArrowDown" ? 1 : -1)]?.focus();
     }
   };
 
-  /** Phones: one card per student — avatar, name/roll, Status label, 5 segments. */
+  /** Phones: one card per student — avatar, name/roll, Status toggle switch. */
   const mobileCards = visible.length === 0 ? (
     <CardEmpty icon="students" title={students.length ? "No students match" : "No active students in this class"} />
   ) : visible.map((s) => {
-    const e = entries[s.id] ?? { status: "Present" as AttStatus, reason: "" };
+    const e = entries[s.id] ?? { status: "Present" as const, reason: "" };
     const idx = students.indexOf(s);
-    const odMissing = e.status === "OD" && !e.reason.trim();
+    const savedStatus = s.status === "Absent" ? "Absent" : s.status ? "Present" : null;
     return (
       <article key={s.id} className="rounded-2xl border border-line bg-surface p-4 shadow-soft">
         <div className="flex items-start gap-3">
@@ -200,64 +277,30 @@ export function MarkAttendance({
             >
               {s.full_name}
             </button>
-            <p className="mt-0.5 text-[13px] text-ink-3"><span className="tnum">Roll {s.roll_no ?? "—"}</span></p>
-            {s.on_leave && (
-              <p className="mt-1 text-[12px] text-ink-2">On approved {s.on_leave.leave_type.toLowerCase()} leave</p>
-            )}
+            <p className="mt-0.5 text-[13px] text-ink-3">
+              <span className="font-mono">{s.admission_no}</span> · <span className="tnum">Roll {s.roll_no ?? "—"}</span>
+            </p>
           </div>
         </div>
 
         <div className="my-3 border-t border-line" />
-        <MLabel>Status</MLabel>
-        <div
-          ref={(el) => { rowRefs.current[idx] = el; }}
-          role="radiogroup"
-          aria-label={`Status for ${s.full_name}`}
-          tabIndex={canMark ? 0 : -1}
-          onKeyDown={(ev) => onRowKey(ev, s.id, idx)}
-          className="mt-2 flex items-stretch gap-0.5 rounded-xl border border-line bg-surface-2 p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-        >
-          {MARK_STATUSES.map((st) => {
-            const on = e.status === st;
-            return (
-              <button
-                key={st}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                tabIndex={-1}
-                disabled={!canMark}
-                title={`${STATUS_LONG[st]} (key ${STATUS_META[st].key.toUpperCase()})`}
-                onClick={() => setStatus(s.id, st)}
-                className={`flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg px-1 text-[13px] font-bold transition disabled:cursor-not-allowed ${on ? STATUS_META[st].on : "text-ink-2"}`}
-              >
-                {on && st === "Present" && <Icon name="check" className="h-4 w-4 shrink-0" />}
-                <span className="truncate">{STATUS_META[st].short === "Lv" ? "Leave" : STATUS_META[st].short}</span>
-              </button>
-            );
-          })}
+        <MLabel>Status (P / A)</MLabel>
+        <div className="mt-2">
+          <AttendanceSwitch
+            studentName={s.full_name}
+            status={e.status}
+            disabled={!canMark}
+            onToggle={(next) => setStatus(s.id, next)}
+            onKeyDown={(ev) => onRowKey(ev, s.id, idx)}
+            buttonRef={(el) => { rowRefs.current[idx] = el; }}
+            fullWidth
+          />
         </div>
 
-        {(e.status === "OD" || e.status === "Leave") && (
-          <div className="mt-2">
-            <Input
-              aria-label={e.status === "OD" ? `OD reason for ${s.full_name}` : `Leave remark for ${s.full_name}`}
-              placeholder={e.status === "OD" ? "OD reason (required) — e.g. NCC camp" : "Remark (optional)"}
-              value={e.reason}
-              maxLength={300}
-              disabled={!canMark}
-              onChange={(ev) => setReason(s.id, ev.target.value)}
-              className={`!text-[13px] ${odMissing ? "border-danger" : ""}`}
-              aria-invalid={odMissing}
-            />
-            {odMissing && <p className="mt-1 text-[11.5px] font-medium text-danger">A reason is required for OD.</p>}
-          </div>
-        )}
-
-        {s.status && (
+        {savedStatus && (
           <p className="mt-2 text-[12px] text-ink-3">
-            Saved: {STATUS_META[s.status].label}
-            {s.status === "Absent" ? (s.notified ? " · parent notified" : " · notice pending") : ""}
+            Saved: {STATUS_META[savedStatus].label} ({STATUS_META[savedStatus].short})
+            {savedStatus === "Absent" ? (s.notified ? " · parent notified" : " · notice pending") : ""}
           </p>
         )}
       </article>
@@ -276,9 +319,11 @@ export function MarkAttendance({
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-[11.5px] font-semibold text-ink-3">Show</span>
-          <Select aria-label="Filter roster by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as "" | AttStatus)} className="w-auto">
+          <Select aria-label="Filter roster by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as "" | "Present" | "Absent")} className="w-auto">
             <option value="">All statuses</option>
-            {ATT_STATUSES.map((s) => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
+            {MARK_STATUSES.map((s) => (
+              <option key={s} value={s}>{STATUS_META[s].label} ({STATUS_META[s].short})</option>
+            ))}
           </Select>
         </label>
         <label className="flex min-w-[10rem] flex-1 flex-col gap-1">
@@ -308,9 +353,9 @@ export function MarkAttendance({
         </p>
       )}
 
-      {/* Live counters */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        {ATT_STATUSES.map((s) => (
+      {/* Live counters — restricted to Present (P) and Absent (A) */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {(["Present", "Absent"] as const).map((s) => (
           <button
             key={s}
             type="button"
@@ -319,7 +364,7 @@ export function MarkAttendance({
             className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left transition ${statusFilter === s ? "border-brand-500 bg-brand-50" : "border-line bg-surface hover:bg-surface-2"}`}
           >
             <span className={`grid h-7 min-w-7 place-items-center rounded-md px-1 text-[11px] font-bold ring-1 ${STATUS_META[s].cell}`}>{STATUS_META[s].short}</span>
-            <span className="text-[12px] text-ink-2">{STATUS_META[s].label}</span>
+            <span className="text-[12px] text-ink-2">{STATUS_META[s].label} ({STATUS_META[s].short})</span>
             <span className={`tnum ml-auto text-[18px] font-bold ${STATUS_META[s].text}`}>{counts[s]}</span>
           </button>
         ))}
@@ -341,7 +386,7 @@ export function MarkAttendance({
                   <tr>
                     <th className="th-end w-16">Roll</th>
                     <th>Student</th>
-                    <th>Status</th>
+                    <th>Status (P / A)</th>
                     <th>Saved</th>
                   </tr>
                 </thead>
@@ -350,11 +395,11 @@ export function MarkAttendance({
                     {visible.length === 0 ? (
                       <tr><td colSpan={4}><EmptyState icon="students" title={students.length ? "No students match" : "No active students in this class"} /></td></tr>
                     ) : visible.map((s) => {
-                      const e = entries[s.id] ?? { status: "Present" as AttStatus, reason: "" };
+                      const e = entries[s.id] ?? { status: "Present" as const, reason: "" };
                       const idx = students.indexOf(s);
-                      const odMissing = e.status === "OD" && !e.reason.trim();
+                      const savedStatus = s.status === "Absent" ? "Absent" : s.status ? "Present" : null;
                       return (
-                        <tr key={s.id} className="align-top">
+                        <tr key={s.id} className="align-middle">
                           <td className="td-end tnum font-semibold text-ink-2"><span className="max-md:text-left">{s.roll_no ?? "—"}</span></td>
                           <td>
                             <div className="flex items-center gap-3">
@@ -364,61 +409,24 @@ export function MarkAttendance({
                                   <span className="max-md:truncate">{s.full_name}</span>
                                 </button>
                                 <p className="font-mono text-[11px] text-ink-3 max-md:hidden">{s.admission_no}</p>
-                                {s.on_leave && (
-                                  <p className="mt-0.5 text-[11.5px] text-ink-2">On approved {s.on_leave.leave_type.toLowerCase()} leave ({formatDate(s.on_leave.from)} – {formatDate(s.on_leave.to)})</p>
-                                )}
                               </div>
                             </div>
                           </td>
                           <td>
-                            <div
-                              ref={(el) => { rowRefs.current[idx] = el; }}
-                              role="radiogroup"
-                              aria-label={`Status for ${s.full_name}`}
-                              tabIndex={canMark ? 0 : -1}
+                            <AttendanceSwitch
+                              studentName={s.full_name}
+                              status={e.status}
+                              disabled={!canMark}
+                              onToggle={(next) => setStatus(s.id, next)}
                               onKeyDown={(ev) => onRowKey(ev, s.id, idx)}
-                              className="inline-flex flex-wrap gap-1 max-md:flex max-md:w-full max-md:flex-nowrap rounded-lg border border-line bg-surface-2 p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-                            >
-                              {MARK_STATUSES.map((st) => {
-                                const on = e.status === st;
-                                return (
-                                  <button
-                                    key={st}
-                                    type="button"
-                                    role="radio"
-                                    aria-checked={on}
-                                    tabIndex={-1}
-                                    disabled={!canMark}
-                                    title={`${STATUS_LONG[st]} (key ${STATUS_META[st].key.toUpperCase()})`}
-                                    onClick={() => setStatus(s.id, st)}
-                                    className={`min-w-9 rounded-md px-2.5 py-1.5 text-[12px] font-bold transition max-md:min-h-11 max-md:flex-1 max-md:px-1 max-md:text-[13px] ${on ? STATUS_META[st].on : "text-ink-2 hover:bg-surface"} disabled:cursor-not-allowed`}
-                                  >
-                                    {STATUS_META[st].short === "Lv" ? "Leave" : STATUS_META[st].short}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            {(e.status === "OD" || e.status === "Leave") && (
-                              <div className="mt-1.5 max-w-xs">
-                                <Input
-                                  aria-label={e.status === "OD" ? `OD reason for ${s.full_name}` : `Leave remark for ${s.full_name}`}
-                                  placeholder={e.status === "OD" ? "OD reason (required) — e.g. NCC camp" : "Remark (optional)"}
-                                  value={e.reason}
-                                  maxLength={300}
-                                  disabled={!canMark}
-                                  onChange={(ev) => setReason(s.id, ev.target.value)}
-                                  className={`!py-1.5 text-[12.5px] ${odMissing ? "border-danger" : ""}`}
-                                  aria-invalid={odMissing}
-                                />
-                                {odMissing && <p className="mt-1 text-[11px] font-medium text-danger">A reason is required for OD.</p>}
-                              </div>
-                            )}
+                              buttonRef={(el) => { rowRefs.current[idx] = el; }}
+                            />
                           </td>
                           <td>
-                            {s.status ? (
+                            {savedStatus ? (
                               <div className="flex flex-col items-start gap-1">
-                                <StatusTag status={s.status} />
-                                {s.status === "Absent" && <span className="text-[11px] text-ink-3">{s.notified ? "Parent notified" : "Notice pending"}</span>}
+                                <StatusTag status={savedStatus} />
+                                {savedStatus === "Absent" && <span className="text-[11px] text-ink-3">{s.notified ? "Parent notified" : "Notice pending"}</span>}
                               </div>
                             ) : <span className="text-[12px] text-ink-3">Not saved</span>}
                           </td>
@@ -442,23 +450,17 @@ export function MarkAttendance({
             <p className="tnum text-[13px] text-ink-2 max-md:text-[12px] max-md:leading-snug">
               <span className="max-md:block"><span className="font-semibold text-ink">{cls.name} {cls.section ?? ""}</span> · {formatDate(date)}<span className="max-md:hidden"> ·{" "}</span></span>
               <span className="font-semibold text-ok-ink">{counts.Present} P</span> ·{" "}
-              <span className="font-semibold text-danger-ink">{counts.Absent} A</span> ·{" "}
-              <span className="font-semibold text-warn-ink">{counts.Late} L</span> ·{" "}
-              <span className="font-semibold text-info-ink">{counts.OD} OD</span> ·{" "}
-              <span className="font-semibold text-ink-2">{counts.Leave} Leave</span>
+              <span className="font-semibold text-danger-ink">{counts.Absent} A</span>
             </p>
             <p className="text-[12.5px] text-ink-3 max-md:text-[11.5px] max-md:leading-snug">
               {smsOut > 0 ? `${smsOut} parent absence SMS/e-mail will go out` : "No parent notices will be sent"}
               {noContact > 0 ? ` · ${noContact} absent without contact details` : ""}
               {sheet?.already_marked ? ` · ${changed} change${changed === 1 ? "" : "s"}` : ""}
             </p>
-            <Button variant="primary" className="ml-auto max-md:ml-0 max-md:w-full" onClick={save} loading={saving} disabled={missingOd.length > 0}>
+            <Button variant="primary" className="ml-auto max-md:ml-0 max-md:w-full" onClick={save} loading={saving}>
               <Icon name="check" className="h-4 w-4" /> {sheet?.already_marked ? "Update attendance" : "Save attendance"}
             </Button>
           </div>
-          {missingOd.length > 0 && (
-            <p className="mt-1.5 text-[12px] max-md:text-[11.5px] font-medium text-danger">Add an OD reason for {missingOd.map((s) => s.full_name).join(", ")}.</p>
-          )}
         </div>
       )}
     </div>

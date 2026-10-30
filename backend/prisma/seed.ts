@@ -579,7 +579,8 @@ async function main() {
     DAYS.forEach((day, di) => {
       PERIODS.forEach((p) => {
         if (RESERVED.has(`${cls.id}|${day}|${p}`)) return;
-        const teacherId = TEACHING_POOL[(ci + di + p) % TEACHING_POOL.length];
+        const rawTeacherId = TEACHING_POOL[(ci + di + p) % TEACHING_POOL.length];
+        const teacherId = rawTeacherId === 't_rajesh' && cls.id !== 'cls_10a' && cls.id !== 'cls_09a' ? 't_naveen' : rawTeacherId;
         slotRows.push({
           branchId: BRANCH,
           classId: cls.id,
@@ -607,6 +608,8 @@ async function main() {
   overrideRoom('cls_10a', 'Mon', 1, 't_meera', 'Mathematics');
   overrideRoom('cls_10a', 'Mon', 2, 't_rajesh', 'English');
   overrideRoom('cls_10a', 'Mon', 4, 't_arjun', 'Physics');
+  overrideRoom('cls_10a', 'Mon', 5, 't_rajesh', 'English');
+  overrideRoom('cls_10a', 'Mon', 8, 't_rajesh', 'English');
 
   await prisma.timetableSlot.createMany({ data: slotRows });
   console.log(`✓ Timetable slots: ${slotRows.length} (${RESERVED.size} slots reserved for tests)`);

@@ -8,6 +8,11 @@ const nextConfig = {
   outputFileTracingRoot: __dirname,
   reactStrictMode: false,
   productionBrowserSourceMaps: false,
+  compress: true,
+  images: {
+    formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 60,
+  },
   devIndicators: false,
   async headers() {
     return [
@@ -28,7 +33,11 @@ const nextConfig = {
           },
           {
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=()",
+            value: "camera=(self), microphone=(), geolocation=()",
+          },
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=31536000; includeSubDomains; preload",
           },
           {
             key: "X-XSS-Protection",

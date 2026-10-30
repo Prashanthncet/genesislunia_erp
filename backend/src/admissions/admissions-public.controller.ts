@@ -13,7 +13,7 @@ import { Throttle } from '@nestjs/throttler';
 import { Admission } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaymentsService } from '../payments/payments.service';
-import { AdmissionsService, toPublicField } from './admissions.service';
+import { AdmissionsService, formLink, formQrDataUrl, toPublicField } from './admissions.service';
 import { UploadDocumentDto } from './admissions.dto';
 import { DocumentStorage } from '../storage/document-storage.service';
 import { ADM, EDITABLE_STATUSES, PARENT_LINK, academicYearOf, parseDynamic, transitionAdmission, validateUpload } from './workflow';
@@ -81,6 +81,8 @@ export class AdmissionsPublicController {
       student_name: app.studentName,
       parent_name: app.parentName,
       login_id: app.loginId,
+      form_link: formLink(token),
+      qr_data_url: await formQrDataUrl(formLink(token)),
       fields: fields.map(toPublicField),
       classes,
       dynamic_data: editable ? parseDynamic(app.dynamicData) : {},

@@ -259,7 +259,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             collapsed ? "lg:w-[76px]" : ""
           } ${mobileOpen ? "translate-x-0 shadow-pop" : "-translate-x-full"}`}
         >
-          <div className={`relative flex items-center gap-3 border-b border-white/10 px-5 py-4 ${collapsed ? "lg:justify-center lg:px-0" : ""}`}>
+          <div className={`relative flex items-center gap-3 border-b border-white/10 px-5 py-3 ${collapsed ? "lg:justify-center lg:px-0" : ""}`}>
             <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-white ring-1 ring-white/20">
               <Image
                 src="/logo.png"
@@ -301,10 +301,10 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             <span className="shrink-0 text-[12px] font-semibold text-white/70">Profile</span>
           </Link>
 
-          <nav className={`scroll-slim relative flex-1 overflow-y-auto px-3 py-4 ${collapsed ? "lg:px-2" : ""}`} aria-label="Main">
+          <nav className={`relative flex-1 px-3 py-2 max-lg:overflow-y-auto lg:overflow-hidden ${collapsed ? "lg:px-2" : ""}`} aria-label="Main">
             {groups.map((group, gi) => (
-              <div key={group.group} className={gi === 0 ? "" : "mt-5"}>
-                <p className={`mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-white/50 ${railHide}`}>
+              <div key={group.group} className={gi === 0 ? "" : "mt-2.5"}>
+                <p className={`mb-1 px-3 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-white/50 ${railHide}`}>
                   {group.group}
                 </p>
                 {collapsed && gi > 0 && <div className="mx-2 mb-2 hidden h-px bg-white/10 lg:block" aria-hidden />}
@@ -322,7 +322,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                           aria-current={active ? "page" : undefined}
                           aria-label={item.name}
                           title={collapsed ? item.name : undefined}
-                          className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13.5px] transition-all duration-200 ${
+                          className={`relative flex items-center gap-3 rounded-xl px-3 py-1.5 text-[13px] transition-all duration-200 ${
                             collapsed ? "lg:justify-center lg:px-0" : ""
                           } ${
                             active

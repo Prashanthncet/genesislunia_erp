@@ -49,8 +49,9 @@ export async function confirmAction({
 }
 
 /**
- * Confirmation that also asks for an optional note (e.g. why a student left).
- * Resolves to the trimmed text ("" when left blank), or null when cancelled.
+ * Confirmation that also asks for a reason/note (e.g. why a student left).
+ * When `required: true`, submission is blocked until a non-empty reason is entered.
+ * Resolves to the trimmed text, or null when cancelled.
  */
 export async function confirmWithReason({
   title,
@@ -59,6 +60,8 @@ export async function confirmWithReason({
   confirmText = "Confirm",
   cancelText = "Cancel",
   tone = "primary",
+  required = false,
+  errorMessage = "Please enter a valid reason before continuing.",
 }: {
   title: string;
   text?: string;
@@ -66,6 +69,8 @@ export async function confirmWithReason({
   confirmText?: string;
   cancelText?: string;
   tone?: "primary" | "danger";
+  required?: boolean;
+  errorMessage?: string;
 }): Promise<string | null> {
   const res = await Swal.fire({
     title,
@@ -73,6 +78,10 @@ export async function confirmWithReason({
     icon: tone === "danger" ? "warning" : "question",
     input: "text",
     inputPlaceholder: placeholder,
+    inputAttributes: required ? { required: "true", "aria-required": "true" } : undefined,
+    inputValidator: required
+      ? (value) => (!String(value ?? "").trim() ? errorMessage : null)
+      : undefined,
     showCancelButton: true,
     confirmButtonText: confirmText,
     cancelButtonText: cancelText,
@@ -86,6 +95,7 @@ export async function confirmWithReason({
       title: "!font-display !text-[20px] !font-bold !text-ink",
       htmlContainer: "!text-[13.5px] !text-ink-2",
       input: "field !mx-6 !mt-3 !w-auto",
+      validationMessage: "!mx-6 !mt-2 !rounded-lg !bg-danger-soft !px-3 !py-1.5 !text-[12.5px] !font-medium !text-danger",
       actions: "!gap-2",
       confirmButton: tone === "danger" ? "btn-danger" : "btn-primary",
       cancelButton: "btn-soft",

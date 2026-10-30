@@ -56,7 +56,7 @@ export class AuthGuard implements CanActivate {
       const path = (request.originalUrl ?? request.url ?? '').split('?')[0].replace(/\/+$/, '');
       const method = (request.method ?? 'GET').toUpperCase();
       const isAllowed =
-        (method === 'GET' && (path.endsWith('/auth/me') || path.endsWith('/me'))) ||
+        (method === 'GET' && (path.endsWith('/auth/me') || path.endsWith('/me') || path.endsWith('/portal/admission') || path.endsWith('/portal/overview') || path.endsWith('/notices/unread-count'))) ||
         (method === 'POST' && (path.endsWith('/auth/change-password') || path.endsWith('/change-password')));
       if (!isAllowed) {
         throw new ForbiddenException('Password change required before accessing this resource');

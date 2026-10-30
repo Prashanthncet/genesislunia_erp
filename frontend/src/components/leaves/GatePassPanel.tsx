@@ -1,17 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiDownload, apiFetch } from "@/lib/api";
 import { hasRole, type Me } from "@/lib/auth";
 import { Badge, Button, Card, CardHead, EmptyState, Field, Icon, Input, Select, Tabs, useToast } from "@/components/ui";
 import { confirmAction } from "@/components/confirm";
 import { ReasonModal } from "./ReasonModal";
+import { QrScannerModal } from "@/components/QrScannerModal";
 import {
   GATE_PRINCIPAL_STEP, GATE_PRINT, GATE_REQUEST, GATE_TYPES, GATE_WARDEN_STEP, classLabel, errMsg, fmtStamp, fmtTime, statusBadge,
   type GatePass, type StudentOption,
 } from "./shared";
 
 const ISSUED = ["Approved", "Checked Out", "Returned"];
+const STATUS_OPTIONS = ["Pending", "Warden Approved", "Approved", "Checked Out", "Returned", "Rejected"] as const;
 
 /** Gate passes: request → Warden → Principal (either may reject with a reason) → printable pass with QR. */
 export function GatePassPanel({
@@ -25,8 +27,12 @@ export function GatePassPanel({
   const toast = useToast();
   const [rows, setRows] = useState<GatePass[]>([]);
   const [filter, setFilter] = useState<"action" | "all">("action");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const [rejecting, setRejecting] = useState<GatePass | null>(null);
+  const [showScanner, setShowScanner] = useState(false);
   const [form, setForm] = useState({ student_id: "", type: "Local Outing", reason: "", out_time: "", expected_in_time: "" });
 
   const load = useCallback(async () => {
@@ -37,7 +43,10 @@ export function GatePassPanel({
 
   const wardenStep = hasRole(me, GATE_WARDEN_STEP);
   const principalStep = hasRole(me, GATE_PRINCIPAL_STEP);
-  const mineToAct = (g: GatePass) => (g.status === "Pending" && wardenStep) || (g.status === "Warden Approved" && principalStep);
+  const mineToAct = useCallback(
+    (g: GatePass) => (g.status === "Pending" && wardenStep) || (g.status === "Warden Approved" && principalStep),
+    [wardenStep, principalStep],
+  );
 
   const request = async () => {
     if (!form.student_id || !form.reason || !form.out_time) return toast.push("Student, reason and out time are required", "error");
@@ -89,8 +98,20 @@ export function GatePassPanel({
     catch (e) { toast.push(errMsg(e, "Download failed"), "error"); }
   };
 
-  const shown = filter === "action" ? rows.filter(mineToAct) : rows;
   const actionable = rows.filter(mineToAct).length;
+  const visibleRows = useMemo(() => {
+    const base = (wardenStep || principalStep) && filter === "action" ? rows.filter(mineToAct) : rows;
+    return base.filter((g) => {
+      if (typeFilter && g.type !== typeFilter) return false;
+      if (statusFilter && g.status !== statusFilter) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        const hay = `${g.student.fullName} ${g.student.admissionNo} ${classLabel(g.student.class)} ${g.passCode ?? ""} ${g.reason}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [rows, wardenStep, principalStep, filter, mineToAct, typeFilter, statusFilter, searchQuery]);
 
   return (
     <div className="space-y-4">
@@ -126,8 +147,55 @@ export function GatePassPanel({
             <Tabs tabs={[{ id: "action", label: "Needs me", count: actionable }, { id: "all", label: "All" }] as const} value={filter} onChange={setFilter} />
           )}
         />
+        <div className="flex flex-wrap items-center gap-2.5 border-b border-line bg-surface-2/50 px-4 py-3">
+          <Button type="button" size="sm" variant="soft" onClick={() => setShowScanner(true)}>
+            <Icon name="qr" className="h-4 w-4" /> Scan Pass QR
+          </Button>
+          <div className="relative min-w-[200px] flex-1">
+            <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
+            <Input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search student, admission no., pass code or reason…"
+              aria-label="Search gate passes"
+              className="!pl-9 w-full bg-white"
+            />
+          </div>
+          <Select
+            aria-label="Filter by pass type"
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="w-auto bg-white max-md:!w-full"
+          >
+            <option value="">All pass types</option>
+            {GATE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+          </Select>
+          <Select
+            aria-label="Filter by pass status"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="w-auto bg-white max-md:!w-full"
+          >
+            <option value="">All statuses</option>
+            {STATUS_OPTIONS.map((st) => <option key={st} value={st}>{st}</option>)}
+          </Select>
+          {(searchQuery.trim() || typeFilter || statusFilter) && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setSearchQuery("");
+                setTypeFilter("");
+                setStatusFilter("");
+              }}
+            >
+              Clear filter
+            </Button>
+          )}
+        </div>
         <ul className="divide-y divide-line">
-          {(wardenStep || principalStep ? shown : rows).map((g) => (
+          {visibleRows.map((g) => (
             <li key={g.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 text-sm max-md:py-4">
               <div className="min-w-0 max-md:w-full max-md:break-words">
                 <p className="font-semibold text-ink max-md:hidden">{g.student.fullName} <span className="text-[12px] font-normal text-ink-3">{classLabel(g.student.class)}</span></p>
@@ -177,8 +245,8 @@ export function GatePassPanel({
               </span>
             </li>
           ))}
-          {(wardenStep || principalStep ? shown : rows).length === 0 && (
-            <li><EmptyState title={filter === "action" && (wardenStep || principalStep) ? "Nothing waiting for you" : "No gate passes"} icon="door" /></li>
+          {visibleRows.length === 0 && (
+            <li><EmptyState title={filter === "action" && (wardenStep || principalStep) ? "Nothing waiting for you" : "No gate passes match"} icon="door" /></li>
           )}
         </ul>
       </Card>
@@ -194,6 +262,22 @@ export function GatePassPanel({
         busy={busy}
         onClose={() => setRejecting(null)}
         onConfirm={reject}
+      />
+      <QrScannerModal
+        open={showScanner}
+        onClose={() => setShowScanner(false)}
+        title="Scan Gate Pass / Student ID QR"
+        subtitle="Scan a student's printed gate pass QR code or ID card QR code to verify and filter immediately."
+        onScan={(raw) => {
+          const gpMatch = raw.match(/GP-[A-Z0-9-]+/i);
+          const admMatch = raw.match(/ADM-[A-Z0-9-]+/i);
+          const idMatch = raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+          const matchedPass = idMatch ? rows.find((r) => r.id.toLowerCase() === idMatch[0].toLowerCase() || r.student.id.toLowerCase() === idMatch[0].toLowerCase()) : null;
+          const query = matchedPass?.passCode || matchedPass?.student.admissionNo || gpMatch?.[0] || admMatch?.[0] || raw.trim();
+          setFilter("all");
+          setSearchQuery(query);
+          toast.push(`Scanned QR: ${query}`);
+        }}
       />
     </div>
   );

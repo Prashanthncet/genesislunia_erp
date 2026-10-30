@@ -25,8 +25,8 @@ import { actorNames, notifyParents, resolveActor } from './leave-helpers';
  * `parentOtp` is NEVER selected into a response.
  */
 
-const REQUEST_ROLES: string[] = [...R.LEADERSHIP, ROLE.WARDEN, ROLE.TEACHER, ROLE.HOD, ROLE.PARENT];
-const READ_ROLES: string[] = [...new Set([...R.GATE_DESK, ...R.GATE_PASS_APPROVE, ROLE.TEACHER, ROLE.HOD, ROLE.PARENT, ROLE.STUDENT])];
+const REQUEST_ROLES: string[] = [...R.LEADERSHIP, ROLE.WARDEN, ROLE.HOD, ROLE.PARENT];
+const READ_ROLES: string[] = [...new Set([...R.GATE_DESK, ...R.GATE_PASS_APPROVE, ROLE.HOD, ROLE.PARENT, ROLE.STUDENT])];
 const WARDEN_STEP: string[] = [...R.ADMINS, ROLE.WARDEN];
 const PRINCIPAL_STEP: string[] = [...R.ADMINS, ROLE.PRINCIPAL];
 const PRINT_ROLES: string[] = [...new Set([...R.GATE_DESK, ...R.GATE_PASS_APPROVE, ROLE.PARENT])];
