@@ -709,6 +709,18 @@ export class AdmissionsController {
     return sendPdf(res, buf, `admission-letter-${app.rollNo ?? app.id.slice(0, 8)}.pdf`);
   }
 
+  /** Printable Application Summary PDF (all form responses, document checklist, fee & workflow status). */
+  @Get(':id/summary.pdf')
+  @Roles(...R.ADMISSION_READ, ROLE.PARENT)
+  async summaryPdf(@Req() req: Req, @Param('id') id: string, @Res() res: Response) {
+    const app = await this.svc.getInBranch(req.user.branch_id, id);
+    if (req.user.role === ROLE.PARENT && app.parentUserId !== req.user.sub) {
+      throw new NotFoundException('Application not found');
+    }
+    const buf = await this.svc.summaryPdf(app);
+    return sendPdf(res, buf, `admission-summary-${app.loginId ?? app.id.slice(0, 8)}.pdf`);
+  }
+
   // ─── Export hooks (Phase 2: data shape only) ────────────────
 
   @Get(':id/export/:kind')

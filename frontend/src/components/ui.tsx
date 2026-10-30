@@ -435,7 +435,7 @@ export const Input = ({ className = "", type, onChange, maxLength, inputMode, pa
       <input
         type={type}
         inputMode={inputMode ?? (isPhone ? "numeric" : undefined)}
-        maxLength={isPhone ? 10 : maxLength}
+        maxLength={isPhone ? undefined : maxLength}
         pattern={pattern ?? (isPhone ? "[0-9]{10}" : undefined)}
         onChange={(e) => {
           if (isPhone) {

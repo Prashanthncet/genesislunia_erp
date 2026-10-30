@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { Badge, Button, EmptyState, Field, Icon, IconButton, Input, Modal, Select, Skeleton, Textarea } from "@/components/ui";
 import { confirmAction } from "@/components/confirm";
+import { sanitizeDynamicValue, validateDynamicField, validateAllDynamicFields, isPhoneLabel, isAadhaarLabel, isPinCodeLabel } from "@/lib/validation";
 import { FIELD_TYPES, STATUS_TONE, TemplateField, TemplateSummary, currentAcademicYear, fmtDateTime, post, shiftYear } from "./shared";
 
 type Draft = { label: string; field_type: string; is_required: boolean; validation_rule: string };
@@ -86,7 +87,9 @@ export function TemplateBuilder({ notify }: { notify: (msg: string, tone?: "succ
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [reqFilter, setReqFilter] = useState<"all" | "required" | "optional">("all");
-  const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
+  const [viewMode, setViewMode] = useState<"cards" | "table" | "preview">("cards");
+  const [previewValues, setPreviewValues] = useState<Record<string, string>>({});
+  const [previewAttempted, setPreviewAttempted] = useState(false);
 
   const load = useCallback(async (y: string) => {
     setLoading(true);
@@ -612,6 +615,15 @@ export function TemplateBuilder({ notify }: { notify: (msg: string, tone?: "succ
             >
               <Icon name="list" className="h-3.5 w-3.5" /> Compact Table
             </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("preview")}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
+                viewMode === "preview" ? "bg-brand-700 text-white shadow-2xs" : "text-ink-2 hover:text-ink"
+              }`}
+            >
+              <Icon name="eye" className="h-3.5 w-3.5" /> Preview as Parent
+            </button>
           </div>
         </div>
       )}
@@ -646,6 +658,134 @@ export function TemplateBuilder({ notify }: { notify: (msg: string, tone?: "succ
             hint="Try clearing the search box or switching the question type filter."
             action={<Button variant="soft" onClick={() => { setSearchQuery(""); setTypeFilter("all"); setReqFilter("all"); }}>Show all {fields.length} questions</Button>}
           />
+        </div>
+      ) : viewMode === "preview" ? (
+        <div className="space-y-4">
+          <div className="card border-t-[8px] border-t-brand-700 p-5 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-brand-700">
+                  <Icon name="eye" className="h-3.5 w-3.5" /> Interactive Parent Form Preview ({year})
+                </span>
+                <h3 className="mt-1 font-display text-lg font-extrabold text-ink">
+                  Test-fill the {year} Admission Application as a Parent
+                </h3>
+                <p className="text-xs text-ink-3">
+                  Try typing into phone/Aadhaar/name fields or selecting options to verify live sanitization and required-field checks before publishing.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="soft" onClick={() => { setPreviewValues({}); setPreviewAttempted(false); }}>
+                  Reset Test Answers
+                </Button>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => {
+                    setPreviewAttempted(true);
+                    const normalized = fields.map((f) => ({
+                      key: f.id,
+                      label: f.label,
+                      field_type: f.fieldType,
+                      is_required: f.isRequired,
+                      validation_rule: f.validationRule,
+                    }));
+                    const errs = validateAllDynamicFields(normalized, previewValues);
+                    const count = Object.keys(errs).length;
+                    if (count > 0) {
+                      notify(`Preview check: ${count} question(s) need attention — ${errs[Object.keys(errs)[0]]}`, "error");
+                    } else {
+                      notify("All preview answers passed validation! Form is ready for parents.");
+                    }
+                  }}
+                >
+                  <Icon name="check" className="h-3.5 w-3.5" /> Test Verify Form
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {filteredFields.map((f, i) => {
+            const opts = f.fieldType === "select" ? parseSelectOptions(f.validationRule) : [];
+            const val = previewValues[f.id] ?? "";
+            const dynField = {
+              key: f.id,
+              label: f.label,
+              field_type: f.fieldType,
+              is_required: f.isRequired,
+              validation_rule: f.validationRule,
+            };
+            const isPhone = f.fieldType === "phone" || isPhoneLabel(f.label);
+            const isAadhaar = isAadhaarLabel(f.label);
+            const isPin = isPinCodeLabel(f.label);
+            const err = (val.trim().length > 0 || previewAttempted) ? validateDynamicField(dynField, val) : null;
+            return (
+              <div
+                key={f.id}
+                className={`card border-l-4 p-5 transition-all ${
+                  err ? "border-l-danger bg-danger-soft/15" : "border-l-brand-600"
+                }`}
+              >
+                <Field
+                  label={`${i + 1}. ${f.label}`}
+                  required={f.isRequired}
+                  error={err ?? undefined}
+                  hint={
+                    !err && isPhone
+                      ? `${val.length}/10 digits (numbers only)`
+                      : !err && isAadhaar
+                      ? `${val.length}/12 digits (numbers only)`
+                      : !err && isPin
+                      ? `${val.length}/6 digits (numbers only)`
+                      : undefined
+                  }
+                >
+                  {f.fieldType === "textarea" ? (
+                    <textarea
+                      rows={3}
+                      value={val}
+                      onChange={(e) => setPreviewValues((p) => ({ ...p, [f.id]: sanitizeDynamicValue(dynField, e.target.value) }))}
+                      placeholder="Parent's long answer…"
+                      className="field mt-1.5"
+                    />
+                  ) : f.fieldType === "select" && opts.length > 0 ? (
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      {opts.map((o) => {
+                        const checked = val === o;
+                        return (
+                          <label
+                            key={o}
+                            className={`flex cursor-pointer items-center gap-2.5 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-all ${
+                              checked ? "border-brand-600 bg-brand-50 text-brand-900 ring-1 ring-brand-500" : "border-line bg-surface hover:bg-surface-2"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name={`preview-${f.id}`}
+                              checked={checked}
+                              onChange={() => setPreviewValues((p) => ({ ...p, [f.id]: o }))}
+                              className="h-3.5 w-3.5 border-line text-brand-700"
+                            />
+                            <span>{o}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <input
+                      type={isPhone ? "tel" : f.fieldType === "date" ? "date" : f.fieldType === "email" ? "email" : "text"}
+                      inputMode={isPhone || isAadhaar || isPin || f.fieldType === "number" ? "numeric" : undefined}
+                      maxLength={isPhone ? 10 : isAadhaar ? 12 : isPin ? 6 : 500}
+                      value={val}
+                      onChange={(e) => setPreviewValues((p) => ({ ...p, [f.id]: sanitizeDynamicValue(dynField, e.target.value) }))}
+                      placeholder={isPhone ? "10-digit mobile number" : isAadhaar ? "12-digit Aadhaar number" : "Parent's answer…"}
+                      className="field mt-1.5"
+                    />
+                  )}
+                </Field>
+              </div>
+            );
+          })}
         </div>
       ) : viewMode === "cards" ? (
         <div className="space-y-3.5">

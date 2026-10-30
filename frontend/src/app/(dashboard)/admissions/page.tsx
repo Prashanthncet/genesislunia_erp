@@ -11,6 +11,7 @@ import { apiFetch } from "@/lib/api";
 import { R, ROLE, hasRole, useMe } from "@/lib/auth";
 import { Badge, Button, Card, EmptyState, Icon, Input, MailLink, Modal, PageHeader, PhoneLink, Reveal, Select, SkeletonRows, StatCard, Tabs, useToast } from "@/components/ui";
 import { downloadQrPng, makeQrDataUrl } from "@/lib/qr";
+import { QrScannerModal } from "@/components/QrScannerModal";
 import { Application, PIPELINE, STATUS_TONE, fmtDate, inr, post } from "@/components/admissions/shared";
 import { ApplicationPanel } from "@/components/admissions/ApplicationPanel";
 import { CreateForms } from "@/components/admissions/CreateForms";
@@ -35,6 +36,7 @@ export default function AdmissionsPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [reminding, setReminding] = useState(false);
   const [qrApp, setQrApp] = useState<{ app: Application; url: string; qrDataUrl: string } | null>(null);
+  const [showScanner, setShowScanner] = useState(false);
 
   // Comprehensive Filters
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -209,6 +211,9 @@ export default function AdmissionsPage() {
                   />
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant="soft" onClick={() => setShowScanner(true)}>
+                    <Icon name="qr" className="h-3.5 w-3.5" /> Scan Form QR
+                  </Button>
                   {myQueue.length > 0 && (
                     <Button
                       size="sm"
@@ -364,6 +369,37 @@ export default function AdmissionsPage() {
           notify={notify}
         />
       )}
+
+      <QrScannerModal
+        open={showScanner}
+        onClose={() => setShowScanner(false)}
+        title="Scan Admission Form QR Code"
+        subtitle="Scan a parent's admission form QR code, paste a form URL, or enter a login ID to jump directly to the application."
+        onScan={(raw) => {
+          const trimmed = raw.trim();
+          const uuidMatch = trimmed.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+          const tokenMatch = trimmed.match(/[?&]token=([^&#\s]+)/i);
+          const appById = uuidMatch ? apps.find((a) => a.id.toLowerCase() === uuidMatch[0].toLowerCase()) : null;
+          const appByLogin = apps.find((a) => (a.loginId ?? "").toLowerCase() === trimmed.toLowerCase());
+          if (appById) {
+            setSelected(appById.id);
+            notify(`Opened application for ${appById.studentName ?? appById.parentName ?? appById.loginId ?? appById.id.slice(0, 8)}`);
+            return;
+          }
+          if (appByLogin) {
+            setSelected(appByLogin.id);
+            notify(`Opened application for ${appByLogin.studentName ?? appByLogin.loginId}`);
+            return;
+          }
+          if (tokenMatch?.[1]) {
+            window.open(`/admission-form?token=${encodeURIComponent(tokenMatch[1])}`, "_blank", "noopener,noreferrer");
+            notify("Opened scanned public admission form");
+            return;
+          }
+          setSearch(trimmed);
+          notify(`Filtered applications by "${trimmed}"`);
+        }}
+      />
 
       {qrApp && (
         <Modal

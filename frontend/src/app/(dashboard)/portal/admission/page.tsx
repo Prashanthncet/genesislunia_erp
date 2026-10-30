@@ -635,6 +635,15 @@ function ApplicationCard({
             <Button size="sm" variant="soft" onClick={() => onShowQr(app)}>
               <Icon name="qr" className="h-3.5 w-3.5" /> Form QR
             </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                void apiDownload(`/api/admissions/${app.id}/summary.pdf`, `admission-summary-${app.id.slice(0, 8)}.pdf`);
+              }}
+            >
+              <Icon name="download" className="h-3.5 w-3.5" /> Summary PDF
+            </Button>
             {(app.editable || app.can_pay) && app.token && (
               <Button size="sm" variant="primary" onClick={() => onFillInPortal(app.token!)}>
                 <Icon name="edit" className="h-3.5 w-3.5" />
