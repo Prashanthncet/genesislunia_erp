@@ -39,7 +39,11 @@ export async function formQrPng(url: string): Promise<Buffer> {
 }
 
 export function formLink(token: string): string {
-  return `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/admission-form?token=${token}`;
+  let base = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, '') : '';
+  if (!base || base.includes('workers.dev') || base.includes('genesislumia-erp-demo.vercel.app')) {
+    base = process.env.NODE_ENV === 'production' ? 'https://genesislunia-erp.vercel.app' : 'http://localhost:3000';
+  }
+  return `${base}/admission-form?token=${token}`;
 }
 
 /** 10 chars, always upper + lower + digit (passes the change-password strength rule). */
