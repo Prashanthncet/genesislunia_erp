@@ -23,7 +23,7 @@ FROM node:22-bookworm-slim
 ARG DB_PROVIDER
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/* \
-  && useradd --system --uid 1001 erp && mkdir -p /data /backups && chown erp /data /backups
+  && useradd --create-home --system --uid 1001 erp && mkdir -p /home/erp/.npm /data /backups && chown -R erp:erp /home/erp /data /backups
 # Postgres builds need pg_dump/pg_restore of the server's major version for backups;
 # Debian bookworm ships 15, so take 17 from the official PostgreSQL apt repository.
 RUN if [ "$DB_PROVIDER" = "postgresql" ]; then \
@@ -34,7 +34,7 @@ RUN if [ "$DB_PROVIDER" = "postgresql" ]; then \
       && apt-get update && apt-get install -y --no-install-recommends postgresql-client-17 \
       && rm -rf /var/lib/apt/lists/*; \
     fi
-ENV NODE_ENV=production PORT=3001 DATABASE_URL=file:/data/erp.db PRISMA_SCHEMA=${DB_PROVIDER}
+ENV NODE_ENV=production PORT=3001 DATABASE_URL=file:/data/erp.db PRISMA_SCHEMA=${DB_PROVIDER} HOME=/home/erp
 COPY --from=build --chown=erp /app/node_modules ./node_modules
 COPY --from=build --chown=erp /app/dist ./dist
 COPY --from=build --chown=erp /app/prisma ./prisma
@@ -44,4 +44,4 @@ USER erp
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD node -e "fetch('http://127.0.0.1:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 # Apply pending migrations, then start. Migrations are additive and idempotent.
-CMD ["sh", "-c", "if [ \"$PRISMA_SCHEMA\" = postgresql ]; then npx prisma migrate deploy --schema prisma/postgres/schema.prisma; else npx prisma migrate deploy; fi && node dist/src/main"]
+CMD ["sh", "-c", "if [ \"$PRISMA_SCHEMA\" = postgresql ]; then ./node_modules/.bin/prisma migrate deploy --schema prisma/postgres/schema.prisma; else ./node_modules/.bin/prisma migrate deploy; fi && node dist/src/main"]

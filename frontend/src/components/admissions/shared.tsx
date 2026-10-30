@@ -145,3 +145,22 @@ export const fmtDateTime = (v: string | null | undefined) =>
 
 export const inr = (n: number | null | undefined) =>
   n == null ? "—" : `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+
+/**
+ * Ensures the admission form link always resolves to the current browser origin
+ * (preventing any hardcoded or stale backend FRONTEND_URL from opening wrong domains).
+ */
+export function resolveFormLink(link: string | null | undefined): string {
+  if (!link) return "";
+  try {
+    const origin = typeof window !== "undefined" && window.location?.origin ? window.location.origin : "";
+    if (link.startsWith("/")) return origin + link;
+    const url = new URL(link);
+    if (origin) {
+      return origin + url.pathname + url.search;
+    }
+    return link;
+  } catch {
+    return link;
+  }
+}
