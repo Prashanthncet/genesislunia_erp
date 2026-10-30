@@ -13,3 +13,11 @@ export class LoginDto {
   @MaxLength(72, { message: 'Password must be at most 72 characters' })
   password!: string;
 }
+
+export class VerifyAccessCodeDto {
+  /** Developer / inspector access code verified strictly on the server. */
+  @IsString()
+  @IsNotEmpty({ message: 'Access code is required' })
+  @MaxLength(128)
+  access_code!: string;
+}

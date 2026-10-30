@@ -11,6 +11,7 @@ const DEMO_GROUPS: { group: string; dot: string; logins: { role: string; email: 
     dot: "bg-brand-700",
     logins: [
       { role: "super_admin", email: "admin@sainik01.edu", password: "Admin@123" },
+
       { role: "branch_admin", email: "schooladmin@sainik01.edu", password: "Demo@Admin1" },
       { role: "principal", email: "principal@sainik01.edu", password: "Demo@Principal1" },
       { role: "vice_principal", email: "vp@sainik01.edu", password: "Demo@Vp1" },

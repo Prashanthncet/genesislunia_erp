@@ -80,3 +80,13 @@ frontend/.testworker/
 
 # Agent skills installed locally by `neon skills` (not part of the app)
 skills-lock.json
+
+
+# AGY AI INTERNAL MEMORY
+agy-memory/
+AGY-MEMORY/
+.agy/
+.agy-memory/
+AGY_CONTEXT.md
+AGY_CAPSULES.md
+AGY_PROJECT_MEMORY.md

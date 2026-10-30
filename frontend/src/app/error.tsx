@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import { Button } from "@/components/ui";
-import { BASE } from "@/lib/api";
 
 /** One report per distinct error per page load; the backend also throttles and de-dups. */
 const reported = new Set<string>();
@@ -20,10 +19,10 @@ function reportClientError(error: Error & { digest?: string }) {
     url: typeof window !== "undefined" ? window.location.pathname.slice(0, 500) : undefined,
   });
   // keepalive lets the report finish even if the user navigates away immediately.
-  fetch(`${BASE}/api/telemetry/client-error`, {
+  fetch("/api/_rpc", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: payload,
+    body: JSON.stringify({ p: "/api/telemetry/client-error", m: "POST", b: payload }),
     keepalive: true,
   }).catch(() => undefined);
 }

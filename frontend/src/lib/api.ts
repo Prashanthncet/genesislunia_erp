@@ -1,8 +1,61 @@
-export const BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+/**
+ * Same-origin Next.js BFF client (`apiFetch` & `apiDownload`).
+ *
+ * Architecture:
+ *   React components (Browser)
+ *     -> Same-origin `POST /api/_rpc` (or `/api/employees`)
+ *     -> Next.js Route Handlers (BFF Server-Side Proxy)
+ *     -> Server-to-server communication (`BACKEND_URL` + `X-BFF-Secret`)
+ *     -> NestJS Backend (Controllers · Services · Guards · Database)
+ *
+ * Individual REST endpoints (`/api/students`, `/api/fees`, `/api/staff`, etc.)
+ * are wrapped inside a base64-encoded BFF envelope sent to `/api/_rpc` so raw
+ * backend routes and query strings are hidden from the browser Network tab.
+ */
+export const BASE = "";
+
+export type BffLogEntry = {
+  id: string;
+  method: string;
+  targetPath: string;
+  bffRoute: string;
+  status: number;
+  durationMs: number;
+  timestamp: string;
+};
+
+const bffRingBuffer: BffLogEntry[] = [];
+export function getBffCallLog(): readonly BffLogEntry[] {
+  return bffRingBuffer;
+}
+
+function recordBffCall(entry: Omit<BffLogEntry, "id" | "timestamp">) {
+  if (typeof window === "undefined") return;
+  bffRingBuffer.unshift({
+    ...entry,
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    timestamp: new Date().toISOString(),
+  });
+  if (bffRingBuffer.length > 40) bffRingBuffer.pop();
+}
+
+function encodeBffEnvelope(envelope: {
+  p: string;
+  m: string;
+  b?: string | null;
+  h?: Record<string, string>;
+}): string {
+  const json = JSON.stringify(envelope);
+  if (typeof window !== "undefined" && typeof window.btoa === "function") {
+    return window.btoa(unescape(encodeURIComponent(json)));
+  }
+  return Buffer.from(json, "utf8").toString("base64");
+}
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-  const isFormData = init?.body instanceof FormData;
+  const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
+  const method = (init?.method ?? "GET").toUpperCase();
   const headers: Record<string, string> = {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(init?.headers as Record<string, string> | undefined),
@@ -12,7 +65,46 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     headers["Content-Type"] = "application/json";
   }
 
-  const res = await fetch(`${BASE}${path}`, { ...init, headers });
+  const startedAt = Date.now();
+  let res: Response;
+
+  if (isFormData) {
+    res = await fetch("/api/_rpc", {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "x-bff-target": path,
+        "x-bff-method": method,
+      },
+      body: init?.body,
+      credentials: "same-origin",
+    });
+  } else {
+    const payload = encodeBffEnvelope({
+      p: path,
+      m: method,
+      b: typeof init?.body === "string" ? init.body : null,
+      h: headers,
+    });
+    res = await fetch("/api/_rpc", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ payload }),
+      credentials: "same-origin",
+      signal: init?.signal,
+    });
+  }
+
+  recordBffCall({
+    method,
+    targetPath: path,
+    bffRoute: "/api/_rpc",
+    status: res.status,
+    durationMs: Date.now() - startedAt,
+  });
 
   // Expired / revoked / disabled session: go back to login instead of showing a
   // page full of error toasts. (Login itself returns 401 for bad passwords — skip it.)
@@ -30,7 +122,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     let errorMessage = errorBody || res.statusText;
     try {
       const parsed = JSON.parse(errorBody);
-      if (parsed.message) errorMessage = parsed.message;
+      if (parsed.message) errorMessage = Array.isArray(parsed.message) ? parsed.message.join(", ") : parsed.message;
       else if (parsed.error) errorMessage = parsed.error;
     } catch {
       // not JSON — use raw text
@@ -56,17 +148,36 @@ function emitDownload(detail: DownloadEvent) {
 }
 
 /**
- * Authenticated file download (CSV / XLSX / PDF). A plain <a href> or bare fetch
- * sends no Bearer token, gets a 401 JSON body, and saves THAT as the file.
- * Throws on non-2xx so callers can toast a real error.
- * Announces start / progress / done / error so the download tray can show it.
+ * Authenticated file download (CSV / XLSX / PDF) routed through the same-origin
+ * Next.js BFF (`/api/_rpc`).
  */
 export async function apiDownload(path: string, fallbackName: string): Promise<void> {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   emitDownload({ id, name: fallbackName, phase: "start" });
+  const startedAt = Date.now();
   try {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    const res = await fetch(`${BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    const payload = encodeBffEnvelope({ p: path, m: "GET", h: headers });
+
+    const res = await fetch("/api/_rpc", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+      },
+      body: JSON.stringify({ payload }),
+      credentials: "same-origin",
+    });
+
+    recordBffCall({
+      method: "GET",
+      targetPath: path,
+      bffRoute: "/api/_rpc",
+      status: res.status,
+      durationMs: Date.now() - startedAt,
+    });
+
     if (!res.ok) {
       let msg = res.statusText;
       try { const j = await res.json(); msg = j.message ?? j.error ?? msg; } catch { /* not JSON */ }
@@ -77,7 +188,6 @@ export async function apiDownload(path: string, fallbackName: string): Promise<v
     const total = Number(res.headers.get("content-length")) || 0;
     emitDownload({ id, name, phase: "progress", loaded: 0, total });
 
-    // Read the body in chunks so the tray can show real progress; same bytes either way.
     let blob: Blob;
     const reader = res.body?.getReader();
     if (reader) {
@@ -102,7 +212,6 @@ export async function apiDownload(path: string, fallbackName: string): Promise<v
     document.body.appendChild(a);
     a.click();
     a.remove();
-    // Revoking too early cancels the save on iOS Safari / Firefox (they read the blob lazily).
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
     emitDownload({ id, name, phase: "done", loaded: blob.size, total: blob.size });
   } catch (e) {

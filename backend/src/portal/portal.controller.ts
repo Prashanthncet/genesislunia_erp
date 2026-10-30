@@ -539,7 +539,8 @@ export class PortalController {
       apps.map(async (a) => {
         const editable = ['Links Sent', 'Re-submit'].includes(a.status);
         const canPay = a.status === 'Document Validated';
-        const link = a.token ? formLink(a.token) : null;
+        const activeToken = (editable || canPay) ? a.token : null;
+        const link = activeToken ? formLink(activeToken) : null;
         const qr = link ? await formQrDataUrl(link) : null;
         return { ...a, editable, canPay, link, qr };
       }),

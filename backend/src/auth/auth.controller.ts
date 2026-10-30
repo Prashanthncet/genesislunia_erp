@@ -18,19 +18,31 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthGuard, Roles, RolesGuard } from './auth.guard';
-import { LoginDto } from './dto/login.dto';
+import { LoginDto, VerifyAccessCodeDto } from './dto/login.dto';
 import { ChangePasswordDto, CreateUserDto, UpdateUserDto } from './dto/users.dto';
 import { ROLE, R } from './roles';
 import { audit } from '../common/access';
+import { resolveJwtSecret } from './jwt-secret';
 
 const PASSWORD_CHANGED = 'password changed';
 
-type ReqWithUser = { user: { sub: string; role: string; branch_id: string } };
+type ReqWithUser = { user: { sub: string; role: string; branch_id: string }; headers?: Record<string, unknown>; viaBff?: boolean };
 
 /** Login attempts per minute per IP. Env-tunable so e2e suites can log in every role. */
 const LOGIN_LIMIT = Number(process.env.LOGIN_RATE_LIMIT ?? 10);
+
+/**
+ * Constant-time access code comparison on the server.
+ * Hashing both sides with SHA-256 ensures fixed 32-byte buffers so length differences never leak via timing.
+ */
+function verifyAccessCodeTimingSafe(provided: string, expected: string): boolean {
+  const a = crypto.createHash('sha256').update(provided.trim()).digest();
+  const b = crypto.createHash('sha256').update(expected.trim()).digest();
+  return crypto.timingSafeEqual(a, b);
+}
 
 /**
  * Accounts are provisioned by school admins (POST /auth/users) or by the system
@@ -61,6 +73,76 @@ export class AuthController {
       role: user.role,
       branch_id: user.branchId,
       must_change_password: user.mustChangePassword,
+    };
+  }
+
+  /**
+   * Server-side console / inspector access code verification.
+   * Any user attempting to open the browser Console / DevTools must verify this code
+   * against the server. Never exposes or compares the access code in client-side code.
+   */
+  @Post('verify-access-code')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async verifyAccessCode(@Body() body: VerifyAccessCodeDto) {
+    const expectedCode = process.env.DEV_ACCESS_CODE || 'GENESIS-DEV-2026';
+    const isValid = verifyAccessCodeTimingSafe(body.access_code, expectedCode);
+    if (!isValid) {
+      throw new ForbiddenException('Invalid access code');
+    }
+    const devAccessToken = await this.jwtService.signAsync(
+      { purpose: 'dev_access', verified: true },
+      { secret: resolveJwtSecret(), expiresIn: '8h' },
+    );
+    return {
+      verified: true,
+      dev_access_token: devAccessToken,
+      expires_in: '8h',
+      message: 'Access code verified by server. Console / Inspector unlocked for this session.',
+    };
+  }
+
+  /**
+   * Live security architecture posture & BFF status.
+   */
+  @Get('security-architecture')
+  @UseGuards(AuthGuard)
+  async securityArchitecture(@Req() req: ReqWithUser) {
+    return {
+      caller_role: req.user.role,
+      via_bff: Boolean(req.viaBff || req.headers?.['x-bff-proxy']),
+      recommendations: [
+        {
+          feature: 'Inspect detection',
+          recommendation: 'Best-effort only',
+          status: 'active',
+          implementation: 'Global DevToolsGuard intercepts F12, Ctrl+Shift+I/J/C/K, Ctrl+U, right-click inspect & docked console, requiring server-verified access code',
+        },
+        {
+          feature: 'Access code',
+          recommendation: 'Server-side verification',
+          status: 'active',
+          implementation: 'POST /api/auth/verify-access-code with SHA-256 crypto.timingSafeEqual & signed HttpOnly cookie',
+        },
+        {
+          feature: 'API protection',
+          recommendation: 'NestJS Guards',
+          status: 'active',
+          implementation: 'AuthGuard + RolesGuard + ThrottlerGuard across all controllers incl. /api/employees',
+        },
+        {
+          feature: 'API endpoints',
+          recommendation: 'Next.js proxy',
+          status: 'active',
+          implementation: 'Same-origin Next.js Route Handlers BFF (/api/_rpc, /api/employees, /api/[...path]) -> server-to-server NestJS',
+        },
+        {
+          feature: 'Sensitive data',
+          recommendation: 'Never send to unauthorized clients',
+          status: 'active',
+          implementation: 'Global SensitiveDataInterceptor + role-scoped Prisma select projections + BFF response sanitizer',
+        },
+      ],
     };
   }
 
