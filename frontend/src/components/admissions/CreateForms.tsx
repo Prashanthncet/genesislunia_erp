@@ -1,8 +1,5 @@
 "use client";
 
-import { useState } from "react";
-import { Badge, Button, Field, Icon, IconButton, Input } from "@/components/ui";
-import { currentAcademicYear, fmtDate, post, resolveFormLink } from "./shared";
 import { useMemo, useState } from "react";
 import { Badge, Button, Field, Icon, IconButton, Input, Modal } from "@/components/ui";
 import { downloadQrPng, makeQrDataUrl } from "@/lib/qr";
@@ -228,35 +225,6 @@ export function CreateForms({ notify, onCreated }: { notify: (msg: string, tone?
               </div>
             )}
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="table-head">
-                <tr>
-                  <th className="px-3 py-2">Parent</th>
-                  <th className="px-3 py-2">Login ID</th>
-                  <th className="px-3 py-2">Password</th>
-                  <th className="px-3 py-2">Link valid until</th>
-                  <th className="px-3 py-2">Form link</th>
-                </tr>
-              </thead>
-              <tbody>
-                {generated.map((g) => (
-                  <tr key={g.id} className="border-t border-line">
-                    <td className="px-3 py-2 font-semibold">{g.parent_name}</td>
-                    <td className="px-3 py-2 font-mono">{g.login_id}</td>
-                    <td className="px-3 py-2">
-                      <span className="flex items-center gap-1 font-mono">
-                        {g.password}
-                        <IconButton name="clipboard" label={`Copy password for ${g.parent_name}`} variant="ghost" onClick={() => copy(`Login ID: ${g.login_id}  Password: ${g.password}`)} />
-                      </span>
-                    </td>
-                    <td className="px-3 py-2"><Badge tone="amber">{fmtDate(g.link_expires_at)}</Badge></td>
-                    <td className="px-3 py-2">
-                      <span className="flex items-center gap-1">
-                        <a href={resolveFormLink(g.form_link)} target="_blank" rel="noreferrer" className="btn-soft !px-2.5 !py-1 text-xs">
-                          Open <Icon name="arrowUpRight" className="h-3.5 w-3.5" />
-                        </a>
-                        <IconButton name="clipboard" label={`Copy link for ${g.parent_name}`} variant="ghost" onClick={() => copy(resolveFormLink(g.form_link))} />
 
           <div className="grid gap-3.5 md:grid-cols-2">
             {filteredGenerated.map((g) => {

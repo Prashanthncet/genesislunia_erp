@@ -5,7 +5,6 @@ import { apiDownload, apiFetch } from "@/lib/api";
 import { R, hasRole, useMe } from "@/lib/auth";
 import { Badge, Button, Field, Icon, Input, Modal, ProgressBar, Select, Skeleton, Tabs, Textarea } from "@/components/ui";
 import { confirmAction } from "@/components/confirm";
-import { Application, DocLink, PIPELINE, STATUS_TONE, docHref, resolveFormLink, fmtDate, fmtDateTime, inr, post, readUpload, stageOf } from "./shared";
 import { downloadQrPng, makeQrDataUrl } from "@/lib/qr";
 import { Application, DocLink, PIPELINE, STATUS_TONE, docHref, fmtDate, fmtDateTime, inr, post, readUpload, stageOf } from "./shared";
 
@@ -289,14 +288,6 @@ export function ApplicationPanel({
       subtitle={`${d.academicYear ?? ""} · Parent ${d.parentName ?? "—"} · Login ${d.loginId ?? "—"}`}
       footer={actions}>
       <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={STATUS_TONE[s] ?? "sky"}>{s}</Badge>
-          {d.rollNo && <Badge tone="violet">Roll {d.rollNo}</Badge>}
-          {d.house && <Badge tone="teal">{d.house} house</Badge>}
-          <Badge tone={d.paymentStatus === "Verified" ? "emerald" : d.paymentStatus === "Paid" ? "teal" : "amber"}>Fee {d.paymentStatus}</Badge>
-          {d.form_link && (s === "Links Sent" || s === "Re-submit") && (
-            <a href={resolveFormLink(d.form_link)} target="_blank" rel="noreferrer" className="btn-soft !px-2.5 !py-1 text-xs">Parent form <Icon name="arrowUpRight" className="h-3.5 w-3.5" /></a>
-          )}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={STATUS_TONE[s] ?? "sky"}>{s}</Badge>
