@@ -17,6 +17,23 @@ export type JwtPayload = { sub: string; role: string; branch_id: string };
 export const ROLES_KEY = 'roles';
 export const Roles = (...roles: string[]) => SetMetadata(ROLES_KEY, roles);
 
+/** Parse a named cookie value from the raw Cookie header without external middleware. */
+export function extractCookieToken(cookieHeader: string | undefined, name = 'erp_token'): string | null {
+  if (!cookieHeader) return null;
+  const parts = cookieHeader.split(';');
+  for (const part of parts) {
+    const [k, ...v] = part.trim().split('=');
+    if (k === name && v.length > 0) {
+      try {
+        return decodeURIComponent(v.join('='));
+      } catch {
+        return v.join('=');
+      }
+    }
+  }
+  return null;
+}
+
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
@@ -26,13 +43,20 @@ export class AuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
-    const authHeader = request.headers['authorization'];
+    const authHeader = request.headers['authorization'] as string | undefined;
+    const cookieToken = extractCookieToken(request.headers['cookie'] as string | undefined, 'erp_token');
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    let token: string | null = null;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.split(' ')[1];
+    } else if (cookieToken) {
+      token = cookieToken;
+    }
+
+    if (!token) {
       throw new UnauthorizedException('Unauthorized');
     }
 
-    const token = authHeader.split(' ')[1];
     const secret = resolveJwtSecret();
 
     let payload: JwtPayload;
@@ -40,6 +64,12 @@ export class AuthGuard implements CanActivate {
       payload = await this.jwtService.verifyAsync<JwtPayload>(token, { secret });
     } catch {
       throw new UnauthorizedException('Invalid Token');
+    }
+
+    // Track whether the request arrived via the Next.js Server-Side BFF proxy
+    const expectedBffSecret = process.env.BFF_SHARED_SECRET ?? 'genesis-bff-internal-s2s';
+    if (request.headers['x-bff-secret'] === expectedBffSecret) {
+      request.viaBff = true;
     }
 
     // Role and branch come from the database, not the token: disabling an account or
@@ -56,8 +86,17 @@ export class AuthGuard implements CanActivate {
       const path = (request.originalUrl ?? request.url ?? '').split('?')[0].replace(/\/+$/, '');
       const method = (request.method ?? 'GET').toUpperCase();
       const isAllowed =
-        (method === 'GET' && (path.endsWith('/auth/me') || path.endsWith('/me') || path.endsWith('/portal/admission') || path.endsWith('/portal/overview') || path.endsWith('/notices/unread-count'))) ||
-        (method === 'POST' && (path.endsWith('/auth/change-password') || path.endsWith('/change-password')));
+        (method === 'GET' &&
+          (path.endsWith('/auth/me') ||
+            path.endsWith('/me') ||
+            path.endsWith('/auth/security-architecture') ||
+            path.endsWith('/portal/admission') ||
+            path.endsWith('/portal/overview') ||
+            path.endsWith('/notices/unread-count'))) ||
+        (method === 'POST' &&
+          (path.endsWith('/auth/change-password') ||
+            path.endsWith('/change-password') ||
+            path.endsWith('/auth/verify-access-code')));
       if (!isAllowed) {
         throw new ForbiddenException('Password change required before accessing this resource');
       }

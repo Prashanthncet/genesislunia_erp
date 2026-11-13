@@ -1,7 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
@@ -27,6 +27,7 @@ import { AuditModule } from './audit/audit.module';
 import { NoticesModule } from './notices/notices.module';
 import { RequestLoggerMiddleware } from './common/request-logger.middleware';
 import { RequestContextMiddleware } from './common/request-context';
+import { SensitiveDataInterceptor } from './common/sensitive-data.interceptor';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { RedisModule, RedisService } from './redis/redis.service';
 import { JobsModule } from './jobs/jobs.service';
@@ -36,7 +37,7 @@ import { TelemetryModule } from './telemetry/telemetry.controller';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    // Cron jobs (admission reminders, notification retries) — each guarded by JobsService.runOnce.
+    // Cron jobs (admission reminders, notification retries) - each guarded by JobsService.runOnce.
     ScheduleModule.forRoot(),
     RedisModule,
     // Requests per minute per client IP (see TRUST_PROXY in main.ts for deployments behind a proxy).
@@ -79,6 +80,8 @@ import { TelemetryModule } from './telemetry/telemetry.controller';
   providers: [
     // Without this the ThrottlerModule config above was inert: registered but never enforced.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // Global sensitive data redaction: never send password hashes, OTPs, or unauthorized salary data.
+    { provide: APP_INTERCEPTOR, useClass: SensitiveDataInterceptor },
   ],
 })
 export class AppModule implements NestModule {

@@ -76,18 +76,27 @@ async function bootstrap() {
     }),
   );
 
-  // The Next.js dev server proxies /api/* server-side, so no Origin header arrives.
+  // The Next.js BFF Route Handlers proxy /api/* server-to-server, so no Origin header arrives.
   // Anything WITH an Origin must be explicitly allowlisted.
   app.enableCors({
     origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
-      if (!origin) return cb(null, true); // same-origin / curl / server-side proxy
+      if (!origin) return cb(null, true); // same-origin / curl / Next.js BFF server-side proxy
       if (origins.has(origin)) return cb(null, true);
       Logger.warn(`Blocked CORS origin: ${origin}`, 'Bootstrap');
       return cb(null, false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'x-signature'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'Accept',
+      'Origin',
+      'x-signature',
+      'x-bff-proxy',
+      'x-bff-secret',
+    ],
     maxAge: 86400,
   });
 

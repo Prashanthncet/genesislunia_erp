@@ -111,17 +111,7 @@ function optionsOf(rule: string | null): string[] {
 }
 
 async function pub<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}/api/admissions/public${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-    cache: "no-store",
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const m = body?.message;
-    throw new Error(Array.isArray(m) ? m.join(" · ") : (m || `Request failed (${res.status})`));
-  }
-  return body as T;
+  return apiFetch<T>(`/api/admissions/public${path}`, init);
 }
 
 /**
@@ -245,9 +235,8 @@ function PortalGoogleFormFiller({
     try {
       const order = await pub<{ gateway_order_id: string; gateway: string; amount: number }>(`/${encodeURIComponent(token)}/pay`, { method: "POST" });
       if (order.gateway === "mock") {
-        await fetch(`${BASE}/api/payments/webhook/mock`, {
+        await apiFetch("/api/payments/webhook/mock", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ gateway_order_id: order.gateway_order_id, payment_id: `pay_${Date.now()}`, status: "paid" }),
         });
         notify("Admission fee paid! The school accounts desk will verify your receipt.");

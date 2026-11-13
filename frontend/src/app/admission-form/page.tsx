@@ -65,9 +65,15 @@ const DOC_TYPES = [
 ];
 
 async function pub<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}/api/admissions/public${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  const res = await fetch("/api/_rpc", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      p: `/api/admissions/public${path}`,
+      m: init?.method ?? "GET",
+      b: typeof init?.body === "string" ? init.body : null,
+      h: { "Content-Type": "application/json", ...(init?.headers as Record<string, string> | undefined ?? {}) },
+    }),
     cache: "no-store",
   });
   const body = await res.json().catch(() => ({}));
@@ -212,10 +218,14 @@ function AdmissionFormInner() {
     if (!order) return;
     setBusy("sim");
     try {
-      const res = await fetch(`${BASE}/api/payments/webhook/mock`, {
+      const res = await fetch("/api/_rpc", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gateway_order_id: order.gateway_order_id, payment_id: `pay_${Date.now()}`, status }),
+        body: JSON.stringify({
+          p: "/api/payments/webhook/mock",
+          m: "POST",
+          b: JSON.stringify({ gateway_order_id: order.gateway_order_id, payment_id: `pay_${Date.now()}`, status }),
+        }),
       });
       if (!res.ok) throw new Error("Payment confirmation failed");
       notify(status === "paid" ? "Payment received — thank you!" : "Marked as failed — you can retry", status === "paid" ? "success" : "error");

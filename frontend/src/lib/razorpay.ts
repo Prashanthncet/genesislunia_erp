@@ -73,10 +73,14 @@ export async function payWithRazorpay(
       retry: { enabled: true },
       handler: async (resp: RazorpayResponse) => {
         try {
-          const res = await fetch("/api/payments/razorpay/verify", {
+          const res = await fetch("/api/_rpc", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(resp),
+            body: JSON.stringify({
+              p: "/api/payments/razorpay/verify",
+              m: "POST",
+              b: JSON.stringify(resp),
+            }),
           });
           if (!res.ok) {
             const body = await res.json().catch(() => ({}));

@@ -209,6 +209,7 @@ const ADMISSION_FLOW = [
 /** Every demo login. Keep in sync with README / DEMO_GUIDE. */
 const DEMO_LOGINS: { id: string; email: string; password: string; role: string; name: string; staffId: string | null }[] = [
   { id: 'u_admin', email: 'admin@sainik01.edu', password: 'Admin@123', role: 'super_admin', name: 'System Administrator', staffId: null },
+
   { id: 'u_branchadmin', email: 'schooladmin@sainik01.edu', password: 'Demo@Admin1', role: 'branch_admin', name: 'School Administrator', staffId: null },
   { id: 'u_principal', email: 'principal@sainik01.edu', password: 'Demo@Principal1', role: 'principal', name: 'Brig. Anil Kapoor (Retd.)', staffId: 't_principal' },
   { id: 'u_vp', email: 'vp@sainik01.edu', password: 'Demo@Vp1', role: 'vice_principal', name: 'Ms. Priya Menon', staffId: 't_priya' },

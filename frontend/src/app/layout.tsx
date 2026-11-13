@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { DownloadTray } from "@/components/DownloadTray";
+import { DevToolsGuard } from "@/components/security/DevToolsGuard";
 
 /**
  * Inter everywhere — headings, body, tables. It stays legible at the dense
@@ -12,7 +13,6 @@ const inter = Inter({
   display: "swap",
   variable: "--font-inter",
 });
-
 
 export const metadata: Metadata = {
   title: {
@@ -53,6 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               "catch(e){}",
           }}
         />
+        <DevToolsGuard />
         {children}
         <DownloadTray />
       </body>
